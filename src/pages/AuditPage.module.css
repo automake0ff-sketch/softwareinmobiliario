@@ -1,0 +1,92 @@
+.page {
+  min-height: calc(100vh - 60px);
+  padding: 48px 24px 80px;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 40px;
+  align-items: start;
+}
+
+.header { margin-bottom: 32px; }
+
+.eyebrow {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--gold);
+  background: var(--gold-light);
+  border: 1px solid rgba(212,168,83,0.2);
+  border-radius: 20px;
+  padding: 4px 14px;
+  margin-bottom: 20px;
+}
+
+.headline {
+  font-family: var(--font-display);
+  font-size: clamp(32px, 4vw, 48px);
+  font-weight: 300;
+  line-height: 1.1;
+  color: var(--text);
+  margin-bottom: 16px;
+  letter-spacing: -0.02em;
+}
+.headline em {
+  font-style: italic;
+  color: var(--gold);
+}
+
+.sub {
+  font-size: 15px;
+  color: var(--text2);
+  line-height: 1.7;
+  max-width: 560px;
+}
+
+.sidebar {
+  position: sticky;
+  top: 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.featureCard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  transition: border-color 0.2s;
+}
+.featureCard:hover { border-color: var(--border2); }
+
+.featureIcon { font-size: 22px; margin-bottom: 10px; }
+
+.featureCard h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.featureCard p { font-size: 13px; color: var(--text2); line-height: 1.6; }
+
+.testimonial {
+  background: var(--gold-light);
+  border: 1px solid rgba(212,168,83,0.2);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+}
+.stars { color: var(--gold); font-size: 13px; margin-bottom: 10px; letter-spacing: 2px; }
+.testimonial p { font-size: 13px; color: var(--text); line-height: 1.7; font-style: italic; margin-bottom: 10px; }
+.testimonialAuthor { font-size: 12px; color: var(--text2); font-weight: 500; }
+
+@media (max-width: 960px) {
+  .container { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+}

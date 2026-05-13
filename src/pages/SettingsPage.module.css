@@ -1,0 +1,95 @@
+.page {
+  min-height: calc(100vh - 60px);
+  padding: 48px 24px 80px;
+}
+
+.container {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 28px;
+}
+
+.section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 20px;
+}
+
+.sectionTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.sectionDesc {
+  font-size: 13px;
+  color: var(--text2);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.inputGroup {
+  display: flex;
+  gap: 10px;
+}
+
+.apiInput {
+  flex: 1;
+}
+
+.envNotice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--green);
+  margin-top: 10px;
+}
+
+.planOptions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.planOption {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text2);
+}
+.planOption:hover { border-color: var(--border2); }
+.planOption.planActive {
+  border-color: var(--gold);
+  background: var(--gold-light);
+  color: var(--gold);
+}
+
+.planName { text-transform: capitalize; }
+
+.usageInfo {
+  font-size: 12px;
+  color: var(--text3);
+}

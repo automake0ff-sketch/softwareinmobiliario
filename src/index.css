@@ -1,0 +1,201 @@
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
+
+@layer base {
+  :root {
+    /* Base Colors */
+    --bg-primary: #0A0A0F;
+    --bg-secondary: #13131A;
+    --bg-tertiary: #1A1A24;
+    
+    /* Semantic Backgrounds */
+    --bg: #0A0A0F;
+    --bg2: #13131A;
+    --bg3: #1A1A24;
+    --surface: #13131A;
+    --surface2: #1A1A24;
+    --surface3: #242432;
+    
+    /* Card Variables */
+    --card: #13131A;
+    --card2: #1A1A24;
+    
+    /* Text Variables */
+    --text: #F1F5F9;
+    --text2: #94A3B8;
+    --text3: #64748B;
+    
+    /* Ink Variables (for legacy code) */
+    --ink: #F1F5F9;
+    --ink2: #E2E8F0;
+    
+    /* Borders */
+    --border: #1E1E2E;
+    --border2: #2A2A3E;
+    --border-accent: #38385A;
+    --bdr: #1E1E2E;
+    --bdr2: #2A2A3E;
+    
+    /* Brand & Accent */
+    --accent-gradient: linear-gradient(135deg, #6366F1, #8B5CF6);
+    --accent-primary: #6366F1;
+    --accent-secondary: #8B5CF6;
+    --accent-light: #818CF8;
+    
+    --blue: #6366F1;
+    --blue2: #818CF8;
+    --blue3: #A5B4FC;
+    
+    --gold: #FACC15;
+    --gold2: #FDE047;
+    --gold-light: rgba(250, 204, 21, 0.1);
+    
+    --green: #10B981;
+    --amber: #F59E0B;
+    --red: #EF4444;
+    --slate: #64748B;
+    
+    /* Semantic State */
+    --ok: #10B981;
+    --ok-bg: rgba(16, 185, 129, 0.1);
+    --warn: #F59E0B;
+    --warn-bg: rgba(245, 158, 11, 0.1);
+    --err: #EF4444;
+    --err-bg: rgba(239, 68, 44, 0.1);
+    --info: #3B82F6;
+    --info-bg: rgba(59, 130, 246, 0.1);
+    
+    /* Geometry */
+    --radius: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --r: 8px;
+    --r2: 12px;
+    --r3: 16px;
+    
+    /* Shadows */
+    --shadow-card: 0 0 0 1px rgba(255,255,255,0.05), 0 2px 8px rgba(0,0,0,0.3);
+    --shadow-elevated: 0 0 0 1px rgba(255,255,255,0.06), 0 8px 32px rgba(0,0,0,0.4);
+    --shadow-modal: 0 20px 50px rgba(0,0,0,0.5);
+    --sh: 0 1px 3px rgba(0,0,0,.3), 0 4px 20px rgba(0,0,0,.4);
+    --sh2: 0 8px 40px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.3);
+  }
+
+
+
+  * { box-sizing: border-box; }
+
+  body {
+    @apply bg-[#0A0A0F] text-[#F1F5F9] antialiased;
+    font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2A2A3E; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #38385A; }
+
+  input, select, textarea {
+    @apply bg-[#1A1A24] border border-[#2A2A3E] rounded-lg text-[#F1F5F9] px-3 py-2.5 text-sm outline-none transition-all duration-150;
+    font-family: 'DM Sans', system-ui, sans-serif;
+  }
+  input:focus, select:focus, textarea:focus {
+    @apply border-[#6366F1] ring-1 ring-[#6366F1]/30;
+  }
+
+  ::selection {
+    background: rgba(99, 102, 241, 0.3);
+    color: #F1F5F9;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-150 cursor-pointer border-none;
+    font-family: 'DM Sans', system-ui, sans-serif;
+  }
+  .btn:disabled { @apply opacity-40 cursor-not-allowed; }
+
+  .btn-primary {
+    background: linear-gradient(135deg, #6366F1, #8B5CF6);
+    @apply text-white shadow-lg shadow-indigo-500/20;
+  }
+  .btn-primary:hover:not(:disabled) {
+    @apply shadow-xl shadow-indigo-500/30;
+    filter: brightness(1.1);
+  }
+
+  .btn-secondary {
+    @apply bg-[#1A1A24] text-[#F1F5F9] border border-[#2A2A3E];
+  }
+  .btn-secondary:hover:not(:disabled) {
+    @apply bg-[#1C1C28] border-[#38385A];
+  }
+
+  .btn-ghost {
+    @apply bg-transparent text-[#94A3B8];
+  }
+  .btn-ghost:hover:not(:disabled) {
+    @apply bg-[#1A1A24] text-[#F1F5F9];
+  }
+
+  .btn-danger {
+    background: rgba(239,68,68,0.1);
+    @apply text-[#EF4444] border;
+    border-color: rgba(239,68,68,0.2);
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: rgba(239,68,68,0.2);
+  }
+
+  .card {
+    @apply rounded-xl;
+    background: #13131A;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 2px 8px rgba(0,0,0,0.3);
+  }
+
+  .card-hover {
+    @apply transition-all duration-200;
+  }
+  .card-hover:hover {
+    @apply -translate-y-0.5;
+    box-shadow: 0 0 0 1px rgba(99,102,241,0.2), 0 8px 24px rgba(0,0,0,0.4);
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full;
+  }
+
+  .badge-green { background: rgba(16,185,129,0.1); color: #10B981; }
+  .badge-amber { background: rgba(245,158,11,0.1); color: #F59E0B; }
+  .badge-red { background: rgba(239,68,68,0.1); color: #EF4444; }
+  .badge-blue { background: rgba(99,102,241,0.1); color: #818CF8; }
+  .badge-slate { background: rgba(100,116,139,0.1); color: #94A3B8; }
+  .badge-purple { background: rgba(139,92,246,0.1); color: #A78BFA; }
+
+  .input {
+    @apply bg-[#1A1A24] border border-[#2A2A3E] rounded-lg text-[#F1F5F9] px-3 py-2.5 text-sm outline-none transition-all duration-150 w-full;
+  }
+  .input:focus {
+    @apply border-[#6366F1] ring-1 ring-[#6366F1]/30;
+  }
+
+  .gradient-text {
+    background: linear-gradient(135deg, #F1F5F9, #818CF8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .ia-pulse {
+    animation: iaPulse 2s ease-in-out infinite;
+  }
+
+  @keyframes iaPulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+  }
+}

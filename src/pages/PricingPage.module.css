@@ -1,0 +1,213 @@
+.page {
+  min-height: calc(100vh - 60px);
+  padding: 60px 24px 80px;
+}
+
+.container {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 48px;
+}
+
+.eyebrow {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--gold);
+  background: var(--gold-light);
+  border: 1px solid rgba(212,168,83,0.2);
+  border-radius: 20px;
+  padding: 4px 14px;
+  margin-bottom: 20px;
+}
+
+.headline {
+  font-family: var(--font-display);
+  font-size: clamp(28px, 4vw, 42px);
+  font-weight: 300;
+  line-height: 1.15;
+  color: var(--text);
+  margin-bottom: 16px;
+  letter-spacing: -0.02em;
+}
+.headline em { font-style: italic; color: var(--gold); }
+
+.sub {
+  font-size: 15px;
+  color: var(--text2);
+  line-height: 1.7;
+  max-width: 540px;
+  margin: 0 auto;
+}
+
+.plans {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-bottom: 48px;
+}
+
+.planCard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 28px 24px;
+  position: relative;
+  transition: border-color 0.2s;
+}
+.planCard:hover { border-color: var(--border2); }
+.planCard.highlighted { border-color: rgba(212,168,83,0.3); }
+.planCard.current { border-color: var(--gold); }
+
+.popularBadge {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold);
+  background: var(--gold);
+  color: var(--bg);
+  padding: 4px 14px;
+  border-radius: 12px;
+}
+
+.currentBadge {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold);
+  background: var(--gold-light);
+  border: 1px solid rgba(212,168,83,0.3);
+  padding: 4px 14px;
+  border-radius: 12px;
+}
+
+.planIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--gold-light);
+  color: var(--gold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.planName {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.planPrice { margin-bottom: 8px; }
+.priceNum {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--gold);
+  font-family: var(--font-display);
+}
+.pricePeriod { font-size: 14px; color: var(--text3); }
+
+.planDesc {
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.planCta { margin-bottom: 20px; }
+
+.featureList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.featureItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.4;
+}
+
+.featureMissing { opacity: 0.5; }
+
+.proofBar {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-bottom: 48px;
+}
+
+.proof { font-size: 14px; color: var(--text2); }
+.proof strong { color: var(--gold); font-size: 16px; }
+.proofDiv { width: 1px; height: 24px; background: var(--border2); }
+
+.faq { margin-top: 24px; }
+
+.faqTitle {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.faqGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.faqItem {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.faqQ {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.faqA {
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.6;
+}
+
+@media (max-width: 768px) {
+  .plans { grid-template-columns: 1fr; }
+  .faqGrid { grid-template-columns: 1fr; }
+  .proofBar { flex-direction: column; gap: 12px; }
+  .proofDiv { display: none; }
+}

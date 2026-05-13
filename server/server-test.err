@@ -1,0 +1,25 @@
+SQL Error: duplicate column name: description SQL: ALTER TABLE automations ADD COLUMN description TEXT DEFAULT ''
+SQL Error: duplicate column name: is_active SQL: ALTER TABLE automations ADD COLUMN is_active INTEGER DEFAULT 1
+SQL Error: duplicate column name: trigger_type SQL: ALTER TABLE automations ADD COLUMN trigger_type TEXT DEFAULT 'lead_created'
+SQL Error: duplicate column name: trigger_config SQL: ALTER TABLE automations ADD COLUMN trigger_config TEXT DEFAULT '{}'
+SQL Error: duplicate column name: conditions SQL: ALTER TABLE automations ADD COLUMN conditions TEXT DEFAULT '[]'
+SQL Error: duplicate column name: actions SQL: ALTER TABLE automations ADD COLUMN actions TEXT DEFAULT '[]'
+SQL Error: duplicate column name: run_count SQL: ALTER TABLE automations ADD COLUMN run_count INTEGER DEFAULT 0
+SQL Error: duplicate column name: last_run_at SQL: ALTER TABLE automations ADD COLUMN last_run_at TEXT
+C:\Users\HP\Desktop\softwareinmobiliario\server\node_modules\sql.js\dist\sql-wasm.js:90
+this.Sa={},this.Za&&(A(this.Za),this.Za=void 0),this.handleError(w(this.db)),ua("/"+this.filename),this.db=null)};e.prototype.handleError=function(f){if(0===f)return null;f=rc(this.db);throw Error(f);};e.prototype.Rb=function(){return x(this.db)};e.prototype.Kb=function(f,l){Object.prototype.hasOwnProperty.call(this.Sa,f)&&(A(this.Sa[f]),delete this.Sa[f]);var n=va(function(p,u,v){u=b(u,v);try{var K=l.apply(null,u)}catch(I){sa(p,I,-1);return}a(p,K)},"viii");this.Sa[f]=n;this.handleError(tb(this.db,
+                                                                                                                                                                                               ^
+
+Error: no such column: settings
+    at e.handleError (C:\Users\HP\Desktop\softwareinmobiliario\server\node_modules\sql.js\dist\sql-wasm.js:90:192)
+    at e.tb (C:\Users\HP\Desktop\softwareinmobiliario\server\node_modules\sql.js\dist\sql-wasm.js:88:454)
+    at all (file:///C:/Users/HP/Desktop/softwareinmobiliario/server/db/db.js:42:19)
+    at get (file:///C:/Users/HP/Desktop/softwareinmobiliario/server/db/db.js:56:16)
+    at file:///C:/Users/HP/Desktop/softwareinmobiliario/server/routes/automations-execute-realtime.js:49:20
+    at Layer.handle [as handle_request] (C:\Users\HP\Desktop\softwareinmobiliario\server\node_modules\express\lib\router\layer.js:95:5)
+    at next (C:\Users\HP\Desktop\softwareinmobiliario\server\node_modules\express\lib\router\route.js:149:13)
+    at Route.dispatch (C:\Users\HP\Desktop\softwareinmobiliario\server\node_modules\express\lib\router\route.js:119:3)
+    at Layer.handle [as handle_request] (C:\Users\HP\Desktop\softwareinmobiliario\server\node_modules\express\lib\router\layer.js:95:5)
+    at C:\Users\HP\Desktop\softwareinmobiliario\server\node_modules\express\lib\router\index.js:284:15
+
+Node.js v22.15.0

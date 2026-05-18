@@ -1,0 +1,137 @@
+﻿
+> crm-inmobiliario-ia@1.0.0 server
+> node server/index.js
+
+node.exe : SQL Error: duplicate column name: description SQL: ALTER TABLE automations ADD COLUMN description TEXT 
+DEFAULT ''
+En C:\Program Files\nodejs\npm.ps1: 29 Carácter: 3
++   & $NODE_EXE $NPM_CLI_JS $args
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (SQL Error: dupl...TEXT DEFAULT '':String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+SQL Error: duplicate column name: is_active SQL: ALTER TABLE automations ADD COLUMN is_active INTEGER DEFAULT 1
+SQL Error: duplicate column name: trigger_type SQL: ALTER TABLE automations ADD COLUMN trigger_type TEXT DEFAULT 
+'lead_created'
+SQL Error: duplicate column name: trigger_config SQL: ALTER TABLE automations ADD COLUMN trigger_config TEXT DEFAULT 
+'{}'
+SQL Error: duplicate column name: conditions SQL: ALTER TABLE automations ADD COLUMN conditions TEXT DEFAULT '[]'
+SQL Error: duplicate column name: actions SQL: ALTER TABLE automations ADD COLUMN actions TEXT DEFAULT '[]'
+SQL Error: duplicate column name: run_count SQL: ALTER TABLE automations ADD COLUMN run_count INTEGER DEFAULT 0
+SQL Error: duplicate column name: last_run_at SQL: ALTER TABLE automations ADD COLUMN last_run_at TEXT
+SQL Error: duplicate column name: title SQL: ALTER TABLE activities ADD COLUMN title TEXT
+SQL Error: duplicate column name: agent_type SQL: ALTER TABLE activities ADD COLUMN agent_type TEXT
+SQL Error: duplicate column name: last_contact_at SQL: ALTER TABLE leads ADD COLUMN last_contact_at TEXT
+SQL Error: duplicate column name: ia_score_label SQL: ALTER TABLE leads ADD COLUMN ia_score_label TEXT
+SQL Error: duplicate column name: ia_next_action SQL: ALTER TABLE leads ADD COLUMN ia_next_action TEXT
+SQL Error: duplicate column name: ia_insights SQL: ALTER TABLE leads ADD COLUMN ia_insights TEXT
+SQL Error: duplicate column name: pipeline_stage SQL: ALTER TABLE leads ADD COLUMN pipeline_stage TEXT
+SQL Error: duplicate column name: pipeline_stage_updated_at SQL: ALTER TABLE leads ADD COLUMN 
+pipeline_stage_updated_at TEXT
+SQL Error: duplicate column name: operation_type SQL: ALTER TABLE leads ADD COLUMN operation_type TEXT
+SQL Error: duplicate column name: budget_max SQL: ALTER TABLE leads ADD COLUMN budget_max REAL
+SQL Error: duplicate column name: zones SQL: ALTER TABLE leads ADD COLUMN zones TEXT
+SQL Error: duplicate column name: urgency SQL: ALTER TABLE leads ADD COLUMN urgency TEXT
+SQL Error: duplicate column name: property_type SQL: ALTER TABLE leads ADD COLUMN property_type TEXT
+SQL Error: duplicate column name: destinations SQL: ALTER TABLE automations ADD COLUMN destinations TEXT DEFAULT '[]'
+SQL Error: duplicate column name: version SQL: ALTER TABLE automations ADD COLUMN version INTEGER DEFAULT 2
+SQL Error: duplicate column name: email SQL: ALTER TABLE agencies ADD COLUMN email TEXT
+SQL Error: duplicate column name: phone SQL: ALTER TABLE agencies ADD COLUMN phone TEXT
+SQL Error: duplicate column name: whatsapp_token SQL: ALTER TABLE agencies ADD COLUMN whatsapp_token TEXT
+SQL Error: duplicate column name: whatsapp_phone_id SQL: ALTER TABLE agencies ADD COLUMN whatsapp_phone_id TEXT
+SQL Error: duplicate column name: whatsapp_number SQL: ALTER TABLE agencies ADD COLUMN whatsapp_number TEXT
+SQL Error: duplicate column name: address SQL: ALTER TABLE agencies ADD COLUMN address TEXT
+SQL Error: duplicate column name: city SQL: ALTER TABLE agencies ADD COLUMN city TEXT
+SQL Error: duplicate column name: website SQL: ALTER TABLE agencies ADD COLUMN website TEXT
+SQL Error: duplicate column name: instagram SQL: ALTER TABLE agencies ADD COLUMN instagram TEXT
+SQL Error: duplicate column name: facebook SQL: ALTER TABLE agencies ADD COLUMN facebook TEXT
+SQL Error: duplicate column name: linkedin SQL: ALTER TABLE agencies ADD COLUMN linkedin TEXT
+SQL Error: duplicate column name: tiktok SQL: ALTER TABLE agencies ADD COLUMN tiktok TEXT
+SQL Error: duplicate column name: cif SQL: ALTER TABLE agencies ADD COLUMN cif TEXT
+SQL Error: duplicate column name: legal_name SQL: ALTER TABLE agencies ADD COLUMN legal_name TEXT
+SQL Error: duplicate column name: sendgrid_api_key SQL: ALTER TABLE agencies ADD COLUMN sendgrid_api_key TEXT
+SQL Error: duplicate column name: sendgrid_from_email SQL: ALTER TABLE agencies ADD COLUMN sendgrid_from_email TEXT
+SQL Error: duplicate column name: sendgrid_from_name SQL: ALTER TABLE agencies ADD COLUMN sendgrid_from_name TEXT
+SQL Error: duplicate column name: smtp_host SQL: ALTER TABLE agencies ADD COLUMN smtp_host TEXT
+SQL Error: duplicate column name: smtp_port SQL: ALTER TABLE agencies ADD COLUMN smtp_port INTEGER
+SQL Error: duplicate column name: smtp_user SQL: ALTER TABLE agencies ADD COLUMN smtp_user TEXT
+SQL Error: duplicate column name: smtp_password SQL: ALTER TABLE agencies ADD COLUMN smtp_password TEXT
+SQL Error: duplicate column name: telegram_bot_token SQL: ALTER TABLE agencies ADD COLUMN telegram_bot_token TEXT
+SQL Error: duplicate column name: telegram_chat_id SQL: ALTER TABLE agencies ADD COLUMN telegram_chat_id TEXT
+SQL Error: duplicate column name: slack_webhook_url SQL: ALTER TABLE agencies ADD COLUMN slack_webhook_url TEXT
+SQL Error: duplicate column name: notion_api_key SQL: ALTER TABLE agencies ADD COLUMN notion_api_key TEXT
+SQL Error: duplicate column name: notion_database_id SQL: ALTER TABLE agencies ADD COLUMN notion_database_id TEXT
+SQL Error: duplicate column name: airtable_api_key SQL: ALTER TABLE agencies ADD COLUMN airtable_api_key TEXT
+SQL Error: duplicate column name: airtable_base_id SQL: ALTER TABLE agencies ADD COLUMN airtable_base_id TEXT
+SQL Error: duplicate column name: airtable_table SQL: ALTER TABLE agencies ADD COLUMN airtable_table TEXT
+SQL Error: duplicate column name: google_sheets_id SQL: ALTER TABLE agencies ADD COLUMN google_sheets_id TEXT
+SQL Error: duplicate column name: google_service_account SQL: ALTER TABLE agencies ADD COLUMN google_service_account 
+TEXT
+SQL Error: duplicate column name: zapier_webhook_url SQL: ALTER TABLE agencies ADD COLUMN zapier_webhook_url TEXT
+SQL Error: duplicate column name: make_webhook_url SQL: ALTER TABLE agencies ADD COLUMN make_webhook_url TEXT
+SQL Error: duplicate column name: n8n_webhook_url SQL: ALTER TABLE agencies ADD COLUMN n8n_webhook_url TEXT
+SQL Error: duplicate column name: onboarding_completed SQL: ALTER TABLE agencies ADD COLUMN onboarding_completed 
+INTEGER DEFAULT 0
+SQL Error: duplicate column name: onboarding_step SQL: ALTER TABLE agencies ADD COLUMN onboarding_step INTEGER DEFAULT 
+0
+SQL Error: duplicate column name: meta_page_id SQL: ALTER TABLE agencies ADD COLUMN meta_page_id TEXT
+SQL Error: duplicate column name: plan SQL: ALTER TABLE agencies ADD COLUMN plan TEXT DEFAULT 'starter'
+SQL Error: duplicate column name: plan_status SQL: ALTER TABLE agencies ADD COLUMN plan_status TEXT DEFAULT 'trialing'
+SQL Error: duplicate column name: wa_verify_token SQL: ALTER TABLE agencies ADD COLUMN wa_verify_token TEXT
+SQL Error: duplicate column name: wa_webhook_token SQL: ALTER TABLE agencies ADD COLUMN wa_webhook_token TEXT
+SQL Error: duplicate column name: email_provider SQL: ALTER TABLE agencies ADD COLUMN email_provider TEXT DEFAULT 
+'sendgrid'
+SQL Error: duplicate column name: slugs SQL: ALTER TABLE agencies ADD COLUMN slugs TEXT
+SQL Error: duplicate column name: primary_color SQL: ALTER TABLE agencies ADD COLUMN primary_color TEXT DEFAULT 
+'#6366f1'
+SQL Error: duplicate column name: secondary_color SQL: ALTER TABLE agencies ADD COLUMN secondary_color TEXT DEFAULT 
+'#8b5cf6'
+SQL Error: duplicate column name: logo_url SQL: ALTER TABLE agencies ADD COLUMN logo_url TEXT
+SQL Error: duplicate column name: custom_domain SQL: ALTER TABLE agencies ADD COLUMN custom_domain TEXT
+SQL Error: duplicate column name: province SQL: ALTER TABLE agencies ADD COLUMN province TEXT
+SQL Error: duplicate column name: country SQL: ALTER TABLE agencies ADD COLUMN country TEXT DEFAULT 'ES'
+SQL Error: duplicate column name: timezone SQL: ALTER TABLE agencies ADD COLUMN timezone TEXT DEFAULT 'Europe/Madrid'
+SQL Error: duplicate column name: language SQL: ALTER TABLE agencies ADD COLUMN language TEXT DEFAULT 'es'
+SQL Error: duplicate column name: bot_name SQL: ALTER TABLE agencies ADD COLUMN bot_name TEXT DEFAULT 'Asistente IA'
+SQL Error: duplicate column name: bot_tone SQL: ALTER TABLE agencies ADD COLUMN bot_tone TEXT DEFAULT 'profesional'
+SQL Error: duplicate column name: working_hours SQL: ALTER TABLE agencies ADD COLUMN working_hours TEXT DEFAULT 
+'{"start":"09:00","en
+SQL Error: duplicate column name: webhook_custom SQL: ALTER TABLE agencies ADD COLUMN webhook_custom TEXT
+SQL Error: duplicate column name: whatsapp_number SQL: ALTER TABLE users ADD COLUMN whatsapp_number TEXT
+SQL Error: duplicate column name: telegram_chat_id SQL: ALTER TABLE users ADD COLUMN telegram_chat_id TEXT
+SQL Error: duplicate column name: slack_user_id SQL: ALTER TABLE users ADD COLUMN slack_user_id TEXT
+SQL Error: duplicate column name: notification_email SQL: ALTER TABLE users ADD COLUMN notification_email TEXT
+SQL Error: duplicate column name: signature SQL: ALTER TABLE users ADD COLUMN signature TEXT
+SQL Error: duplicate column name: agency_id SQL: ALTER TABLE conversations ADD COLUMN agency_id TEXT REFERENCES 
+agencies(id) ON D
+SQL Error: duplicate column name: timezone SQL: ALTER TABLE users ADD COLUMN timezone TEXT DEFAULT 'Europe/Madrid'
+SQL Error: duplicate column name: working_hours SQL: ALTER TABLE users ADD COLUMN working_hours TEXT DEFAULT 
+'{"start":"09:00","end":
+SQL Error: duplicate column name: preferences SQL: ALTER TABLE users ADD COLUMN preferences TEXT DEFAULT '{}'
+SQL Error: duplicate column name: created_at SQL: ALTER TABLE usage_counters ADD COLUMN created_at TEXT DEFAULT 
+(datetime('now'))
+[Seed Templates] Total en DB: 38 plantillas
+[Seed N8N] Ya existen 68 automatizaciones. Saltando.
+[Seed Templates] Total en DB: 38 plantillas
+­ƒÅó CRM Inmobiliario API corriendo en puerto 3002
+­ƒôì http://localhost:3002/api/health
+[RAG] Indexando propiedades para agencia 0c468307-43b6-48de-b8b0-a12e5b600058...
+[RAG] 0 propiedades indexadas.
+[RAG] Indexando propiedades para agencia 6325b114-6348-4572-83a5-f9021a07458f...
+[RAG] 0 propiedades indexadas.
+[RAG] Indexando propiedades para agencia 63ee0913-2715-4b10-b38c-360c03667e04...
+[RAG] 0 propiedades indexadas.
+[RAG] Indexando propiedades para agencia 7c5f14ae-7b6e-495c-ab9f-33e328d76961...
+[RAG] 0 propiedades indexadas.
+[RAG] Indexando propiedades para agencia 919d2945-31b3-44ab-b85a-d9a1ad37367f...
+[RAG] 0 propiedades indexadas.
+[RAG] Indexando propiedades para agencia 92316705-b010-45a4-b012-9dcd937c5402...
+[RAG] 0 propiedades indexadas.
+[RAG] Indexando propiedades para agencia 97b482f6-e488-446f-b798-eb30cbadfa50...
+[RAG] 0 propiedades indexadas.
+[RAG] Indexando propiedades para agencia b80a519b-142a-444b-a2d5-13ef05a34389...
+[RAG] 0 propiedades indexadas.
+[RAG] Indexando propiedades para agencia fee0b01e-d775-489f-98ff-f675c54339e1...
+[RAG] 0 propiedades indexadas.
+[REGISTER] Nueva agencia creada: cenr (36ab0a36-8942-4481-a60f-80aa35041166) por alejandro (automake0ff@gmail.com)
+[TEMPLATES] Installed "Follow-up 24h sin respuesta" for agency 36ab0a36-8942-4481-a60f-80aa35041166

@@ -4,6 +4,7 @@ import { all, get, run } from '../db/db.js'
 import { auth, requireRole } from '../middleware/auth.js'
 import { callOpenRouter, streamOpenRouter, parseAgentReply } from '../services/openrouter.js'
 import { getAgentSystemPrompt, AGENT_META } from '../agents/index.js'
+import { checkAgentAccessMiddleware, checkLimit } from '../services/plan-checker.js'
 
 const router = Router()
 router.use(auth)
@@ -11,11 +12,10 @@ router.use(auth)
 // GET /api/agents - List agents (with filters)
 router.get('/', (req, res) => {
   try {
-    const { agency_id, type, status } = req.query
-    let sql = 'SELECT * FROM ai_agents WHERE 1=1'
-    const params = {}
+    const { type, status } = req.query
+    let sql = 'SELECT * FROM ai_agents WHERE agency_id = @agency_id'
+    const params = { agency_id: req.user.agency_id }
 
-    if (agency_id) { sql += ' AND agency_id = @agency_id'; params.agency_id = agency_id }
     if (type) { sql += ' AND type = @type'; params.type = type }
     if (status) { sql += ' AND status = @status'; params.status = status }
 
@@ -54,7 +54,7 @@ router.get('/types', (req, res) => {
 // GET /api/agents/:id - Get single agent
 router.get('/:id', (req, res) => {
   try {
-    const agent = get('SELECT * FROM ai_agents WHERE id = @id', { id: req.params.id })
+    const agent = get('SELECT * FROM ai_agents WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id })
     if (!agent) return res.status(404).json({ error: 'Agente no encontrado.' })
     agent.config = agent.config ? JSON.parse(agent.config) : null
     agent.metrics = agent.metrics ? JSON.parse(agent.metrics) : null
@@ -73,7 +73,7 @@ router.get('/:id', (req, res) => {
 // POST /api/agents/:id/toggle - Toggle active/inactive
 router.post('/:id/toggle', (req, res) => {
   try {
-    const agent = get('SELECT * FROM ai_agents WHERE id = @id', { id: req.params.id })
+    const agent = get('SELECT * FROM ai_agents WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id })
     if (!agent) return res.status(404).json({ error: 'Agente no encontrado.' })
 
     const newStatus = agent.status === 'active' ? 'inactive' : 'active'
@@ -90,9 +90,9 @@ router.post('/:id/toggle', (req, res) => {
 })
 
 // POST /api/agents/:id/execute - Execute agent with OpenRouter (legacy endpoint)
-router.post('/:id/execute', async (req, res) => {
+router.post('/:id/execute', checkAgentAccessMiddleware, async (req, res) => {
   try {
-    const agent = get('SELECT * FROM ai_agents WHERE id = @id', { id: req.params.id })
+    const agent = get('SELECT * FROM ai_agents WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id })
     if (!agent) return res.status(404).json({ error: 'Agente no encontrado.' })
 
     const { context, message, lead_id } = req.body
@@ -188,7 +188,7 @@ router.post('/:id/execute', async (req, res) => {
 // POST /api/agents/:id/chat - Chat with agent via OpenRouter (with streaming support)
 router.post('/:id/chat', async (req, res) => {
   try {
-    const agent = get('SELECT * FROM ai_agents WHERE id = @id', { id: req.params.id })
+    const agent = get('SELECT * FROM ai_agents WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id })
     if (!agent) return res.status(404).json({ error: 'Agente no encontrado.' })
 
     const { message, conversation_history = [], lead_context = {}, stream = false } = req.body
@@ -355,7 +355,7 @@ router.post('/:id/chat', async (req, res) => {
 // GET /api/agents/:id/metrics - Get agent metrics
 router.get('/:id/metrics', (req, res) => {
   try {
-    const agent = get('SELECT * FROM ai_agents WHERE id = @id', { id: req.params.id })
+    const agent = get('SELECT * FROM ai_agents WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id })
     if (!agent) return res.status(404).json({ error: 'Agente no encontrado.' })
 
     const metrics = agent.metrics ? JSON.parse(agent.metrics) : {}

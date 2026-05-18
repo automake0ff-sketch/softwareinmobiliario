@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
+import crypto from 'crypto';
 import { initDB, all, get, run, saveDB } from './db/db.js';
 import { defaultQueue, JobQueue } from './services/queue.js';
 import { initRealtime, RealtimeService } from './services/realtime.js';
@@ -130,9 +131,14 @@ async function start() {
   app.use('/api/mcp', (await import('./routes/mcp.js')).default);
   app.use('/api/automations', (await import('./routes/automations.js')).default);
   app.use('/api/automations', (await import('./routes/automations-execute-realtime.js')).default);
+  app.use('/api/destinations', (await import('./routes/destinations.js')).default);
+  app.use('/api/auth/register', (await import('./routes/register.js')).default);
+  app.use('/api/login', (await import('./routes/login.js')).default);
+  app.use('/api/templates', (await import('./routes/templates.js')).default);
+  app.use('/api/admin', (await import('./routes/admin.js')).default);
 
   // Run DB migrations for automations table
-  runMigration();
+  await runMigration();
 
   app.use((err, req, res, next) => {
     console.error('[UNHANDLED ERROR]', err.stack || err.message || err);
@@ -321,31 +327,78 @@ async function start() {
     res.json({ connectedClients: realtime.getConnectedClients() });
   });
 
-  app.get('/api/billing/plans', (req, res) => {
-    res.json({ plans: Object.values(PLANS), paymentMethods: Object.values(PAYMENT_METHODS) });
+  app.get('/api/billing/plans', async (req, res) => {
+    const { PLANS: PLAN_DEFS } = await import('./services/plans.js')
+    res.json({ plans: Object.values(PLAN_DEFS), paymentMethods: Object.values(PAYMENT_METHODS) });
   });
 
-  app.get('/api/billing/subscription', async (req, res) => {
-    const agencyId = req.headers['x-auth-agency'] || get('SELECT id FROM agencies LIMIT 1')?.id;
-    if (!agencyId) return res.status(400).json({ error: 'No agency found' });
-    const sub = await stripe.getSubscription(agencyId);
+  app.get('/api/billing/subscription', auth, async (req, res) => {
+    const sub = await stripe.getSubscription(req.user.agency_id);
     res.json(sub);
   });
 
-  app.get('/api/billing/limits', async (req, res) => {
-    const agencyId = req.headers['x-auth-agency'] || get('SELECT id FROM agencies LIMIT 1')?.id;
-    if (!agencyId) return res.status(400).json({ error: 'No agency found' });
-    const limits = await stripe.checkLimits(agencyId);
+  app.get('/api/billing/limits', auth, async (req, res) => {
+    const limits = await stripe.checkLimits(req.user.agency_id);
     res.json(limits);
   });
 
-  app.post('/api/billing/create-checkout', async (req, res) => {
+  // ── /api/billing/status — plan actual + uso para el frontend ──
+  app.get('/api/billing/status', auth, async (req, res) => {
+    try {
+      const agencyId = req.user.agency_id
+      const { PLANS } = await import('./services/plans.js')
+      const subs = all('SELECT * FROM subscriptions WHERE agency_id = @aid ORDER BY created_at DESC LIMIT 1', { aid: agencyId })
+      const sub = subs?.[0]
+      const planId = sub?.plan_id || 'starter'
+      const plan = PLANS[planId] || PLANS.starter
+      const startOfMonth = new Date()
+      startOfMonth.setDate(1)
+      const somStr = startOfMonth.toISOString()
+
+      const leadsCount = get("SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND created_at >= @som", { aid: agencyId, som: somStr })?.count || 0
+      const usersCount = get("SELECT COUNT(*) as count FROM users WHERE agency_id = @aid AND active = 1", { aid: agencyId })?.count || 0
+      const officesCount = get("SELECT COUNT(*) as count FROM offices WHERE agency_id = @aid", { aid: agencyId })?.count || 0
+      const agentsCount = get("SELECT COUNT(*) as count FROM ai_agents WHERE agency_id = @aid AND status = 'active'", { aid: agencyId })?.count || 0
+      const automationsCount = get("SELECT COUNT(*) as count FROM automations WHERE agency_id = @aid AND active = 1", { aid: agencyId })?.count || 0
+
+      const leadsLimit = plan.max_leads_per_month
+      const leadsPct = leadsLimit === -1 ? 0 : Math.round((leadsCount / leadsLimit) * 100)
+
+      res.json({
+        plan: planId,
+        plan_name: plan.name,
+        status: sub?.status || 'no_subscription',
+        trial_end: sub?.trial_end,
+        period_end: sub?.current_period_end,
+        cancel_at_period_end: !!sub?.cancel_at_period_end,
+        features: plan.features,
+        available_agents: plan.available_agents,
+        usage: {
+          leads_this_month: leadsCount,
+          leads_limit: leadsLimit,
+          leads_pct: leadsPct,
+          users_active: usersCount,
+          users_limit: plan.max_users,
+          offices_active: officesCount,
+          offices_limit: plan.max_offices,
+          agents_active: agentsCount,
+          agents_limit: plan.max_agents,
+          automations_active: automationsCount,
+          automations_limit: plan.max_automations,
+        },
+      })
+    } catch (e) {
+      console.error('[Billing Status] Error:', e.message)
+      res.status(500).json({ error: 'Error al obtener estado del plan' })
+    }
+  })
+
+  app.post('/api/billing/create-checkout', auth, async (req, res) => {
     try {
       const { planId, interval, paymentMethod } = req.body;
-      const agencyId = req.headers['x-auth-agency'] || get('SELECT id FROM agencies LIMIT 1')?.id;
-      if (!agencyId) return res.status(400).json({ error: 'No agency found' });
-      const agency = get('SELECT * FROM agencies WHERE id = @id', { id: agencyId });
-      if (!PLANS[planId]) return res.status(400).json({ error: 'Invalid plan' });
+      const agency = get('SELECT * FROM agencies WHERE id = @aid', { aid: req.user.agency_id });
+      if (!agency) return res.status(404).json({ error: 'Agencia no encontrada' });
+      if (!PLANS[planId]) return res.status(400).json({ error: 'Plan inválido' });
       const session = await stripe.createCheckoutSession(agency, planId, interval, paymentMethod);
       res.json(session);
     } catch (e) {
@@ -353,16 +406,12 @@ async function start() {
     }
   });
 
-  app.post('/api/billing/cancel', (req, res) => {
-    const agencyId = req.headers['x-auth-agency'] || get('SELECT id FROM agencies LIMIT 1')?.id;
-    if (!agencyId) return res.status(400).json({ error: 'No agency found' });
-    stripe.cancelSubscription(agencyId).then(r => res.json(r));
+  app.post('/api/billing/cancel', auth, (req, res) => {
+    stripe.cancelSubscription(req.user.agency_id).then(r => res.json(r));
   });
 
-  app.get('/api/billing/invoices', async (req, res) => {
-    const agencyId = req.headers['x-auth-agency'] || get('SELECT id FROM agencies LIMIT 1')?.id;
-    if (!agencyId) return res.status(400).json({ error: 'No agency found' });
-    const invoices = await stripe.getInvoices(agencyId);
+  app.get('/api/billing/invoices', auth, async (req, res) => {
+    const invoices = await stripe.getInvoices(req.user.agency_id);
     res.json(invoices);
   });
 
@@ -434,8 +483,28 @@ async function start() {
       seedAutomationsForExistingAgencies();
     }
   } catch (e) {
-    console.log('Seeding demo data...');
-    seedDemoData();
+    console.log('[Seed] Error in initial seeding:', e.message);
+  }
+
+  try {
+    const { seedDestinationsAutomations } = await import('./services/seed-automations.js');
+    seedDestinationsAutomations();
+  } catch (e) {
+    console.log('[Seed] Error seeding destination automations:', e.message);
+  }
+
+  try {
+    const { seedN8nAutomations } = await import('./services/seed-n8n-automations.js');
+    seedN8nAutomations();
+  } catch (e) {
+    console.log('[Seed] Error seeding n8n automations:', e.message);
+  }
+
+  try {
+    const { seedAutomationTemplates } = await import('./services/seed-templates.js');
+    seedAutomationTemplates();
+  } catch (e) {
+    console.log('[Seed] Error seeding templates:', e.message);
   }
 
   server.listen(PORT, () => {
@@ -478,7 +547,7 @@ function generateAgentResponse(agentType, lead, messageBody, history) {
 }
 
 // DB Migration: Expand tables schema
-function runMigration() {
+async function runMigration() {
   const migrations = [
     `ALTER TABLE automations ADD COLUMN description TEXT DEFAULT ''`,
     `ALTER TABLE automations ADD COLUMN is_active INTEGER DEFAULT 1`,
@@ -511,10 +580,159 @@ function runMigration() {
     `ALTER TABLE leads ADD COLUMN zones TEXT`,
     `ALTER TABLE leads ADD COLUMN urgency TEXT`,
     `ALTER TABLE leads ADD COLUMN property_type TEXT`,
+    // Destinations system for automations
+    `ALTER TABLE automations ADD COLUMN destinations TEXT DEFAULT '[]'`,
+    `ALTER TABLE automations ADD COLUMN version INTEGER DEFAULT 2`,
+    `CREATE TABLE IF NOT EXISTS agency_destinations (
+      id TEXT PRIMARY KEY,
+      agency_id TEXT REFERENCES agencies(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      name TEXT NOT NULL,
+      credentials TEXT DEFAULT '{}',
+      is_active INTEGER DEFAULT 1,
+      last_tested_at TEXT,
+      last_test_ok INTEGER,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_agency_destinations ON agency_destinations(agency_id, type, is_active)`,
+    // ── Migración: columnas de configuración de agencia ─────
+    `ALTER TABLE agencies ADD COLUMN email TEXT`,
+    `ALTER TABLE agencies ADD COLUMN phone TEXT`,
+    `ALTER TABLE agencies ADD COLUMN whatsapp_token TEXT`,
+    `ALTER TABLE agencies ADD COLUMN whatsapp_phone_id TEXT`,
+    `ALTER TABLE agencies ADD COLUMN whatsapp_number TEXT`,
+    `ALTER TABLE agencies ADD COLUMN address TEXT`,
+    `ALTER TABLE agencies ADD COLUMN city TEXT`,
+    `ALTER TABLE agencies ADD COLUMN website TEXT`,
+    `ALTER TABLE agencies ADD COLUMN instagram TEXT`,
+    `ALTER TABLE agencies ADD COLUMN facebook TEXT`,
+    `ALTER TABLE agencies ADD COLUMN linkedin TEXT`,
+    `ALTER TABLE agencies ADD COLUMN tiktok TEXT`,
+    `ALTER TABLE agencies ADD COLUMN cif TEXT`,
+    `ALTER TABLE agencies ADD COLUMN legal_name TEXT`,
+    `ALTER TABLE agencies ADD COLUMN sendgrid_api_key TEXT`,
+    `ALTER TABLE agencies ADD COLUMN sendgrid_from_email TEXT`,
+    `ALTER TABLE agencies ADD COLUMN sendgrid_from_name TEXT`,
+    `ALTER TABLE agencies ADD COLUMN smtp_host TEXT`,
+    `ALTER TABLE agencies ADD COLUMN smtp_port INTEGER`,
+    `ALTER TABLE agencies ADD COLUMN smtp_user TEXT`,
+    `ALTER TABLE agencies ADD COLUMN smtp_password TEXT`,
+    `ALTER TABLE agencies ADD COLUMN telegram_bot_token TEXT`,
+    `ALTER TABLE agencies ADD COLUMN telegram_chat_id TEXT`,
+    `ALTER TABLE agencies ADD COLUMN slack_webhook_url TEXT`,
+    `ALTER TABLE agencies ADD COLUMN notion_api_key TEXT`,
+    `ALTER TABLE agencies ADD COLUMN notion_database_id TEXT`,
+    `ALTER TABLE agencies ADD COLUMN airtable_api_key TEXT`,
+    `ALTER TABLE agencies ADD COLUMN airtable_base_id TEXT`,
+    `ALTER TABLE agencies ADD COLUMN airtable_table TEXT`,
+    `ALTER TABLE agencies ADD COLUMN google_sheets_id TEXT`,
+    `ALTER TABLE agencies ADD COLUMN google_service_account TEXT`,
+    `ALTER TABLE agencies ADD COLUMN zapier_webhook_url TEXT`,
+    `ALTER TABLE agencies ADD COLUMN make_webhook_url TEXT`,
+    `ALTER TABLE agencies ADD COLUMN n8n_webhook_url TEXT`,
+    `ALTER TABLE agencies ADD COLUMN onboarding_completed INTEGER DEFAULT 0`,
+    `ALTER TABLE agencies ADD COLUMN onboarding_step INTEGER DEFAULT 0`,
+    `ALTER TABLE agencies ADD COLUMN meta_page_id TEXT`,
+    `ALTER TABLE agencies ADD COLUMN plan TEXT DEFAULT 'starter'`,
+    `ALTER TABLE agencies ADD COLUMN plan_status TEXT DEFAULT 'trialing'`,
+    `ALTER TABLE agencies ADD COLUMN wa_verify_token TEXT`,
+    `ALTER TABLE agencies ADD COLUMN wa_webhook_token TEXT`,
+    `ALTER TABLE agencies ADD COLUMN email_provider TEXT DEFAULT 'sendgrid'`,
+    `ALTER TABLE agencies ADD COLUMN slugs TEXT`,
+    // ── Multi-tenant: branding y configuración ────────────
+    `ALTER TABLE agencies ADD COLUMN primary_color TEXT DEFAULT '#6366f1'`,
+    `ALTER TABLE agencies ADD COLUMN secondary_color TEXT DEFAULT '#8b5cf6'`,
+    `ALTER TABLE agencies ADD COLUMN logo_url TEXT`,
+    `ALTER TABLE agencies ADD COLUMN custom_domain TEXT`,
+    `ALTER TABLE agencies ADD COLUMN province TEXT`,
+    `ALTER TABLE agencies ADD COLUMN country TEXT DEFAULT 'ES'`,
+    `ALTER TABLE agencies ADD COLUMN timezone TEXT DEFAULT 'Europe/Madrid'`,
+    `ALTER TABLE agencies ADD COLUMN language TEXT DEFAULT 'es'`,
+    `ALTER TABLE agencies ADD COLUMN bot_name TEXT DEFAULT 'Asistente IA'`,
+    `ALTER TABLE agencies ADD COLUMN bot_tone TEXT DEFAULT 'profesional'`,
+    `ALTER TABLE agencies ADD COLUMN working_hours TEXT DEFAULT '{"start":"09:00","end":"20:00","days":[1,2,3,4,5]}'`,
+    `ALTER TABLE agencies ADD COLUMN webhook_custom TEXT`,
+    `CREATE TABLE IF NOT EXISTS automation_templates (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      category TEXT,
+      difficulty TEXT DEFAULT 'basica',
+      trigger_type TEXT NOT NULL,
+      trigger_config TEXT DEFAULT '{}',
+      conditions TEXT DEFAULT '[]',
+      actions TEXT DEFAULT '[]',
+      min_plan TEXT DEFAULT 'starter',
+      requires TEXT DEFAULT '[]',
+      installs INTEGER DEFAULT 0,
+      rating REAL DEFAULT 0,
+      is_active INTEGER DEFAULT 1,
+      is_featured INTEGER DEFAULT 0,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    // ── Migración: columnas de contacto en users ────────────
+    `ALTER TABLE users ADD COLUMN whatsapp_number TEXT`,
+    `ALTER TABLE users ADD COLUMN telegram_chat_id TEXT`,
+    `ALTER TABLE users ADD COLUMN slack_user_id TEXT`,
+    `ALTER TABLE users ADD COLUMN notification_email TEXT`,
+    `ALTER TABLE users ADD COLUMN signature TEXT`,
+    // ── Migración: agency_id en conversations ─────────────
+    `ALTER TABLE conversations ADD COLUMN agency_id TEXT REFERENCES agencies(id) ON DELETE CASCADE`,
+    `CREATE INDEX IF NOT EXISTS idx_conversations_agency ON conversations(agency_id)`,
+    `ALTER TABLE users ADD COLUMN timezone TEXT DEFAULT 'Europe/Madrid'`,
+    `ALTER TABLE users ADD COLUMN working_hours TEXT DEFAULT '{"start":"09:00","end":"20:00","days":[1,2,3,4,5]}'`,
+    `ALTER TABLE users ADD COLUMN preferences TEXT DEFAULT '{}'`,
+    // ── Crear vista de contexto completo ────────────────────
+    `DROP VIEW IF EXISTS agency_full_context`,
+    `CREATE VIEW agency_full_context AS
+      SELECT a.id AS agency_id, a.name AS agency_name, a.city AS agency_city,
+        a.email AS agency_email, a.phone AS agency_phone,
+        a.whatsapp_number AS agency_whatsapp, a.website AS agency_website,
+        a.instagram AS agency_instagram, a.facebook AS agency_facebook,
+        a.address AS agency_address,
+        a.whatsapp_token AS wa_token, a.whatsapp_phone_id AS wa_phone_id,
+        a.sendgrid_api_key AS sg_api_key, a.sendgrid_from_email AS sg_from_email,
+        a.sendgrid_from_name AS sg_from_name,
+        a.smtp_host, a.smtp_port, a.smtp_user, a.smtp_password,
+        a.telegram_bot_token, a.telegram_chat_id, a.slack_webhook_url,
+        a.notion_api_key, a.notion_database_id,
+        a.airtable_api_key, a.airtable_base_id, a.airtable_table,
+        a.google_sheets_id,
+        a.zapier_webhook_url, a.make_webhook_url, a.n8n_webhook_url
+      FROM agencies a`,
+    // ── Migración: usage_counters.created_at ─────────────────
+    `ALTER TABLE usage_counters ADD COLUMN created_at TEXT DEFAULT (datetime('now'))`,
+    // ── Tabla usage_monthly para contadores con incremento ────
+    `CREATE TABLE IF NOT EXISTS usage_monthly (
+      id TEXT PRIMARY KEY,
+      agency_id TEXT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      period TEXT NOT NULL,
+      counter TEXT NOT NULL,
+      value INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(agency_id, period, counter)
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_usage_monthly ON usage_monthly(agency_id, period, counter)`,
   ]
   for (const sql of migrations) {
     try { run(sql) } catch { /* column may already exist */ }
   }
+
+  // ── Seed plantillas globales del marketplace ──
+  try {
+    const { seedAutomationTemplates } = await import('./services/seed-templates.js');
+    seedAutomationTemplates();
+  } catch (e) {
+    console.log('[Migration] Seed templates error:', e.message);
+  }
+}
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+  return `${salt}:${hash}`;
 }
 
 function seedDemoData() {
@@ -525,7 +743,7 @@ function seedDemoData() {
     run(
       `INSERT INTO agencies (id, name, slug, logo_url, primary_color, domain, created_at)
        VALUES (@id, @name, @slug, @logo_url, @primary_color, @domain, datetime('now'))`,
-      { id: agencyId, name: 'InmoTech Realty', slug: 'inmotech-reality', logo_url: '', primary_color: '#2563eb', domain: '' }
+      { id: agencyId, name: 'InmoTech Realty', slug: 'inmotech-realty', logo_url: '', primary_color: '#2563eb', domain: '' }
     );
   } catch (e) {
     console.log('Agency already exists, skipping seed');
@@ -551,12 +769,12 @@ function seedDemoData() {
   const m1 = uuidv4();
   run(`INSERT INTO users (id, email, name, password_hash, role, agency_id, office_id, phone, created_at)
     VALUES (@id, @email, @name, @password_hash, @role, @agency_id, @office_id, @phone, datetime('now'))`,
-    { id: m1, email: 'manager@inmotech.es', name: 'Carlos Martínez', password_hash: 'demo', role: 'manager', agency_id: agencyId, office_id: officeIds[0], phone: '+34 611 111 111' });
+    { id: m1, email: 'manager@inmotech.es', name: 'Carlos Martínez', password_hash: hashPassword('demo'), role: 'manager', agency_id: agencyId, office_id: officeIds[0], phone: '+34 611 111 111' });
 
   const m2 = uuidv4();
   run(`INSERT INTO users (id, email, name, password_hash, role, agency_id, office_id, phone, created_at)
     VALUES (@id, @email, @name, @password_hash, @role, @agency_id, @office_id, @phone, datetime('now'))`,
-    { id: m2, email: 'manager2@inmotech.es', name: 'Laura García', password_hash: 'demo', role: 'manager', agency_id: agencyId, office_id: officeIds[1], phone: '+34 622 222 222' });
+    { id: m2, email: 'manager2@inmotech.es', name: 'Laura García', password_hash: hashPassword('demo'), role: 'manager', agency_id: agencyId, office_id: officeIds[1], phone: '+34 622 222 222' });
 
   const comercialData = [
     { name: 'Ana López', email: 'ana@inmotech.es', office: 0, phone: '+34 633 333 333' },
@@ -570,7 +788,7 @@ function seedDemoData() {
     const id = uuidv4();
     run(`INSERT INTO users (id, email, name, password_hash, role, agency_id, office_id, phone, created_at)
       VALUES (@id, @email, @name, @password_hash, @role, @agency_id, @office_id, @phone, datetime('now'))`,
-      { id, email: c.email, name: c.name, password_hash: 'demo', role: 'comercial', agency_id: agencyId, office_id: officeIds[c.office], phone: c.phone });
+      { id, email: c.email, name: c.name, password_hash: hashPassword('demo'), role: 'comercial', agency_id: agencyId, office_id: officeIds[c.office], phone: c.phone });
     return id;
   });
 
@@ -1232,22 +1450,28 @@ async function initializeRAG() {
     const { indexProperty, reindexAgencyProperties } = await import('./rag/indexer-properties.js');
     const { seedDefaultKnowledgeBase } = await import('./rag/indexer-knowledge.js');
 
-    const agency = get('SELECT id FROM agencies LIMIT 1');
-    if (!agency) return;
+    const agencies = all('SELECT id FROM agencies');
+    if (!agencies || agencies.length === 0) return;
 
-    const propertyCount = get('SELECT COUNT(*) as count FROM property_embeddings WHERE agency_id = @aid', { aid: agency.id });
-    const kbCount = get('SELECT COUNT(*) as count FROM knowledge_base_embeddings WHERE agency_id = @aid', { aid: agency.id });
+    for (const agency of agencies) {
+      try {
+        const propertyCount = get('SELECT COUNT(*) as count FROM property_embeddings WHERE agency_id = @aid', { aid: agency.id });
+        const kbCount = get('SELECT COUNT(*) as count FROM knowledge_base_embeddings WHERE agency_id = @aid', { aid: agency.id });
 
-    if (!propertyCount || propertyCount.count === 0) {
-      console.log('[RAG] Indexando propiedades existentes...');
-      const results = await reindexAgencyProperties(agency.id);
-      console.log(`[RAG] ${results.length} propiedades indexadas.`);
-    }
+        if (!propertyCount || propertyCount.count === 0) {
+          console.log(`[RAG] Indexando propiedades para agencia ${agency.id}...`);
+          const results = await reindexAgencyProperties(agency.id);
+          console.log(`[RAG] ${results.length} propiedades indexadas.`);
+        }
 
-    if (!kbCount || kbCount.count === 0) {
-      console.log('[RAG] Sembrando knowledge base por defecto...');
-      const results = await seedDefaultKnowledgeBase(agency.id);
-      console.log(`[RAG] ${results.length} entradas de conocimiento indexadas.`);
+        if (!kbCount || kbCount.count === 0) {
+          console.log(`[RAG] Sembrando knowledge base para agencia ${agency.id}...`);
+          const results = await seedDefaultKnowledgeBase(agency.id);
+          console.log(`[RAG] ${results.length} entradas de conocimiento indexadas.`);
+        }
+      } catch (err) {
+        console.warn(`[RAG] Error para agencia ${agency.id}:`, err.message);
+      }
     }
   } catch (err) {
     console.warn('[RAG] Initialization skipped:', err.message);

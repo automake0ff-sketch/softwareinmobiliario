@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { getInitials, formatCurrency } from '../utils/formatters'
+import { PlanGate } from '../components/billing/PlanGate'
 
 const roleConfig = {
   admin: { label: 'Admin', icon: Shield, color: 'text-err bg-err/10 border-err/20' },
@@ -54,12 +55,13 @@ export default function TeamPage() {
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="space-y-6"
-    >
+    <PlanGate feature="team_management" fullPage>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="space-y-6"
+      >
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-50 to-indigo-100 text-indigo-500 flex items-center justify-center shadow-sm">
@@ -289,6 +291,7 @@ export default function TeamPage() {
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+      </motion.div>
+    </PlanGate>
   )
 }

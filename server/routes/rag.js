@@ -30,11 +30,12 @@ router.post('/search/properties', async (req, res) => {
 
 router.post('/search/knowledge', async (req, res) => {
   try {
-    const { query, agency_id, category } = req.body;
-    if (!query || !agency_id) return res.status(400).json({ error: 'query y agency_id son requeridos' });
+    const agencyId = req.user.agency_id;
+    const { query, category } = req.body;
+    if (!query) return res.status(400).json({ error: 'query es requerido' });
 
     const retriever = new PropIARagRetriever();
-    const results = await retriever.searchKnowledgeBase(query, agency_id, category);
+    const results = await retriever.searchKnowledgeBase(query, agencyId, category);
     res.json({ results });
   } catch (error) {
     console.error('[RAG] Error searching knowledge base:', error.message);
@@ -44,11 +45,12 @@ router.post('/search/knowledge', async (req, res) => {
 
 router.post('/search/conversations', async (req, res) => {
   try {
-    const { message, agency_id, outcome } = req.body;
-    if (!message || !agency_id) return res.status(400).json({ error: 'message y agency_id son requeridos' });
+    const agencyId = req.user.agency_id;
+    const { message, outcome } = req.body;
+    if (!message) return res.status(400).json({ error: 'message es requerido' });
 
     const retriever = new PropIARagRetriever();
-    const results = await retriever.findSimilarSuccessfulConversations(message, agency_id, outcome);
+    const results = await retriever.findSimilarSuccessfulConversations(message, agencyId, outcome);
     res.json({ results });
   } catch (error) {
     console.error('[RAG] Error searching conversations:', error.message);
@@ -68,10 +70,8 @@ router.post('/index/property/:id', async (req, res) => {
 
 router.post('/index/reindex-agency', async (req, res) => {
   try {
-    const { agency_id } = req.body;
-    if (!agency_id) return res.status(400).json({ error: 'agency_id es requerido' });
-
-    const results = await reindexAgencyProperties(agency_id);
+    const agencyId = req.user.agency_id;
+    const results = await reindexAgencyProperties(agencyId);
     res.json({ indexed: results.length, results });
   } catch (error) {
     console.error('[RAG] Error reindexing agency:', error.message);
@@ -98,12 +98,13 @@ router.post('/index/conversation', async (req, res) => {
 
 router.post('/index/knowledge', async (req, res) => {
   try {
-    const { agency_id, title, content, category } = req.body;
-    if (!agency_id || !title || !content) {
-      return res.status(400).json({ error: 'agency_id, title y content son requeridos' });
+    const agencyId = req.user.agency_id;
+    const { title, content, category } = req.body;
+    if (!title || !content) {
+      return res.status(400).json({ error: 'title y content son requeridos' });
     }
 
-    const result = await indexKnowledgeEntry({ agencyId: agency_id, title, content, category });
+    const result = await indexKnowledgeEntry({ agencyId, title, content, category });
     res.json(result);
   } catch (error) {
     console.error('[RAG] Error indexing knowledge entry:', error.message);
@@ -113,10 +114,8 @@ router.post('/index/knowledge', async (req, res) => {
 
 router.post('/seed-knowledge', async (req, res) => {
   try {
-    const { agency_id } = req.body;
-    if (!agency_id) return res.status(400).json({ error: 'agency_id es requerido' });
-
-    const results = await seedDefaultKnowledgeBase(agency_id);
+    const agencyId = req.user.agency_id;
+    const results = await seedDefaultKnowledgeBase(agencyId);
     res.json({ seeded: results.length, results });
   } catch (error) {
     console.error('[RAG] Error seeding knowledge base:', error.message);
@@ -124,10 +123,11 @@ router.post('/seed-knowledge', async (req, res) => {
   }
 });
 
-router.get('/knowledge/:agencyId', (req, res) => {
+router.get('/knowledge', (req, res) => {
   try {
+    const agencyId = req.user.agency_id;
     const { category } = req.query;
-    const entries = getKnowledgeByCategory(req.params.agencyId, category);
+    const entries = getKnowledgeByCategory(agencyId, category);
     res.json(entries);
   } catch (error) {
     console.error('[RAG] Error getting knowledge:', error.message);

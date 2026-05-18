@@ -1,11 +1,90 @@
+-- ═══════════════════════════════════════════════════════
+-- TABLA CENTRAL: AGENCIES
+-- Cada inmobiliaria registrada = 1 row en esta tabla
+-- ═══════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS agencies (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   slug TEXT NOT NULL UNIQUE,
+
+  -- Datos de contacto
+  email TEXT,
+  phone TEXT,
+  whatsapp_number TEXT,
+  address TEXT,
+  city TEXT,
+  province TEXT,
+  country TEXT DEFAULT 'ES',
+  website TEXT,
+
+  -- Redes sociales
+  instagram TEXT,
+  facebook TEXT,
+  linkedin TEXT,
+  tiktok TEXT,
+
+  -- Branding (para white-label)
   logo_url TEXT,
-  primary_color TEXT DEFAULT '#2563eb',
-  domain TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  primary_color TEXT DEFAULT '#6366f1',
+  secondary_color TEXT DEFAULT '#8b5cf6',
+  custom_domain TEXT,
+
+  -- Credenciales de WhatsApp Business (PRIVADAS de esta agencia)
+  wa_token TEXT,
+  wa_phone_id TEXT,
+  wa_verify_token TEXT,
+  wa_webhook_token TEXT,
+
+  -- Credenciales de email (PRIVADAS)
+  email_provider TEXT DEFAULT 'sendgrid',
+  sendgrid_key TEXT,
+  sendgrid_from_email TEXT,
+  sendgrid_from_name TEXT,
+  smtp_host TEXT,
+  smtp_port INTEGER,
+  smtp_user TEXT,
+  smtp_pass TEXT,
+
+  -- Notificaciones del equipo (PRIVADAS)
+  slack_webhook TEXT,
+  telegram_token TEXT,
+  telegram_chat TEXT,
+
+  -- Bases de datos externas (PRIVADAS)
+  notion_key TEXT,
+  notion_db TEXT,
+  airtable_key TEXT,
+  airtable_base TEXT,
+  airtable_table TEXT DEFAULT 'Leads',
+  sheets_id TEXT,
+  sheets_credentials TEXT,
+
+  -- Webhooks (PRIVADOS)
+  webhook_zapier TEXT,
+  webhook_make TEXT,
+  webhook_n8n TEXT,
+  webhook_custom TEXT,
+
+  -- Suscripción y plan
+  plan TEXT DEFAULT 'starter',
+  plan_status TEXT DEFAULT 'trialing',
+
+  -- Configuración general
+  timezone TEXT DEFAULT 'Europe/Madrid',
+  language TEXT DEFAULT 'es',
+  bot_name TEXT DEFAULT 'Asistente IA',
+  bot_tone TEXT DEFAULT 'profesional',
+  working_hours TEXT DEFAULT '{"start":"09:00","end":"20:00","days":[1,2,3,4,5]}',
+
+  -- Estado del onboarding
+  onboarding_completed INTEGER DEFAULT 0,
+  onboarding_step INTEGER DEFAULT 0,
+
+  -- Metadatos
+  meta_page_id TEXT,
+  slugs TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS offices (
@@ -273,6 +352,7 @@ CREATE TABLE IF NOT EXISTS usage_counters (
   whatsapp_messages_this_month INTEGER DEFAULT 0,
   automations_run_this_month INTEGER DEFAULT 0,
   period_start TEXT DEFAULT (date('now','start of month')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -325,6 +405,72 @@ CREATE INDEX IF NOT EXISTS idx_tags_agency ON tags(agency_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_agency ON notifications(agency_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read);
+
+-- ═══════════════════════════════════════════════════════
+-- PLANTILLAS GLOBALES DEL SAAS (marketplace multi-tenant)
+-- NO tienen agency_id — son las que cualquier inmobiliaria
+-- puede instalar en SU espacio con 1 click
+-- ═══════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS automation_templates (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  category TEXT,
+  difficulty TEXT DEFAULT 'basica',
+  trigger_type TEXT NOT NULL,
+  trigger_config TEXT DEFAULT '{}',
+  conditions TEXT DEFAULT '[]',
+  actions TEXT DEFAULT '[]',
+  min_plan TEXT DEFAULT 'starter',
+  requires TEXT DEFAULT '[]',
+  installs INTEGER DEFAULT 0,
+  rating REAL DEFAULT 0,
+  is_active INTEGER DEFAULT 1,
+  is_featured INTEGER DEFAULT 0,
+  sort_order INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ═══════════════════════════════════════════════════════
+-- VISTA: contexto completo de la agencia para automatizaciones
+-- Cada inmobiliaria tiene SUS datos aquí
+-- ═══════════════════════════════════════════════════════
+CREATE VIEW IF NOT EXISTS agency_full_context AS
+  SELECT a.id AS agency_id, a.name AS agency_name, a.city AS agency_city,
+    a.email AS agency_email, a.phone AS agency_phone,
+    a.whatsapp_number AS agency_whatsapp, a.website AS agency_website,
+    a.instagram AS agency_instagram, a.facebook AS agency_facebook,
+    a.address AS agency_address,
+    a.wa_token AS wa_token, a.wa_phone_id AS wa_phone_id,
+    a.sendgrid_key AS sg_api_key, a.sendgrid_from_email AS sg_from_email,
+    a.sendgrid_from_name AS sg_from_name,
+    a.smtp_host, a.smtp_port, a.smtp_user, a.smtp_pass,
+    a.telegram_token, a.telegram_chat, a.slack_webhook,
+    a.notion_key, a.notion_db,
+    a.airtable_key, a.airtable_base, a.airtable_table,
+    a.sheets_id,
+    a.webhook_zapier, a.webhook_make, a.webhook_n8n, a.webhook_custom,
+    a.plan, a.plan_status, a.country, a.language, a.timezone
+  FROM agencies a;
+
+-- ═══════════════════════════════════════════════════════
+-- VISTA: métricas globales para el admin del SaaS
+-- Solo accesible por super_admin — no incluye datos privados
+-- ═══════════════════════════════════════════════════════
+CREATE VIEW IF NOT EXISTS saas_metrics AS
+SELECT
+  (SELECT COUNT(*) FROM agencies) AS total_agencies,
+  (SELECT COUNT(*) FROM agencies WHERE plan_status = 'active') AS active_agencies,
+  (SELECT COUNT(*) FROM agencies WHERE plan_status = 'trialing') AS trial_agencies,
+  (SELECT COUNT(*) FROM agencies WHERE plan_status = 'canceled') AS canceled_agencies,
+  (SELECT COUNT(*) FROM agencies WHERE created_at > datetime('now', '-7 days')) AS new_this_week,
+  (SELECT COUNT(*) FROM agencies WHERE plan = 'starter') AS plan_starter,
+  (SELECT COUNT(*) FROM agencies WHERE plan = 'profesional') AS plan_profesional,
+  (SELECT COUNT(*) FROM agencies WHERE plan = 'agencia') AS plan_agencia,
+  (SELECT COUNT(*) FROM agencies WHERE plan = 'enterprise') AS plan_enterprise,
+  (SELECT COUNT(*) FROM leads WHERE created_at >= datetime('now', 'start of day')) AS leads_today,
+  (SELECT COUNT(*) FROM activities WHERE type = 'ia_response' AND created_at >= datetime('now', 'start of day')) AS ai_actions_today,
+  (SELECT COUNT(*) FROM automation_logs WHERE created_at >= datetime('now', 'start of day')) AS automations_today;
 
 -- RAG: Property embeddings for semantic search
 CREATE TABLE IF NOT EXISTS property_embeddings (

@@ -3,6 +3,15 @@ import { v4 as uuidv4 } from 'uuid';
 import { all, get, run } from '../db/db.js';
 import { defaultQueue } from '../services/queue.js';
 import { realtime } from '../services/realtime.js';
+import { PLANS } from '../services/plans.js';
+
+function checkAgencyMetaAds(agencyId) {
+  const sub = get('SELECT plan_id, status FROM subscriptions WHERE agency_id = @aid ORDER BY created_at DESC LIMIT 1', { aid: agencyId })
+  if (!sub || sub.status !== 'active') return false
+  const plan = PLANS[sub.plan_id]
+  if (!plan) return false
+  return plan.features?.meta_ads === true
+}
 
 const router = Router();
 
@@ -55,9 +64,17 @@ async function processMetaLead(leadData, pageId) {
     const adsetName = fieldData.adset_name || leadData.adset_name || '';
     const campaignName = fieldData.campaign_name || leadData.campaign_name || '';
 
-    const firstAgency = get('SELECT id FROM agencies LIMIT 1');
-    if (!firstAgency) {
-      console.log('[META] No agency found');
+    let agency = null;
+    if (pageId) {
+      agency = get('SELECT id, name FROM agencies WHERE meta_page_id = @pid', { pid: String(pageId) });
+    }
+    if (!agency) {
+      console.log(`[META] No agency found for page_id: ${pageId}. Lead discarded.`);
+      return;
+    }
+
+    if (!checkAgencyMetaAds(agency.id)) {
+      console.log(`[META] Agency ${agency.id} (${agency.name}) does not have meta_ads feature. Lead discarded.`);
       return;
     }
 
@@ -68,7 +85,7 @@ async function processMetaLead(leadData, pageId) {
         `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
          VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, datetime('now'))`,
         {
-          id: uuidv4(), agency_id: firstAgency.id, lead_id: existingLead.id,
+          id: uuidv4(), agency_id: agency.id, lead_id: existingLead.id,
           type: 'webhook',
           description: 'Lead actualizado desde Meta Ads',
           metadata: JSON.stringify({ adName, adsetName, campaignName, pageId }),
@@ -82,7 +99,7 @@ async function processMetaLead(leadData, pageId) {
       `INSERT INTO leads (id, agency_id, name, phone, email, budget, zone, property_interest, source, status, created_at, updated_at)
        VALUES (@id, @agency_id, @name, @phone, @email, @budget, @zone, @property_interest, @source, @status, datetime('now'), datetime('now'))`,
       {
-        id: leadId, agency_id: firstAgency.id, name, phone, email, budget,
+        id: leadId, agency_id: agency.id, name, phone, email, budget,
         zone: city, property_interest: propertyType, source: 'meta_ads', status: 'nuevo',
       }
     );
@@ -92,7 +109,7 @@ async function processMetaLead(leadData, pageId) {
       `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
        VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, datetime('now'))`,
       {
-        id: utmId, agency_id: firstAgency.id, lead_id: leadId, type: 'utm_data',
+        id: utmId, agency_id: agency.id, lead_id: leadId, type: 'utm_data',
         description: 'UTM data from Meta Ads',
         metadata: JSON.stringify({
           utm_source: 'meta',
@@ -112,9 +129,9 @@ async function processMetaLead(leadData, pageId) {
       const convId = uuidv4();
       const msgs = [{ role: 'lead', content: message, timestamp: new Date().toISOString() }];
       run(
-        `INSERT INTO conversations (id, lead_id, channel, messages, created_at)
-         VALUES (@id, @lead_id, @channel, @messages, datetime('now'))`,
-        { id: convId, lead_id: leadId, channel: 'web', messages: JSON.stringify(msgs) }
+        `INSERT INTO conversations (id, agency_id, lead_id, channel, messages, created_at)
+         VALUES (@id, @agency_id, @lead_id, @channel, @messages, datetime('now'))`,
+        { id: convId, agency_id: agency.id, lead_id: leadId, channel: 'web', messages: JSON.stringify(msgs) }
       );
     }
 
@@ -122,7 +139,7 @@ async function processMetaLead(leadData, pageId) {
       `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
        VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, datetime('now'))`,
       {
-        id: uuidv4(), agency_id: firstAgency.id, lead_id: leadId,
+        id: uuidv4(), agency_id: agency.id, lead_id: leadId,
         type: 'webhook',
         description: `Nuevo lead importado desde Meta Ads: ${name}`,
         metadata: JSON.stringify({ adName, adsetName, campaignName, fieldData }),
@@ -143,7 +160,7 @@ async function processMetaLead(leadData, pageId) {
 
     defaultQueue.add('process_new_lead', {
       leadId,
-      agencyId: firstAgency.id,
+      agencyId: agency.id,
       source: 'meta_ads',
       utm: { utm_source: 'meta', utm_medium: 'ads', utm_campaign: campaignName },
       adName,

@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { all, get, run } from '../db/db.js';
 import { auth } from '../middleware/auth.js';
 import { generateLeadSummary } from '../services/claude.js';
+import { checkLimit } from '../services/plan-checker.js';
 
 const router = Router();
 router.use(auth);
@@ -53,8 +54,8 @@ router.get('/:id', (req, res) => {
       `SELECT l.*, u.name AS assigned_name, u.email AS assigned_email, u.phone AS assigned_phone
        FROM leads l
        LEFT JOIN users u ON l.assigned_to = u.id
-       WHERE l.id = @id`,
-      { id: req.params.id }
+       WHERE l.id = @id AND l.agency_id = @agency_id`,
+      { id: req.params.id, agency_id: req.user.agency_id }
     );
     if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' });
 
@@ -78,7 +79,7 @@ router.get('/:id', (req, res) => {
   }
 });
 
-router.post('/', (req, res) => {
+router.post('/', checkLimit('leads'), (req, res) => {
   try {
     const { name, phone, email, budget, zone, property_interest, source, agency_id, office_id } = req.body;
     if (!name) return res.status(400).json({ error: 'El nombre es obligatorio.' });
@@ -102,7 +103,7 @@ router.post('/', (req, res) => {
 
 router.patch('/:id/status', (req, res) => {
   try {
-    const existing = get('SELECT * FROM leads WHERE id = @id', { id: req.params.id });
+    const existing = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!existing) return res.status(404).json({ error: 'Lead no encontrado.' });
 
     const { status } = req.body;
@@ -124,7 +125,7 @@ router.patch('/:id/status', (req, res) => {
 
 router.patch('/:id', (req, res) => {
   try {
-    const existing = get('SELECT * FROM leads WHERE id = @id', { id: req.params.id });
+    const existing = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!existing) return res.status(404).json({ error: 'Lead no encontrado.' });
 
     const allowed = ['name', 'phone', 'email', 'budget', 'zone', 'property_interest', 'source', 'status', 'office_id', 'assigned_to', 'ia_score', 'ia_insight', 'ia_summary'];
@@ -161,7 +162,7 @@ router.patch('/:id', (req, res) => {
 
 router.delete('/:id', (req, res) => {
   try {
-    const existing = get('SELECT * FROM leads WHERE id = @id', { id: req.params.id });
+    const existing = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!existing) return res.status(404).json({ error: 'Lead no encontrado.' });
 
     run('DELETE FROM leads WHERE id = @id', { id: req.params.id });
@@ -178,7 +179,7 @@ router.post('/:id/assign', (req, res) => {
     const { agent_id } = req.body;
     if (!agent_id) return res.status(400).json({ error: 'Se requiere agent_id.' });
 
-    const existing = get('SELECT * FROM leads WHERE id = @id', { id: req.params.id });
+    const existing = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!existing) return res.status(404).json({ error: 'Lead no encontrado.' });
 
     const agent = get('SELECT * FROM users WHERE id = @id', { id: agent_id });
@@ -197,9 +198,12 @@ router.post('/:id/assign', (req, res) => {
 
 router.get('/:id/activities', (req, res) => {
   try {
+    const lead = get('SELECT id FROM leads WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
+    if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' });
+
     const activities = all(
-      'SELECT a.*, u.name AS user_name FROM activities a LEFT JOIN users u ON a.user_id = u.id WHERE a.lead_id = @lead_id ORDER BY a.created_at DESC LIMIT 50',
-      { lead_id: req.params.id }
+      'SELECT a.*, u.name AS user_name FROM activities a LEFT JOIN users u ON a.user_id = u.id WHERE a.lead_id = @lead_id AND a.agency_id = @agency_id ORDER BY a.created_at DESC LIMIT 50',
+      { lead_id: req.params.id, agency_id: req.user.agency_id }
     );
     res.json(activities);
   } catch (error) {
@@ -210,7 +214,7 @@ router.get('/:id/activities', (req, res) => {
 
 router.post('/:id/insights', async (req, res) => {
   try {
-    const lead = get('SELECT * FROM leads WHERE id = @id', { id: req.params.id });
+    const lead = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' });
 
     const summary = await generateLeadSummary(lead);

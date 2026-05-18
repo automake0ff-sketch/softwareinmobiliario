@@ -8,6 +8,9 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import api from '../lib/api'
+import { usePlan } from '../hooks/usePlan'
+import { PLANS } from '../lib/billing/plans'
+import { Link } from 'react-router-dom'
 
 const AGENT_ICON_MAP = {
   UserPlus, Handshake, Brain, PenLine, Calculator,
@@ -447,6 +450,7 @@ function Header({ showInactive, setShowInactive }) {
 }
 
 function AgentGrid({ agents, toggleAgent, onSelect }) {
+  const { isAgentAvailable } = usePlan()
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       <AnimatePresence mode="popLayout">
@@ -457,6 +461,7 @@ function AgentGrid({ agents, toggleAgent, onSelect }) {
             index={i}
             toggleAgent={toggleAgent}
             onSelect={onSelect}
+            isAvailable={isAgentAvailable(agent.id)}
           />
         ))}
       </AnimatePresence>
@@ -464,8 +469,15 @@ function AgentGrid({ agents, toggleAgent, onSelect }) {
   )
 }
 
-function AgentCard({ agent, index, toggleAgent, onSelect }) {
+function AgentCard({ agent, index, toggleAgent, onSelect, isAvailable }) {
   const AgentIcon = AGENT_ICON_MAP[agent.icon] || Bot
+  const locked = !isAvailable
+
+  const neededPlan = locked
+    ? Object.entries(PLANS).find(([_, p]) =>
+        (p.available_agents || []).includes(agent.id)
+      )?.[0] ?? 'agencia'
+    : null
 
   return (
     <motion.div
@@ -474,15 +486,32 @@ function AgentCard({ agent, index, toggleAgent, onSelect }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
       transition={{ delay: index * 0.05, type: 'spring', stiffness: 300, damping: 25 }}
-      onClick={() => onSelect(agent)}
+      onClick={() => !locked && onSelect(agent)}
       className={clsx(
         'group relative rounded-xl p-5 cursor-pointer transition-shadow duration-300',
         'border border-white/10',
-        agent.active
-          ? 'bg-gradient-to-b from-white/5 to-white/[0.02] shadow-card hover:shadow-modal'
-          : 'bg-white/[0.02] border-white/5 shadow-sm hover:shadow-card'
+        locked
+          ? 'bg-white/[0.02] border-white/5'
+          : agent.active
+            ? 'bg-gradient-to-b from-white/5 to-white/[0.02] shadow-card hover:shadow-modal'
+            : 'bg-white/[0.02] border-white/5 shadow-sm hover:shadow-card'
       )}
     >
+      {locked && (
+        <div className="absolute inset-0 rounded-xl bg-black/50 backdrop-blur-[1px] flex flex-col items-center justify-center gap-2 z-10">
+          <span className="text-2xl">🔒</span>
+          <span className="text-white/60 text-xs text-center px-4">
+            Disponible en plan {neededPlan ? PLANS[neededPlan]?.name || neededPlan : 'superior'}
+          </span>
+          <Link
+            to={`/pricing?upgrade=${neededPlan || 'profesional'}`}
+            className="text-xs bg-indigo-600 text-white px-3 py-1 rounded-lg font-medium hover:bg-indigo-500 transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          >
+            Actualizar
+          </Link>
+        </div>
+      )}
       {agent.isBrain && (
         <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-gradient-to-r from-violet-500 to-blue-500 text-[10px] font-bold text-white uppercase tracking-wider shadow-lg">
           Cerebro del sistema

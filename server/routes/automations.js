@@ -4,6 +4,7 @@ import { all, get, run } from '../db/db.js'
 import { auth, requireRole } from '../middleware/auth.js'
 import { callOpenRouter } from '../services/openrouter.js'
 import { evaluateConditions, executeAction, checkTrigger } from '../services/automation-engine.js'
+import { checkLimit } from '../services/plan-checker.js'
 
 const router = Router()
 router.use(auth)
@@ -11,7 +12,7 @@ router.use(auth)
 // GET /api/automations - List all automations for agency
 router.get('/', (req, res) => {
   try {
-    const agencyId = req.query.agency_id || req.user.agency_id
+    const agencyId = req.user.agency_id
     if (!agencyId) return res.status(400).json({ error: 'agency_id requerido' })
 
     const automations = all(
@@ -83,7 +84,7 @@ router.get('/agents', async (req, res) => {
 })
 
 // POST /api/automations - Create new automation
-router.post('/', (req, res) => {
+router.post('/', checkLimit('automations'), (req, res) => {
   try {
     const agencyId = req.user.agency_id || req.body.agency_id
     if (!agencyId) return res.status(400).json({ error: 'agency_id requerido' })
@@ -125,14 +126,17 @@ router.post('/', (req, res) => {
 // POST /api/automations/:id/toggle - Toggle active/inactive
 router.post('/:id/toggle', (req, res) => {
   try {
-    const auto = get('SELECT * FROM automations WHERE id = @id', { id: req.params.id })
+    const agencyId = req.user.agency_id
+    const auto = get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
+      { id: req.params.id, agency_id: agencyId })
     if (!auto) return res.status(404).json({ error: 'Automatización no encontrada.' })
 
     const newStatus = auto.is_active ? 0 : 1
-    run('UPDATE automations SET is_active = @is_active WHERE id = @id',
-      { is_active: newStatus, id: req.params.id })
+    run('UPDATE automations SET is_active = @is_active WHERE id = @id AND agency_id = @agency_id',
+      { is_active: newStatus, id: req.params.id, agency_id: agencyId })
 
-    const updated = get('SELECT * FROM automations WHERE id = @id', { id: req.params.id })
+    const updated = get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
+      { id: req.params.id, agency_id: agencyId })
     res.json({
       ...updated,
       conditions: JSON.parse(updated.conditions || '[]'),
@@ -148,7 +152,9 @@ router.post('/:id/toggle', (req, res) => {
 // PUT /api/automations/:id - Update automation
 router.put('/:id', (req, res) => {
   try {
-    const auto = get('SELECT * FROM automations WHERE id = @id', { id: req.params.id })
+    const agencyId = req.user.agency_id
+    const auto = get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
+      { id: req.params.id, agency_id: agencyId })
     if (!auto) return res.status(404).json({ error: 'Automatización no encontrada.' })
 
     const { name, description, trigger_type, trigger_config, conditions, actions, is_active } = req.body
@@ -159,7 +165,7 @@ router.put('/:id', (req, res) => {
         trigger_event = @trigger_type,
         trigger_config = @trigger_config, conditions = @conditions, actions = @actions,
         is_active = @is_active
-       WHERE id = @id`,
+       WHERE id = @id AND agency_id = @agency_id`,
       {
         name: name || auto.name,
         description: description !== undefined ? description : auto.description,
@@ -169,10 +175,12 @@ router.put('/:id', (req, res) => {
         actions: JSON.stringify(actions || JSON.parse(auto.actions || '[]')),
         is_active: is_active !== undefined ? (is_active ? 1 : 0) : auto.is_active,
         id: req.params.id,
+        agency_id: agencyId,
       }
     )
 
-    const updated = get('SELECT * FROM automations WHERE id = @id', { id: req.params.id })
+    const updated = get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
+      { id: req.params.id, agency_id: agencyId })
     res.json({
       ...updated,
       conditions: JSON.parse(updated.conditions || '[]'),
@@ -188,10 +196,13 @@ router.put('/:id', (req, res) => {
 // DELETE /api/automations/:id
 router.delete('/:id', (req, res) => {
   try {
-    const auto = get('SELECT * FROM automations WHERE id = @id', { id: req.params.id })
+    const agencyId = req.user.agency_id
+    const auto = get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
+      { id: req.params.id, agency_id: agencyId })
     if (!auto) return res.status(404).json({ error: 'Automatización no encontrada.' })
 
-    run('DELETE FROM automations WHERE id = @id', { id: req.params.id })
+    run('DELETE FROM automations WHERE id = @id AND agency_id = @agency_id',
+      { id: req.params.id, agency_id: agencyId })
     res.json({ message: 'Automatización eliminada.' })
   } catch (error) {
     console.error('Error deleting automation:', error)
@@ -379,6 +390,82 @@ Responde SOLO con JSON válido, sin explicaciones:
   } catch (error) {
     console.error('Error in AI builder:', error)
     res.status(500).json({ error: error.message || 'Error al generar automatización con IA.' })
+  }
+})
+
+// GET /api/automations/templates - Get premium automation templates
+router.get('/templates', async (req, res) => {
+  try {
+    const { N8N_AUTOMATIONS, BLOCKS } = await import('../services/seed-automations.js')
+    const agencyId = req.user.agency_id
+
+    const existing = new Set(
+      all('SELECT name FROM automations WHERE agency_id = @aid', { aid: agencyId })
+        .map(a => a.name)
+    )
+
+    // Assign automations to blocks by index ranges matching seed-automations.js order
+    const blockSizes = [5, 7, 6, 6, 6, 5]
+    let cursor = 0
+    const result = BLOCKS.map((block, bi) => {
+      const size = blockSizes[bi] || 0
+      const automations = N8N_AUTOMATIONS.slice(cursor, cursor + size).map(a => ({
+        id: a.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase(),
+        name: a.name,
+        description: a.description,
+        trigger_type: a.trigger_type,
+        actions: JSON.parse(a.actions),
+        installed: existing.has(a.name),
+      }))
+      cursor += size
+      return { ...block, automations }
+    })
+
+    res.json(result)
+  } catch (error) {
+    console.error('Error listing templates:', error)
+    res.status(500).json({ error: 'Error al obtener plantillas' })
+  }
+})
+
+// POST /api/automations/install-template - Install a template by name
+router.post('/install-template', async (req, res) => {
+  try {
+    const agencyId = req.user.agency_id
+    const { name } = req.body
+    if (!name) return res.status(400).json({ error: 'name requerido' })
+
+    const existing = get('SELECT id FROM automations WHERE agency_id = @aid AND name = @name', { aid: agencyId, name })
+    if (existing) return res.status(409).json({ error: 'Ya existe' })
+
+    const { N8N_AUTOMATIONS } = await import('../services/seed-automations.js')
+    const template = N8N_AUTOMATIONS.find(a => a.name === name)
+    if (!template) return res.status(404).json({ error: 'Plantilla no encontrada' })
+
+    const id = uuidv4()
+    run(
+      `INSERT INTO automations (id, agency_id, name, description, is_active, trigger_type, trigger_event, trigger_config, conditions, actions, run_count, created_at)
+       VALUES (@id, @agency_id, @name, @description, 1, @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, 0, datetime('now'))`,
+      {
+        id, agency_id: agencyId,
+        name: template.name, description: template.description,
+        trigger_type: template.trigger_type,
+        trigger_config: template.trigger_config,
+        conditions: template.conditions,
+        actions: template.actions,
+      }
+    )
+
+    const created = get('SELECT * FROM automations WHERE id = @id', { id })
+    res.json({
+      ...created,
+      conditions: JSON.parse(created.conditions || '[]'),
+      actions: JSON.parse(created.actions || '[]'),
+      trigger_config: JSON.parse(created.trigger_config || '{}'),
+    })
+  } catch (error) {
+    console.error('Error installing template:', error)
+    res.status(500).json({ error: error.message || 'Error al instalar plantilla' })
   }
 })
 

@@ -10,8 +10,8 @@ router.use(auth);
 router.get('/', (req, res) => {
   try {
     const { lead_id, channel } = req.query;
-    let sql = 'SELECT c.*, u.name AS agent_name FROM conversations c LEFT JOIN users u ON c.agent_id = u.id WHERE 1=1';
-    const params = {};
+    let sql = 'SELECT c.*, u.name AS agent_name FROM conversations c LEFT JOIN users u ON c.agent_id = u.id WHERE c.agency_id = @agency_id';
+    const params = { agency_id: req.user.agency_id };
 
     if (lead_id) { sql += ' AND c.lead_id = @lead_id'; params.lead_id = lead_id; }
     if (channel) { sql += ' AND c.channel = @channel'; params.channel = channel; }
@@ -44,10 +44,11 @@ router.post('/', (req, res) => {
     const messages = content ? [{ role: 'user', content, timestamp: new Date().toISOString() }] : [];
 
     run(
-      `INSERT INTO conversations (id, lead_id, agent_id, channel, messages, created_at)
-       VALUES (@id, @lead_id, @agent_id, @channel, @messages, datetime('now'))`,
+      `INSERT INTO conversations (id, agency_id, lead_id, agent_id, channel, messages, created_at)
+       VALUES (@id, @agency_id, @lead_id, @agent_id, @channel, @messages, datetime('now'))`,
       {
         id,
+        agency_id: lead.agency_id || req.user.agency_id,
         lead_id,
         agent_id: agent_id || req.user.id,
         channel,
@@ -81,7 +82,7 @@ router.post('/', (req, res) => {
 
 router.post('/:id/analyze', async (req, res) => {
   try {
-    const conversation = get('SELECT * FROM conversations WHERE id = @id', { id: req.params.id });
+    const conversation = get('SELECT * FROM conversations WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!conversation) return res.status(404).json({ error: 'Conversación no encontrada.' });
 
     const messages = conversation.messages ? JSON.parse(conversation.messages) : [];

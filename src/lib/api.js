@@ -62,11 +62,11 @@ class ApiClient {
     } catch (err) {
       if (err.status) {
         if (err.status === 401) {
-          toast.error('Sesión expirada. Inicia sesión nuevamente.')
+          localStorage.removeItem('crm-inmobiliario-store')
+          window.location.href = '/login'
+          return
         } else if (err.status === 403) {
           toast.error('No tienes permiso para realizar esta acción.')
-        } else if (err.status >= 500) {
-          toast.error('Error del servidor. Intenta nuevamente.')
         } else {
           toast.error(err.message)
         }

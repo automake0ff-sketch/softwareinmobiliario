@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { all, get, run } from '../db/db.js';
 import { auth, requireRole } from '../middleware/auth.js';
+import { checkFeature } from '../services/plan-checker.js';
 
 const router = Router();
 router.use(auth);
@@ -48,6 +49,13 @@ router.patch('/:id', requireRole('admin', 'manager'), (req, res) => {
   try {
     const existing = get('SELECT * FROM agencies WHERE id = @id', { id: req.params.id });
     if (!existing) return res.status(404).json({ error: 'Agencia no encontrada.' });
+
+    const whiteLabelFields = ['logo_url', 'primary_color', 'domain'];
+    const hasWhiteLabelUpdate = whiteLabelFields.some(f => req.body[f] !== undefined);
+    if (hasWhiteLabelUpdate) {
+      const featureCheck = checkFeature('white_label')(req, res, () => {})
+      if (featureCheck !== undefined) return // 402 sent by middleware
+    }
 
     const allowed = ['name', 'slug', 'logo_url', 'primary_color', 'domain'];
     const updates = [];
@@ -139,6 +147,153 @@ router.get('/:id/ranking', (req, res) => {
     res.status(500).json({ error: 'Error al obtener ranking.' });
   }
 });
+
+// ── Campos permitidos para configuración de agencia ──
+const CONFIG_FIELDS = [
+  'name','slug','city','email','phone','address','website','instagram','facebook','linkedin','tiktok',
+  'whatsapp_number','whatsapp_token','whatsapp_phone_id',
+  'sendgrid_api_key','sendgrid_from_email','sendgrid_from_name',
+  'smtp_host','smtp_port','smtp_user','smtp_password',
+  'telegram_bot_token','telegram_chat_id',
+  'slack_webhook_url',
+  'notion_api_key','notion_database_id',
+  'airtable_api_key','airtable_base_id','airtable_table',
+  'google_sheets_id',
+  'zapier_webhook_url','make_webhook_url','n8n_webhook_url',
+  'onboarding_completed','onboarding_step',
+]
+
+// GET /api/agency/config — Obtener configuración de la agencia actual
+router.get('/config', (req, res) => {
+  try {
+    const agencyId = req.user?.agency_id
+    if (!agencyId) return res.status(401).json({ error: 'No agency context' })
+    const agency = get('SELECT * FROM agencies WHERE id = @id', { id: agencyId })
+    if (!agency) return res.status(404).json({ error: 'Agencia no encontrada' })
+    const config = {}
+    for (const field of CONFIG_FIELDS) {
+      config[field] = agency[field] ?? ''
+    }
+    res.json(config)
+  } catch (error) {
+    console.error('Error getting agency config:', error)
+    res.status(500).json({ error: 'Error al obtener configuración' })
+  }
+})
+
+// PATCH /api/agency/config — Actualizar configuración de la agencia
+router.patch('/config', (req, res) => {
+  try {
+    const agencyId = req.user?.agency_id
+    if (!agencyId) return res.status(401).json({ error: 'No agency context' })
+    const safeUpdate = {}
+    for (const [key, value] of Object.entries(req.body)) {
+      if (CONFIG_FIELDS.includes(key)) safeUpdate[key] = value
+    }
+    if (Object.keys(safeUpdate).length === 0) {
+      return res.status(400).json({ error: 'No hay campos válidos para actualizar' })
+    }
+    safeUpdate.id = agencyId
+    const setClauses = Object.keys(safeUpdate)
+      .filter(k => k !== 'id')
+      .map(k => `${k} = @${k}`)
+      .join(', ')
+    run(`UPDATE agencies SET ${setClauses} WHERE id = @id`, safeUpdate)
+    const updated = get('SELECT * FROM agencies WHERE id = @id', { id: agencyId })
+    const config = {}
+    for (const field of CONFIG_FIELDS) {
+      config[field] = updated[field] ?? ''
+    }
+    res.json(config)
+  } catch (error) {
+    console.error('Error updating agency config:', error)
+    res.status(500).json({ error: 'Error al actualizar configuración' })
+  }
+})
+
+// POST /api/agency/test-integration — Probar conexión con integraciones
+router.post('/test-integration', async (req, res) => {
+  try {
+    const agencyId = req.user?.agency_id
+    if (!agencyId) return res.status(401).json({ error: 'No agency context' })
+    const { integration, config } = req.body
+    if (!integration) return res.status(400).json({ error: 'integration requerido' })
+
+    const creds = config || {}
+
+    switch (integration) {
+      case 'whatsapp': {
+        if (!creds.whatsapp_token || !creds.whatsapp_phone_id) {
+          return res.json({ ok: false, msg: 'Faltan token o Phone Number ID' })
+        }
+        const r = await fetch(
+          `https://graph.facebook.com/v18.0/${creds.whatsapp_phone_id}`,
+          { headers: { Authorization: `Bearer ${creds.whatsapp_token}` } }
+        )
+        const d = await r.json()
+        return res.json({
+          ok: r.ok,
+          msg: r.ok
+            ? `✓ WhatsApp conectado: ${d.display_phone_number || creds.whatsapp_phone_id}`
+            : `Error: ${d.error?.message || r.status}`
+        })
+      }
+
+      case 'email': {
+        if (creds.sendgrid_api_key) {
+          const r = await fetch('https://api.sendgrid.com/v3/user/profile', {
+            headers: { Authorization: `Bearer ${creds.sendgrid_api_key}` }
+          })
+          return res.json({ ok: r.ok, msg: r.ok ? '✓ SendGrid conectado correctamente' : 'Error: API key inválida' })
+        }
+        return res.json({ ok: false, msg: 'Sin credenciales de email configuradas' })
+      }
+
+      case 'notifications': {
+        const results = []
+        if (creds.slack_webhook_url) {
+          const r = await fetch(creds.slack_webhook_url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: '✅ PropIA conectado correctamente a Slack' }),
+          })
+          results.push(r.ok ? '✓ Slack OK' : '✗ Slack error')
+        }
+        if (creds.telegram_bot_token && creds.telegram_chat_id) {
+          const r = await fetch(
+            `https://api.telegram.org/bot${creds.telegram_bot_token}/sendMessage`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ chat_id: creds.telegram_chat_id, text: '✅ PropIA conectado correctamente a Telegram' }),
+            }
+          )
+          results.push(r.ok ? '✓ Telegram OK' : '✗ Telegram error')
+        }
+        if (results.length === 0) {
+          return res.json({ ok: false, msg: 'Sin credenciales de notificación configuradas' })
+        }
+        return res.json({ ok: results.every(r => r.startsWith('✓')), msg: results.join(' · ') })
+      }
+
+      case 'webhooks': {
+        const url = creds.zapier_webhook_url || creds.make_webhook_url || creds.n8n_webhook_url
+        if (!url) return res.json({ ok: false, msg: 'Sin webhooks configurados' })
+        const r = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ test: true, source: 'PropIA', timestamp: new Date().toISOString() }),
+        })
+        return res.json({ ok: r.ok, msg: r.ok ? `✓ Webhook respondió con ${r.status}` : `✗ Error ${r.status}` })
+      }
+
+      default:
+        return res.json({ ok: false, msg: 'Integración desconocida' })
+    }
+  } catch (err) {
+    res.json({ ok: false, msg: String(err) })
+  }
+})
 
 router.get('/:id/feed', (req, res) => {
   try {

@@ -5,6 +5,7 @@ import {
   Home, MapPin, ArrowUpRight, Zap, Globe,
   BarChart as BarChartIcon, PieChart,
 } from 'lucide-react'
+import { PlanGate } from '../components/billing/PlanGate'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart as RePieChart, Pie, Cell, AreaChart, Area,
@@ -113,12 +114,13 @@ export default function AnalyticsPage() {
   const [period, setPeriod] = useState('month')
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="space-y-6"
-    >
+    <PlanGate feature="analytics_advanced" fullPage>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="space-y-6"
+      >
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -8 }}
@@ -390,6 +392,7 @@ export default function AnalyticsPage() {
           </div>
         </motion.div>
       </div>
-    </motion.div>
+      </motion.div>
+    </PlanGate>
   )
 }

@@ -26,22 +26,6 @@ if (storedUser) {
   )
 }
 
-if (!api.authHeaders['x-auth-token']) {
-  const demoUser = {
-    id: 'demo-user-id',
-    name: 'Carlos Martínez',
-    email: 'manager@inmotech.es',
-    role: 'manager',
-    agency_id: 'demo-agency-id',
-    office_id: 'demo-office-id',
-    token: 'demo-token-dev',
-  }
-  api.setAuth('demo-token-dev', 'demo-user-id', 'manager', 'demo-agency-id', 'demo-office-id')
-  const existing = stored ? JSON.parse(stored) : { state: {} }
-  existing.state = { ...existing.state, ...existing.state?.user ? {} : { user: demoUser } }
-  localStorage.setItem(STORE_KEY, JSON.stringify(existing))
-}
-
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>

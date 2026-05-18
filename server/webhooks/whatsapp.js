@@ -223,9 +223,18 @@ async function handleIncomingMessage(message, metadata, contacts) {
     const phoneNumber = from;
 
     let existingLead = get('SELECT * FROM leads WHERE phone = @phone', { phone: phoneNumber });
-    const firstAgency = get('SELECT id, name FROM agencies LIMIT 1');
-    if (!firstAgency) {
-      console.log('[WHATSAPP] No agency found');
+
+    const phoneNumberId = metadata?.phone_number_id;
+    const displayPhoneNumber = metadata?.display_phone_number;
+    let agency = null;
+    if (phoneNumberId) {
+      agency = get('SELECT id, name FROM agencies WHERE whatsapp_phone_id = @pid', { pid: String(phoneNumberId) });
+    }
+    if (!agency && displayPhoneNumber) {
+      agency = get('SELECT id, name FROM agencies WHERE whatsapp_number = @wnum', { wnum: displayPhoneNumber });
+    }
+    if (!agency) {
+      console.log('[WHATSAPP] No agency found for phone_number_id:', phoneNumberId, '/ number:', displayPhoneNumber);
       return;
     }
 
@@ -238,7 +247,7 @@ async function handleIncomingMessage(message, metadata, contacts) {
       run(
         `INSERT INTO leads (id, agency_id, name, phone, source, status, created_at, updated_at)
          VALUES (@id, @agency_id, @name, @phone, @source, @status, datetime('now'), datetime('now'))`,
-        { id: leadId, agency_id: firstAgency.id, name: contactName, phone: phoneNumber, source: 'whatsapp', status: 'nuevo' }
+        { id: leadId, agency_id: agency.id, name: contactName, phone: phoneNumber, source: 'whatsapp', status: 'nuevo' }
       );
       existingLead = get('SELECT * FROM leads WHERE id = @id', { id: leadId });
     }
@@ -246,9 +255,9 @@ async function handleIncomingMessage(message, metadata, contacts) {
     const convId = uuidv4();
     const messages = [{ role: 'lead', content: text, timestamp: new Date().toISOString() }];
     run(
-      `INSERT INTO conversations (id, lead_id, channel, messages, created_at)
-       VALUES (@id, @lead_id, @channel, @messages, datetime('now'))`,
-      { id: convId, lead_id: leadId, channel: 'whatsapp', messages: JSON.stringify(messages) }
+      `INSERT INTO conversations (id, agency_id, lead_id, channel, messages, created_at)
+       VALUES (@id, @agency_id, @lead_id, @channel, @messages, datetime('now'))`,
+      { id: convId, agency_id: agency.id, lead_id: leadId, channel: 'whatsapp', messages: JSON.stringify(messages) }
     );
 
     const activityType = existingLead ? 'whatsapp_message' : 'whatsapp_lead';
@@ -259,7 +268,7 @@ async function handleIncomingMessage(message, metadata, contacts) {
       `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
        VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, datetime('now'))`,
       {
-        id: uuidv4(), agency_id: firstAgency.id, lead_id: leadId, type: activityType,
+        id: uuidv4(), agency_id: agency.id, lead_id: leadId, type: activityType,
         description: activityDesc,
         metadata: JSON.stringify({ from: phoneNumber, message_id: message.id, type: msgType }),
       }
@@ -284,7 +293,7 @@ async function handleIncomingMessage(message, metadata, contacts) {
       mediaUrl,
       phoneNumber,
       conversationId: convId,
-      agencyId: firstAgency.id,
+      agencyId: agency.id,
     });
 
     console.log(`[WHATSAPP] ${existingLead ? 'Message from' : 'New lead'} ${contactName} (${phoneNumber}): ${text.substring(0, 60)}`);

@@ -4,7 +4,9 @@ import {
   Settings, Building2, Key, Puzzle, Users, Palette,
   Save, CheckCircle, X, Eye, EyeOff, Globe, Mail,
   Phone, MessageCircle, Link, Server, RefreshCw,
-  Image, Edit3, CreditCard, Upload, Shield, Lock
+  Image, Edit3, CreditCard, Upload, Shield, Lock,
+  Send, Trash2, Zap, Wifi, WifiOff, Plus, Smartphone,
+  Database, Bell, Webhook as WebhookIcon
 } from 'lucide-react'
 import { useStore } from '../lib/store'
 import toast from 'react-hot-toast'
@@ -46,6 +48,7 @@ export default function SettingsPage() {
     { id: 'integrations', label: 'Integraciones', icon: Puzzle, feature: null },
     { id: 'team', label: 'Roles y equipo', icon: Users, feature: null },
     { id: 'whitelabel', label: 'White-label', icon: Palette, feature: 'whiteLabel' },
+    { id: 'destinations', label: 'Destinos', icon: Send, feature: null },
   ]
 
   const tabs = allTabs.filter((t) => !t.feature || canUseFeature(t.feature))
@@ -258,123 +261,7 @@ export default function SettingsPage() {
         </div>
       </div>
     ),
-    integrations: (
-      <div className="space-y-5 max-w-2xl">
-        <div className="bg-surface/50 rounded-xl p-4 space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-green-500/10 text-green-400 flex items-center justify-center">
-              <MessageCircle size={18} />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-ink">WhatsApp Business</p>
-              <p className="text-xs text-muted">Número y API key de WhatsApp Business</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-muted block mb-1">Número de WhatsApp</label>
-              <input
-                type="text"
-                value={integrations.whatsappNumber}
-                onChange={e => setIntegrations(prev => ({ ...prev, whatsappNumber: e.target.value }))}
-                className="w-full px-3.5 py-2.5 text-sm bg-surface2 border border-border-secondary rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted block mb-1">API Key</label>
-              <input
-                type="password"
-                value={integrations.whatsappApiKey}
-                onChange={e => setIntegrations(prev => ({ ...prev, whatsappApiKey: e.target.value }))}
-                className="w-full px-3.5 py-2.5 text-sm bg-surface2 border border-border-secondary rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-surface/50 rounded-xl p-4 space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
-              <Globe size={18} />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-ink">Meta Ads</p>
-              <p className="text-xs text-muted">Webhook para recibir leads de Meta Ads</p>
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted block mb-1">Webhook URL</label>
-            <input
-              type="text"
-              value={integrations.metaWebhookUrl}
-              onChange={e => setIntegrations(prev => ({ ...prev, metaWebhookUrl: e.target.value }))}
-              className="w-full px-3.5 py-2.5 text-sm bg-surface2 border border-border-secondary rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none font-mono text-xs"
-            />
-          </div>
-        </div>
-
-        <div className="bg-surface/50 rounded-xl p-4 space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center">
-              <Mail size={18} />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-ink">Email SMTP</p>
-              <p className="text-xs text-muted">Configuración del servidor de correo saliente</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="sm:col-span-2">
-              <label className="text-xs font-medium text-muted block mb-1">Servidor SMTP</label>
-              <input
-                type="text"
-                value={integrations.smtpHost}
-                onChange={e => setIntegrations(prev => ({ ...prev, smtpHost: e.target.value }))}
-                className="w-full px-3.5 py-2.5 text-sm bg-surface2 border border-border-secondary rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted block mb-1">Puerto</label>
-              <input
-                type="text"
-                value={integrations.smtpPort}
-                onChange={e => setIntegrations(prev => ({ ...prev, smtpPort: e.target.value }))}
-                className="w-full px-3.5 py-2.5 text-sm bg-surface2 border border-border-secondary rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none"
-              />
-            </div>
-            <div className="flex items-end pb-2.5">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={integrations.smtpSecure}
-                  onChange={e => setIntegrations(prev => ({ ...prev, smtpSecure: e.target.checked }))}
-                  className="w-4 h-4 rounded border-border-secondary text-indigo-500 focus:ring-indigo-500/20 bg-surface2"
-                />
-                <span className="text-sm text-muted">Usar TLS</span>
-              </label>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted block mb-1">Usuario</label>
-              <input
-                type="text"
-                value={integrations.smtpUser}
-                onChange={e => setIntegrations(prev => ({ ...prev, smtpUser: e.target.value }))}
-                className="w-full px-3.5 py-2.5 text-sm bg-surface2 border border-border-secondary rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted block mb-1">Contraseña</label>
-              <input
-                type="password"
-                value={integrations.smtpPass}
-                onChange={e => setIntegrations(prev => ({ ...prev, smtpPass: e.target.value }))}
-                className="w-full px-3.5 py-2.5 text-sm bg-surface2 border border-border-secondary rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-    ),
+    integrations: <IntegrationsSection />,
     team: (
       <div className="space-y-5 max-w-2xl">
         <div className="bg-surface/50 rounded-xl p-4 space-y-4">
@@ -551,6 +438,423 @@ export default function SettingsPage() {
         </label>
       </div>
     ),
+
+    destinations: <DestinationsTab />,
+  }
+
+  function IntegrationsSection() {
+    const [config, setConfig] = useState({})
+    const [saving, setSaving] = useState(false)
+    const [saved, setSaved] = useState(false)
+    const [testing, setTesting] = useState(null)
+    const [testResults, setTestResults] = useState({})
+    const [emailTab, setEmailTab] = useState('sendgrid')
+    const [completeness, setCompleteness] = useState(0)
+
+    useEffect(() => {
+      fetch('/api/agency/config')
+        .then(r => r.json())
+        .then(data => {
+          setConfig(data || {})
+          calcCompleteness(data || {})
+        })
+        .catch(() => {})
+    }, [])
+
+    const calcCompleteness = (cfg) => {
+      const required = ['name','city','email','whatsapp_token','whatsapp_phone_id','sendgrid_api_key','sendgrid_from_email']
+      const filled = required.filter(k => cfg[k])
+      setCompleteness(Math.round((filled.length / required.length) * 100))
+    }
+
+    const update = (key, value) => {
+      const updated = { ...config, [key]: value }
+      setConfig(updated)
+      calcCompleteness(updated)
+    }
+
+    const save = async () => {
+      setSaving(true)
+      try {
+        const res = await fetch('/api/agency/config', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(config),
+        })
+        if (!res.ok) throw new Error('Error al guardar')
+        setSaved(true)
+        toast.success('Configuración guardada')
+        setTimeout(() => setSaved(false), 3000)
+      } catch (e) { toast.error(e.message) }
+      finally { setSaving(false) }
+    }
+
+    const test = async (integration) => {
+      setTesting(integration)
+      try {
+        const res = await fetch('/api/agency/test-integration', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ integration, config }),
+        })
+        const result = await res.json()
+        setTestResults(p => ({ ...p, [integration]: result }))
+      } catch (e) { toast.error(e.message) }
+      finally { setTesting(null) }
+    }
+
+    const renderField = (field) => (
+      <div key={field.key} className="space-y-1.5">
+        <label className="flex items-center gap-1.5 text-white/60 text-xs font-medium">
+          {field.label}
+          {field.required && <span className="text-red-400 text-xs">*</span>}
+          {config[field.key] && <span className="text-emerald-400 text-xs">✓</span>}
+        </label>
+        <input
+          type={field.type || 'text'}
+          value={config[field.key] || ''}
+          onChange={e => update(field.key, e.target.value)}
+          placeholder={field.placeholder || ''}
+          className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500 transition-colors"
+        />
+      </div>
+    )
+
+    const SECTIONS = [
+      {
+        id: 'agency', title: 'Datos de la agencia', icon: '🏢',
+        description: 'Nombre, ciudad, contacto y redes sociales',
+        fields: [
+          { key: 'name', label: 'Nombre de la agencia', type: 'text', required: true },
+          { key: 'city', label: 'Ciudad principal', type: 'text', required: true },
+          { key: 'email', label: 'Email de la agencia', type: 'email', required: true },
+          { key: 'phone', label: 'Teléfono de contacto', type: 'tel', placeholder: '+34 954 000 000' },
+          { key: 'address', label: 'Dirección', type: 'text' },
+          { key: 'website', label: 'Web', type: 'url', placeholder: 'https://miagencia.com' },
+          { key: 'instagram', label: 'Instagram', type: 'text', placeholder: '@miagencia' },
+          { key: 'facebook', label: 'Facebook', type: 'url' },
+        ],
+      },
+      {
+        id: 'whatsapp', title: 'WhatsApp Business', icon: '💬',
+        description: 'Conecta tu número para enviar mensajes reales a los leads',
+        testable: true,
+        fields: [
+          { key: 'whatsapp_number', label: 'Número WhatsApp visible', type: 'tel', placeholder: '+34 600 000 000', required: true },
+          { key: 'whatsapp_token', label: 'Token de acceso permanente', type: 'password', required: true },
+          { key: 'whatsapp_phone_id', label: 'Phone Number ID', type: 'text', required: true },
+        ],
+      },
+      {
+        id: 'email', title: 'Email', icon: '📧',
+        description: 'Para enviar emails desde las automatizaciones',
+        testable: true,
+        tabs: [
+          {
+            id: 'sendgrid', label: 'SendGrid (recomendado)',
+            fields: [
+              { key: 'sendgrid_api_key', label: 'API Key', type: 'password', required: true },
+              { key: 'sendgrid_from_email', label: 'Email remitente', type: 'email', required: true },
+              { key: 'sendgrid_from_name', label: 'Nombre remitente', type: 'text', required: true },
+            ],
+          },
+          {
+            id: 'smtp', label: 'SMTP propio',
+            fields: [
+              { key: 'smtp_host', label: 'Servidor SMTP', type: 'text', placeholder: 'smtp.gmail.com' },
+              { key: 'smtp_port', label: 'Puerto', type: 'text', placeholder: '587' },
+              { key: 'smtp_user', label: 'Usuario', type: 'email' },
+              { key: 'smtp_password', label: 'Contraseña', type: 'password' },
+            ],
+          },
+        ],
+      },
+      {
+        id: 'notifications', title: 'Notificaciones del equipo', icon: '🔔',
+        description: 'Slack y Telegram para alertas en tiempo real',
+        testable: true,
+        fields: [
+          { key: 'slack_webhook_url', label: 'Slack Webhook URL', type: 'url', placeholder: 'https://hooks.slack.com/...' },
+          { key: 'telegram_bot_token', label: 'Telegram Bot Token', type: 'password', placeholder: '123456789:ABC...' },
+          { key: 'telegram_chat_id', label: 'Telegram Chat ID', type: 'text', placeholder: '-100123456789' },
+        ],
+      },
+      {
+        id: 'databases', title: 'Bases de datos externas', icon: '🗄️',
+        description: 'Notion, Airtable y Google Sheets para sincronizar datos',
+        fields: [
+          { key: 'notion_api_key', label: 'Notion Integration Token', type: 'password' },
+          { key: 'notion_database_id', label: 'Notion Database ID', type: 'text' },
+          { key: 'airtable_api_key', label: 'Airtable Personal Token', type: 'password' },
+          { key: 'airtable_base_id', label: 'Airtable Base ID', type: 'text', placeholder: 'appXXXXXXXXX' },
+          { key: 'airtable_table', label: 'Nombre de la tabla', type: 'text', placeholder: 'Leads' },
+          { key: 'google_sheets_id', label: 'Google Sheets ID', type: 'text' },
+        ],
+      },
+      {
+        id: 'webhooks', title: 'Webhooks externos', icon: '🔗',
+        description: 'Conecta con Zapier, Make o tu instancia de n8n',
+        testable: true,
+        fields: [
+          { key: 'zapier_webhook_url', label: 'Zapier Webhook URL', type: 'url', placeholder: 'https://hooks.zapier.com/...' },
+          { key: 'make_webhook_url', label: 'Make Webhook URL', type: 'url', placeholder: 'https://hook.eu1.make.com/...' },
+          { key: 'n8n_webhook_url', label: 'n8n Webhook URL', type: 'url', placeholder: 'https://tu-n8n.com/webhook/...' },
+        ],
+      },
+    ]
+
+    return (
+      <div className="space-y-6">
+        {/* Header con barra de completitud */}
+        <div>
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <p className="text-sm text-white/40">Estos datos se usan automáticamente en todas tus automatizaciones</p>
+            </div>
+            <button
+              onClick={save}
+              disabled={saving}
+              className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                saved ? 'bg-emerald-600 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50'
+              }`}
+            >
+              {saving ? 'Guardando...' : saved ? '✓ Guardado' : 'Guardar cambios'}
+            </button>
+          </div>
+          <div className="bg-white/5 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-white/60 text-sm">Configuración completada</span>
+              <span className={`text-sm font-semibold ${
+                completeness >= 80 ? 'text-emerald-400' : completeness >= 50 ? 'text-amber-400' : 'text-red-400'
+              }`}>{completeness}%</span>
+            </div>
+            <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  completeness >= 80 ? 'bg-emerald-500' : completeness >= 50 ? 'bg-amber-500' : 'bg-red-500'
+                }`}
+                style={{ width: `${completeness}%` }}
+              />
+            </div>
+            {completeness < 100 && (
+              <p className="text-white/30 text-xs mt-2">
+                {completeness < 50 ? '⚠️ Configura WhatsApp y email para que las automatizaciones funcionen' :
+                 completeness < 80 ? '💡 Añade más integraciones para activar más automatizaciones' :
+                 '✓ Configuración básica completa'}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Secciones */}
+        {SECTIONS.map(section => (
+          <div key={section.id} className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
+            <div className="flex items-center gap-3 px-6 py-4 border-b border-white/10">
+              <span className="text-2xl">{section.icon}</span>
+              <div className="flex-1">
+                <p className="text-white font-medium text-sm">{section.title}</p>
+                <p className="text-white/40 text-xs">{section.description}</p>
+              </div>
+              {section.testable && (
+                <button
+                  onClick={() => test(section.id)}
+                  disabled={testing === section.id}
+                  className="px-3 py-1.5 border border-white/10 hover:border-white/20 text-white/50 hover:text-white text-xs rounded-lg transition-all"
+                >
+                  {testing === section.id ? '...' : 'Probar'}
+                </button>
+              )}
+            </div>
+            <div className="p-6">
+              {testResults[section.id] && (
+                <div className={`mb-4 px-4 py-3 rounded-lg text-sm border ${
+                  testResults[section.id].ok
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                    : 'bg-red-500/10 border-red-500/30 text-red-300'
+                }`}>
+                  {testResults[section.id].ok ? '✓ ' : '✗ '}{testResults[section.id].msg}
+                </div>
+              )}
+              {section.tabs ? (
+                <div className="space-y-4">
+                  <div className="flex gap-2">
+                    {section.tabs.map(tab => (
+                      <button key={tab.id}
+                        onClick={() => setEmailTab(tab.id)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                          emailTab === tab.id
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-white/5 text-white/40 hover:text-white/70'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-1 gap-4">
+                    {section.tabs.find(t => t.id === emailTab)?.fields.map(renderField)}
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {section.fields?.map(renderField)}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  function DestinationsTab() {
+    const [destinations, setDestinations] = useState([])
+    const [types, setTypes] = useState([])
+    const [adding, setAdding] = useState(false)
+    const [selectedType, setSelectedType] = useState(null)
+    const [destName, setDestName] = useState('')
+    const [creds, setCreds] = useState({})
+    const [saving, setSaving] = useState(false)
+    const [testing, setTesting] = useState(null)
+    const [testResult, setTestResult] = useState(null)
+
+    useEffect(() => {
+      fetch('/api/destinations').then(r => r.json()).then(setDestinations).catch(() => {})
+      fetch('/api/destinations/types').then(r => r.json()).then(setTypes).catch(() => {})
+    }, [])
+
+    const addDest = async () => {
+      if (!selectedType || !destName.trim()) return toast.error('Nombre y tipo requeridos')
+      setSaving(true)
+      try {
+        const res = await fetch('/api/destinations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: selectedType.id, name: destName, credentials: creds }),
+        })
+        if (!res.ok) { const e = await res.json(); throw new Error(e.error) }
+        const d = await res.json()
+        setDestinations(prev => [d, ...prev])
+        setAdding(false); setDestName(''); setCreds({}); setSelectedType(null)
+        toast.success('Destino añadido')
+      } catch (e) { toast.error(e.message) }
+      finally { setSaving(false) }
+    }
+
+    const deleteDest = async (id) => {
+      try {
+        await fetch(`/api/destinations/${id}`, { method: 'DELETE' })
+        setDestinations(prev => prev.filter(d => d.id !== id))
+        toast.success('Destino eliminado')
+      } catch (e) { toast.error(e.message) }
+    }
+
+    const testDest = async (id) => {
+      setTesting(id)
+      try {
+        const res = await fetch(`/api/destinations/${id}/test`, { method: 'POST' })
+        const result = await res.json()
+        setTestResult(result)
+        setDestinations(prev => prev.map(d => d.id === id ? { ...d, last_test_ok: result.ok ? 1 : 0, last_tested_at: new Date().toISOString() } : d))
+        if (result.ok) toast.success(result.detail)
+        else toast.error(result.detail)
+      } catch (e) { toast.error(e.message) }
+      finally { setTesting(null) }
+    }
+
+    const typeColor = (id) => types.find(t => t.id === id)?.color || '#6b7280'
+    const typeLabel = (id) => types.find(t => t.id === id)?.label || id
+
+    return (
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted">Destinos configurados para enviar resultados de automatizaciones</p>
+          <button onClick={() => setAdding(true)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-xl transition-all">
+            <Plus size={15} />
+            Añadir
+          </button>
+        </div>
+
+        {adding && (
+          <div className="border border-border-secondary rounded-xl p-5 space-y-4 bg-[#0B0B1A]">
+            <p className="text-sm font-medium text-[#F1F5F9]">Nuevo destino</p>
+            <input value={destName} onChange={e => setDestName(e.target.value)}
+              placeholder="Nombre (ej: WhatsApp Oficina Sevilla)"
+              className="w-full bg-[#0a0a1a] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500" />
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {types.map(t => (
+                <button key={t.id} onClick={() => { setSelectedType(t); setCreds({}) }}
+                  className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-xs transition-all ${
+                    selectedType?.id === t.id ? 'border-indigo-500 bg-indigo-950/30 text-white' : 'border-white/10 text-white/50 hover:border-white/20 hover:text-white/80'
+                  }`}>
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: t.color }} />
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            {selectedType && selectedType.fields?.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-xs text-white/40 uppercase tracking-wider">Credenciales</p>
+                {selectedType.fields.map(f => (
+                  <div key={f.key} className="space-y-1">
+                    <label className="text-xs text-white/50">{f.label}</label>
+                    <input type={f.type || 'text'} value={creds[f.key] || ''}
+                      onChange={e => setCreds(p => ({ ...p, [f.key]: e.target.value }))}
+                      className="w-full bg-[#0a0a1a] border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500" />
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-3 pt-2">
+              <button onClick={addDest} disabled={saving || !selectedType || !destName}
+                className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm rounded-xl">
+                {saving ? 'Guardando...' : 'Guardar'}
+              </button>
+              <button onClick={() => { setAdding(false); setSelectedType(null); setCreds({}); setDestName('') }}
+                className="px-4 py-2.5 border border-white/10 text-white/50 text-sm rounded-xl hover:border-white/20">Cancelar</button>
+            </div>
+          </div>
+        )}
+
+        {destinations.length === 0 && !adding && (
+          <div className="text-center py-16 text-white/30">
+            <Send size={32} className="mx-auto mb-3 opacity-40" />
+            <p className="text-sm">Sin destinos configurados</p>
+            <p className="text-xs mt-1">Añade WhatsApp, Email, Webhooks o integraciones</p>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          {destinations.map(d => (
+            <div key={d.id} className="flex items-center justify-between bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+              <div className="flex items-center gap-3">
+                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: typeColor(d.type) }} />
+                <div>
+                  <p className="text-sm text-white font-medium">{d.name}</p>
+                  <p className="text-xs text-white/40">{typeLabel(d.type)}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {d.last_test_ok !== null && d.last_test_ok !== undefined && (
+                  d.last_test_ok
+                    ? <Wifi size={14} className="text-emerald-400" title="Conectado" />
+                    : <WifiOff size={14} className="text-red-400" title="Error en prueba" />
+                )}
+                <button onClick={() => testDest(d.id)} disabled={testing === d.id}
+                  className="px-3 py-1.5 border border-white/10 hover:border-white/20 text-white/50 hover:text-white text-xs rounded-lg transition-all">
+                  {testing === d.id ? '...' : <Zap size={13} />}
+                </button>
+                <button onClick={() => deleteDest(d.id)}
+                  className="p-1.5 text-white/30 hover:text-red-400 transition-all">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
   }
 
   return (

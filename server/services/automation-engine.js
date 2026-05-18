@@ -23,18 +23,23 @@ export function evaluateConditions(conditions, leadData) {
   })
 }
 
-async function sendWhatsApp(phone, message, agencyId) {
+async function sendWhatsApp(phone, message, agencyId, ctx = {}) {
   if (!phone || !message) return false
   try {
     const clean = phone.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '')
     const fullPhone = clean.startsWith('34') ? clean : `34${clean}`
 
-    const agency = get('SELECT whatsapp_token, whatsapp_phone_id FROM agencies WHERE id = @id', { id: agencyId })
-    if (agency?.whatsapp_token && agency?.whatsapp_phone_id) {
-      const res = await fetch(`https://graph.facebook.com/v18.0/${agency.whatsapp_phone_id}/messages`, {
+    // Try context credentials first (from full-context-builder), then DB
+    const waToken = ctx?.wa_token || null
+    const waPhoneId = ctx?.wa_phone_id || null
+    const agencyToken = waToken || get('SELECT whatsapp_token FROM agencies WHERE id = @id', { id: agencyId })?.whatsapp_token
+    const agencyPhoneId = waPhoneId || get('SELECT whatsapp_phone_id FROM agencies WHERE id = @id', { id: agencyId })?.whatsapp_phone_id
+
+    if (agencyToken && agencyPhoneId) {
+      const res = await fetch(`https://graph.facebook.com/v18.0/${agencyPhoneId}/messages`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${agency.whatsapp_token}`,
+          Authorization: `Bearer ${agencyToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -163,27 +168,37 @@ export async function executeAction(action, leadContext, options = {}) {
         const agentType = config.agent_type
         if (!agentType) return { success: false, result: 'agent_type requerido', aiUsed: false }
 
-        const systemPrompt = await getAgentSystemPrompt(agentType)
-        const userPrompt = fill(config.prompt_template || `Genera una respuesta para ${leadContext.lead_name}.`)
-        const contextStr = `
+        let finalMessage, agentData, rawResponse
+
+        if (config._preGeneratedMessage) {
+          rawResponse = config._preGeneratedMessage
+          const parsed = parseAgentReply(rawResponse)
+          finalMessage = parsed.message || rawResponse
+          agentData = parsed.data
+        } else {
+          const systemPrompt = await getAgentSystemPrompt(agentType)
+          const userPrompt = fill(config.prompt_template || `Genera una respuesta para ${leadContext.lead_name}.`)
+          const contextStr = `
 Agencia: ${leadContext.agency_name || ''}
 Lead: ${leadContext.lead_name || ''} | Score: ${leadContext.score || '?'}/100 | Etapa: ${leadContext.stage || '?'}
 ${leadContext.lead_summary ? `Perfil: ${leadContext.lead_summary}` : ''}
 ${leadContext.budget ? `Presupuesto: ${leadContext.budget}€` : ''}
 ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
 
-        const rawResponse = await callOpenRouter({
-          messages: [
-            { role: 'system', content: systemPrompt + '\n\n---' + contextStr },
-            { role: 'user', content: userPrompt },
-          ],
-          model: agentType === 'tasador' || agentType === 'analista' || agentType === 'financiero' ? 'reason' : 'smart',
-          temperature: 0.7,
-          maxTokens: 1500,
-        })
+          rawResponse = await callOpenRouter({
+            messages: [
+              { role: 'system', content: systemPrompt + '\n\n---' + contextStr },
+              { role: 'user', content: userPrompt },
+            ],
+            model: agentType === 'tasador' || agentType === 'analista' || agentType === 'financiero' ? 'reason' : 'smart',
+            temperature: 0.7,
+            maxTokens: 1500,
+          })
 
-        const { message: agentMessage, data: agentData } = parseAgentReply(rawResponse)
-        const finalMessage = agentMessage || rawResponse
+          const parsed = parseAgentReply(rawResponse)
+          finalMessage = parsed.message || rawResponse
+          agentData = parsed.data
+        }
         let whatsappSent = false
         let savedToDb = false
 
@@ -197,7 +212,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
           }
 
           if (autoSend && finalMessage && leadContext.phone) {
-            whatsappSent = await sendWhatsApp(leadContext.phone, finalMessage, agencyId)
+            whatsappSent = await sendWhatsApp(leadContext.phone, finalMessage, agencyId, leadContext)
           }
 
           run(
@@ -236,6 +251,22 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
             if (Object.keys(updates).length > 2) {
               const k = Object.keys(updates).map(k => `${k} = @${k}`).join(', ')
               run(`UPDATE leads SET ${k} WHERE id = @id`, { ...updates, id: leadId })
+            }
+          }
+
+          // Enviar a destinos adicionales configurados en la acción
+          if (!testMode && config.destinations?.length && finalMessage && agencyId) {
+            const { sendToDestination } = await import('./destinations.js')
+            for (const destConfig of config.destinations) {
+              const destResult = await sendToDestination({
+                destConfig,
+                content: finalMessage,
+                ctx: leadContext,
+                subject: config.subject_template,
+                agencyId,
+              })
+              const destType = destConfig.type || 'desconocido'
+              console.log(`[Destination ${destType}] ${destResult.detail}`)
             }
           }
         }

@@ -9,9 +9,9 @@ router.use(auth);
 
 router.get('/', (req, res) => {
   try {
-    const { status, type, city, zone, min_price, max_price, bedrooms, agency_id, office_id, search } = req.query;
-    let sql = 'SELECT * FROM properties WHERE 1=1';
-    const params = {};
+    const { status, type, city, zone, min_price, max_price, bedrooms, office_id, search } = req.query;
+    let sql = 'SELECT * FROM properties WHERE agency_id = @agency_id';
+    const params = { agency_id: req.user.agency_id };
 
     if (status) { sql += ' AND status = @status'; params.status = status; }
     if (type) { sql += ' AND type = @type'; params.type = type; }
@@ -20,7 +20,6 @@ router.get('/', (req, res) => {
     if (min_price) { sql += ' AND price >= @min_price'; params.min_price = Number(min_price); }
     if (max_price) { sql += ' AND price <= @max_price'; params.max_price = Number(max_price); }
     if (bedrooms) { sql += ' AND bedrooms >= @bedrooms'; params.bedrooms = Number(bedrooms); }
-    if (agency_id) { sql += ' AND agency_id = @agency_id'; params.agency_id = agency_id; }
     if (office_id) { sql += ' AND office_id = @office_id'; params.office_id = office_id; }
     if (search) {
       sql += ' AND (title LIKE @search OR description LIKE @search OR city LIKE @search OR zone LIKE @search)';
@@ -39,7 +38,7 @@ router.get('/', (req, res) => {
 
 router.get('/:id', (req, res) => {
   try {
-    const property = get('SELECT * FROM properties WHERE id = @id', { id: req.params.id });
+    const property = get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!property) return res.status(404).json({ error: 'Propiedad no encontrada.' });
     res.json(property);
   } catch (error) {
@@ -50,7 +49,7 @@ router.get('/:id', (req, res) => {
 
 router.post('/', (req, res) => {
   try {
-    const { title, description, price, type, city, zone, bedrooms, bathrooms, surface, features, images, agency_id, office_id } = req.body;
+    const { title, description, price, type, city, zone, bedrooms, bathrooms, surface, features, images, office_id } = req.body;
     if (!title || !price || !type || !city) {
       return res.status(400).json({ error: 'Faltan campos obligatorios: title, price, type, city.' });
     }
@@ -60,7 +59,7 @@ router.post('/', (req, res) => {
       `INSERT INTO properties (id, agency_id, office_id, title, description, price, type, city, zone, bedrooms, bathrooms, surface, features, images, created_at)
        VALUES (@id, @agency_id, @office_id, @title, @description, @price, @type, @city, @zone, @bedrooms, @bathrooms, @surface, @features, @images, datetime('now'))`,
       {
-        id, agency_id: agency_id || req.user.agency_id, office_id: office_id || req.user.office_id,
+        id, agency_id: req.user.agency_id, office_id: office_id || req.user.office_id,
         title, description, price, type, city, zone, bedrooms: bedrooms || 0, bathrooms: bathrooms || 0,
         surface, features: features ? JSON.stringify(features) : null, images: images ? JSON.stringify(images) : null,
       }
@@ -76,7 +75,7 @@ router.post('/', (req, res) => {
 
 router.patch('/:id', (req, res) => {
   try {
-    const existing = get('SELECT * FROM properties WHERE id = @id', { id: req.params.id });
+    const existing = get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!existing) return res.status(404).json({ error: 'Propiedad no encontrada.' });
 
     const allowed = ['title', 'description', 'price', 'type', 'city', 'zone', 'bedrooms', 'bathrooms', 'surface', 'features', 'images', 'status', 'office_id'];
@@ -107,7 +106,7 @@ router.patch('/:id', (req, res) => {
 
 router.delete('/:id', (req, res) => {
   try {
-    const existing = get('SELECT * FROM properties WHERE id = @id', { id: req.params.id });
+    const existing = get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!existing) return res.status(404).json({ error: 'Propiedad no encontrada.' });
 
     run('DELETE FROM properties WHERE id = @id', { id: req.params.id });
@@ -123,12 +122,14 @@ router.post('/match-lead', async (req, res) => {
     const { lead_id, filters } = req.body;
     if (!lead_id) return res.status(400).json({ error: 'Se requiere lead_id.' });
 
-    const lead = get('SELECT * FROM leads WHERE id = @id', { id: lead_id });
+    const agencyId = req.user.agency_id;
+    const lead = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id',
+      { id: lead_id, agency_id: agencyId });
     if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' });
 
     let sql = 'SELECT * FROM properties WHERE status = \'disponible\'';
     const params = {};
-    if (lead.agency_id) { sql += ' AND agency_id = @agency_id'; params.agency_id = lead.agency_id; }
+    sql += ' AND agency_id = @agency_id'; params.agency_id = agencyId;
     if (lead.zone) { sql += ' AND (zone LIKE @zone OR city LIKE @zone)'; params.zone = `%${lead.zone}%`; }
     if (lead.budget) {
       sql += ' AND price <= @max_price';

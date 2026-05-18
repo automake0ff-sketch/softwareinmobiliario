@@ -2,6 +2,12 @@ import { get } from '../db/db.js';
 
 const API_TOKEN = process.env.API_TOKEN || 'demo-token-dev';
 
+export function getAgencyFromUser(userId) {
+  const user = get('SELECT agency_id FROM users WHERE id = @id', { id: userId })
+  if (user) return user.agency_id
+  return null
+}
+
 export function auth(req, res, next) {
   const token = req.headers['x-auth-token'];
   const userId = req.headers['x-auth-user'];
@@ -17,27 +23,28 @@ export function auth(req, res, next) {
   let agencyId = req.headers['x-auth-agency'] || null
   const officeId = req.headers['x-auth-office'] || null
 
-  if (agencyId) {
-    const agency = get('SELECT id FROM agencies WHERE id = @id', { id: agencyId })
-    if (!agency) {
-      const firstAgency = get('SELECT id FROM agencies LIMIT 1')
-      if (firstAgency) agencyId = firstAgency.id
-    }
-  } else {
-    const user = get('SELECT agency_id FROM users WHERE id = @id', { id: userId })
-    if (user) agencyId = user.agency_id
+  if (!agencyId) {
+    agencyId = getAgencyFromUser(userId)
   }
 
   if (!agencyId) {
-    const firstAgency = get('SELECT id FROM agencies LIMIT 1')
-    if (firstAgency) agencyId = firstAgency.id
+    return res.status(401).json({ error: 'Usuario no tiene agencia asignada. Contacte al administrador.' });
   }
+
+  const agency = get('SELECT id FROM agencies WHERE id = @id', { id: agencyId })
+  if (!agency) {
+    return res.status(404).json({ error: 'Agencia no encontrada.' });
+  }
+
+  const sub = get('SELECT plan_id, status FROM subscriptions WHERE agency_id = @aid ORDER BY created_at DESC LIMIT 1', { aid: agencyId })
 
   req.user = {
     id: userId,
     role: req.headers['x-auth-role'] || 'comercial',
     agency_id: agencyId,
     office_id: officeId,
+    plan_id: sub?.plan_id || 'starter',
+    plan_status: sub?.status || 'active',
   };
 
   next();
@@ -55,4 +62,14 @@ export function requireRole(...roles) {
   };
 }
 
-export default { auth, requireRole };
+export function requireSuperAdmin(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ error: 'No autenticado.' });
+  }
+  if (req.user.role !== 'super_admin') {
+    return res.status(403).json({ error: 'Acceso solo para administradores del SaaS.' });
+  }
+  next();
+}
+
+export default { auth, requireRole, requireSuperAdmin };

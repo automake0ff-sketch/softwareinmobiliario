@@ -42,14 +42,14 @@ export async function executeTool(toolName, toolInput, context) {
 
       case 'crear_lead': {
         const id = uuidv4();
-        const defaultAgencyId = agencyId || get('SELECT id FROM agencies LIMIT 1')?.id;
+        if (!agencyId) throw new Error('Se requiere agency_id para crear un lead');
 
         run(
           `INSERT INTO leads (id, agency_id, name, phone, email, budget, zone, property_interest, source, ia_score, ia_insight, ia_summary, created_at, updated_at)
            VALUES (@id, @aid, @name, @phone, @email, @budget, @zone, @pi, @source, @score, @insight, @summary, datetime('now'), datetime('now'))`,
           {
             id,
-            aid: defaultAgencyId,
+            aid: agencyId,
             name: toolInput.name,
             phone: toolInput.phone,
             email: toolInput.email || null,

@@ -121,6 +121,8 @@ export function ExecutionModal({ automation, leads, onClose }) {
         aiMessage: '',
         aiUsed: false,
         durationMs: null,
+        savedToDb: false,
+        whatsappSent: false,
       }))
     )
   }, [automation])
@@ -170,7 +172,7 @@ export function ExecutionModal({ automation, leads, onClose }) {
           if (event.type === 'action_done') {
             setActionResults(prev => prev.map((r, i) =>
               i === event.index
-                ? { ...r, status: 'success', result: event.result, aiMessage: event.aiMessage, aiUsed: event.aiUsed, durationMs: event.durationMs }
+                ? { ...r, status: 'success', result: event.result, aiMessage: event.aiMessage, aiUsed: event.aiUsed, durationMs: event.durationMs, savedToDb: event.savedToDb, whatsappSent: event.whatsappSent }
                 : r
             ))
             setStreamingText(prev => {
@@ -208,6 +210,8 @@ export function ExecutionModal({ automation, leads, onClose }) {
         aiMessage: '',
         aiUsed: false,
         durationMs: null,
+        savedToDb: false,
+        whatsappSent: false,
       }))
     )
     setStreamingText({})
@@ -409,6 +413,27 @@ export function ExecutionModal({ automation, leads, onClose }) {
                             <span className="ml-auto text-xs text-white/30">{result.durationMs}ms</span>
                           )}
                         </div>
+
+                        {/* Badges de acciones reales */}
+                        {result.status === 'success' && (
+                          <div className="flex flex-wrap gap-1.5 mb-2">
+                            {result.savedToDb && (
+                              <span className="text-[11px] bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded-full">
+                                ✓ Guardado en CRM
+                              </span>
+                            )}
+                            {result.whatsappSent && (
+                              <span className="text-[11px] bg-green-500/15 text-green-400 px-2 py-0.5 rounded-full">
+                                ✓ WhatsApp enviado
+                              </span>
+                            )}
+                            {result.savedToDb && !result.whatsappSent && result.aiUsed && (
+                              <span className="text-[11px] bg-yellow-500/15 text-yellow-400 px-2 py-0.5 rounded-full">
+                                ⚠ WhatsApp no configurado
+                              </span>
+                            )}
+                          </div>
+                        )}
 
                         {/* Streaming text */}
                         {streaming && (

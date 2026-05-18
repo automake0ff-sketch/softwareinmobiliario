@@ -1,26 +1,29 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Building2, MessageCircle, Home, Users2, Rocket,
-  Check, Upload, ArrowLeft, ArrowRight, Camera,
-  Phone, Bot, Star, Sparkles, Shield, Zap
+  MessageCircle, Mail, Home, Users2, Rocket,
+  Check, Upload, ArrowLeft, ArrowRight,
+  Phone, Bot, Star, Sparkles, Shield, Zap, MailCheck,
+  SkipForward
 } from 'lucide-react'
+import toast from 'react-hot-toast'
+import api from '../lib/api'
+import { useStore } from '../lib/store'
 
 const steps = [
-  { id: 1, label: 'Perfil', icon: Building2 },
-  { id: 2, label: 'WhatsApp', icon: MessageCircle },
+  { id: 1, label: 'WhatsApp', icon: MessageCircle },
+  { id: 2, label: 'Email', icon: Mail },
   { id: 3, label: 'Propiedades', icon: Home },
-  { id: 4, label: 'Agentes', icon: Users2 },
-  { id: 5, label: 'Lanzar', icon: Rocket },
+  { id: 4, label: 'Agentes IA', icon: Users2 },
 ]
 
-const agentRoles = [
-  { id: 'captador', name: 'Captador', desc: 'Busca y capta nuevas propiedades', recommended: true },
-  { id: 'coordinador', name: 'Coordinador', desc: 'Coordina visitas y agenda', recommended: true },
-  { id: 'vendedor', name: 'Vendedor', desc: 'Cierra ventas y negociaciones', recommended: true },
-  { id: 'marketing', name: 'Marketing', desc: 'Gestiona campa\u00f1as y redes sociales', recommended: false },
-  { id: 'analista', name: 'Analista', desc: 'Analiza datos y rendimiento', recommended: false },
-  { id: 'soporte', name: 'Soporte', desc: 'Atenci\u00f3n al cliente y postventa', recommended: false },
+const AGENTS = [
+  { type: 'captador', name: 'Captador IA', desc: 'Capta y cualifica nuevos leads automáticamente', recommended: true },
+  { type: 'vendedor', name: 'Vendedor IA', desc: 'Convierte leads en ventas con seguimiento inteligente', recommended: true },
+  { type: 'coordinador', name: 'Coordinador IA', desc: 'Coordina visitas y gestiona el pipeline', recommended: true },
+  { type: 'nurturing', name: 'Nurturing IA', desc: 'Mantiene calientes los leads fríos', recommended: false },
+  { type: 'copywriter', name: 'Copywriter IA', desc: 'Genera descripciones y contenido SEO', recommended: false },
+  { type: 'analista', name: 'Analista IA', desc: 'Analiza datos y genera informes', recommended: false },
 ]
 
 const stepVariants = {
@@ -29,31 +32,58 @@ const stepVariants = {
   exit: { opacity: 0, x: -40 },
 }
 
-const propertyTemplate = { title: '', type: 'piso', location: '', price: '' }
+const propertyTemplate = { title: '', type: 'piso', zone: '', price: '' }
 
 export default function OnboardingPage() {
   const [currentStep, setCurrentStep] = useState(1)
 
-  const [perfil, setPerfil] = useState({ name: '', city: '', zone: '', logo: null })
-  const [whatsapp, setWhatsapp] = useState({ phone: '', connected: false })
+  const [whatsapp, setWhatsapp] = useState({ phone: '', wa_token: '', wa_phone_id: '', connected: false })
+  const [email, setEmail] = useState({ provider: 'sendgrid', api_key: '', from_email: '', from_name: '', connected: false })
   const [properties, setProperties] = useState([{ ...propertyTemplate }])
   const [agents, setAgents] = useState(
-    agentRoles.map(a => ({ ...a, active: a.recommended }))
+    AGENTS.map(a => ({ ...a, active: a.recommended }))
   )
   const [launched, setLaunched] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   const totalSteps = steps.length
   const progress = (currentStep / totalSteps) * 100
 
+  const canSkip = currentStep !== 3
   const canProceed = () => {
     switch (currentStep) {
-      case 1: return perfil.name.trim().length > 0
-      case 2: return whatsapp.phone.trim().length >= 9
-      case 3: return properties.filter(p => p.title.trim()).length >= 3
+      case 1: return whatsapp.connected || whatsapp.phone.length >= 9
+      case 2: return email.connected || email.api_key.length > 0 || true
+      case 3: return properties.some(p => p.title.trim())
       case 4: return agents.some(a => a.active)
-      case 5: return true
       default: return false
     }
+  }
+
+  const saveConfig = async () => {
+    setSaving(true)
+    try {
+      await api.patch('/agency/config', {
+        whatsapp_number: whatsapp.phone,
+        whatsapp_token: whatsapp.wa_token,
+        whatsapp_phone_id: whatsapp.wa_phone_id,
+        sendgrid_api_key: email.api_key,
+        sendgrid_from_email: email.from_email,
+        sendgrid_from_name: email.from_name || undefined,
+        onboarding_step: 4,
+        onboarding_completed: 1,
+      })
+      toast.success('Configuración guardada')
+    } catch (err) {
+      console.error('Error saving config:', err)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleLaunch = async () => {
+    await saveConfig()
+    setLaunched(true)
   }
 
   const nextStep = () => {
@@ -65,26 +95,50 @@ export default function OnboardingPage() {
     if (currentStep > 1) setCurrentStep(prev => prev - 1)
   }
 
-  const handleLaunch = () => {
-    setLaunched(true)
-  }
+  const addProperty = () => setProperties(prev => [...prev, { ...propertyTemplate }])
 
-  const addProperty = () => {
-    setProperties(prev => [...prev, { ...propertyTemplate }])
-  }
-
-  const updateProperty = (index, field, value) => {
+  const updateProperty = (index, field, value) =>
     setProperties(prev => prev.map((p, i) => i === index ? { ...p, [field]: value } : p))
-  }
 
   const removeProperty = (index) => {
-    if (properties.length > 1) {
-      setProperties(prev => prev.filter((_, i) => i !== index))
+    if (properties.length > 1) setProperties(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const toggleAgent = (type) =>
+    setAgents(prev => prev.map(a => a.type === type ? { ...a, active: !a.active } : a))
+
+  const testWhatsApp = async () => {
+    try {
+      const res = await api.post('/agency/test-integration', {
+        integration: 'whatsapp',
+        config: { whatsapp_token: whatsapp.wa_token, whatsapp_phone_id: whatsapp.wa_phone_id },
+      })
+      if (res.ok) {
+        setWhatsapp(prev => ({ ...prev, connected: true }))
+        toast.success(res.msg)
+      } else {
+        toast.error(res.msg)
+      }
+    } catch (err) {
+      toast.error('Error al probar conexión')
     }
   }
 
-  const toggleAgent = (id) => {
-    setAgents(prev => prev.map(a => a.id === id ? { ...a, active: !a.active } : a))
+  const testEmail = async () => {
+    try {
+      const res = await api.post('/agency/test-integration', {
+        integration: 'email',
+        config: { sendgrid_api_key: email.api_key },
+      })
+      if (res.ok) {
+        setEmail(prev => ({ ...prev, connected: true }))
+        toast.success(res.msg)
+      } else {
+        toast.error(res.msg)
+      }
+    } catch (err) {
+      toast.error('Error al probar conexión')
+    }
   }
 
   const StepIndicator = ({ step, current }) => {
@@ -124,95 +178,106 @@ export default function OnboardingPage() {
       case 1:
         return (
           <div className="space-y-5">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mx-auto mb-3">
-                <Building2 size={28} />
+            <div className="text-center mb-4">
+              <div className="w-16 h-16 rounded-2xl bg-green-500/10 text-green-400 flex items-center justify-center mx-auto mb-3">
+                <MessageCircle size={28} />
               </div>
-              <h2 className="text-xl font-bold text-[#F1F5F9] font-syne">Perfil de agencia</h2>
-              <p className="text-sm text-[#94A3B8] mt-1">Cu\u00e9ntanos sobre tu agencia inmobiliaria</p>
-            </div>
-
-            <div className="flex flex-col items-center gap-4 mb-6">
-              <div className="w-24 h-24 rounded-2xl bg-[#1E1E2E] border-2 border-dashed border-[#2A2A3E] flex items-center justify-center cursor-pointer hover:border-indigo-500/50 transition-colors group">
-                <div className="text-center">
-                  <Camera size={24} className="text-[#4A4A5E] group-hover:text-indigo-400 transition-colors mx-auto" />
-                  <span className="text-[10px] text-[#4A4A5E] mt-1 block">Logo</span>
-                </div>
-              </div>
-              <span className="text-xs text-[#4A4A5E]">A\u00f1ade el logo de tu agencia (opcional)</span>
+              <h2 className="text-xl font-bold text-[#F1F5F9]">Conectar WhatsApp</h2>
+              <p className="text-sm text-[#94A3B8] mt-1">Introduce tu token de WhatsApp Business API</p>
             </div>
 
             <div>
-              <label className="block text-sm text-[#94A3B8] mb-1.5">Nombre de la agencia</label>
-              <input
-                type="text"
-                value={perfil.name}
-                onChange={e => setPerfil(prev => ({ ...prev, name: e.target.value }))}
-                placeholder="Ej: Inmobiliaria Centro"
-                className="w-full px-4 py-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-indigo-500/50 transition-colors"
-              />
+              <label className="block text-sm text-[#94A3B8] mb-1.5">Número de teléfono</label>
+              <input value={whatsapp.phone} onChange={e => setWhatsapp(prev => ({ ...prev, phone: e.target.value }))}
+                placeholder="+34 612 345 678"
+                className="w-full px-4 py-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-green-500/50" />
+            </div>
+            <div>
+              <label className="block text-sm text-[#94A3B8] mb-1.5">WhatsApp Token (Meta)</label>
+              <input value={whatsapp.wa_token} onChange={e => setWhatsapp(prev => ({ ...prev, wa_token: e.target.value }))}
+                placeholder="EAAx..."
+                className="w-full px-4 py-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-green-500/50" />
+            </div>
+            <div>
+              <label className="block text-sm text-[#94A3B8] mb-1.5">Phone Number ID</label>
+              <input value={whatsapp.wa_phone_id} onChange={e => setWhatsapp(prev => ({ ...prev, wa_phone_id: e.target.value }))}
+                placeholder="123456789"
+                className="w-full px-4 py-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-green-500/50" />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm text-[#94A3B8] mb-1.5">Ciudad</label>
-                <input
-                  type="text"
-                  value={perfil.city}
-                  onChange={e => setPerfil(prev => ({ ...prev, city: e.target.value }))}
-                  placeholder="Ej: Madrid"
-                  className="w-full px-4 py-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-indigo-500/50 transition-colors"
-                />
+            {(whatsapp.wa_token || whatsapp.phone) && (
+              <button onClick={testWhatsApp}
+                className="w-full flex items-center justify-center gap-2 py-3 bg-green-600 hover:bg-green-500 text-white rounded-xl transition-all text-sm font-medium">
+                <Phone size={16} /> Probar conexión
+              </button>
+            )}
+
+            {whatsapp.connected && (
+              <div className="flex items-center gap-2 text-sm text-green-400 bg-green-500/5 border border-green-500/20 rounded-xl px-4 py-3">
+                <Check size={16} /> WhatsApp conectado correctamente
               </div>
-              <div>
-                <label className="block text-sm text-[#94A3B8] mb-1.5">Zona de operaci\u00f3n</label>
-                <input
-                  type="text"
-                  value={perfil.zone}
-                  onChange={e => setPerfil(prev => ({ ...prev, zone: e.target.value }))}
-                  placeholder="Ej: Centro, Chamart\u00edn"
-                  className="w-full px-4 py-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-indigo-500/50 transition-colors"
-                />
-              </div>
-            </div>
+            )}
+
+            <p className="text-xs text-[#4A4A5E] text-center">
+              ¿No tienes WhatsApp Business API?{' '}
+              <a href="https://developers.facebook.com/docs/whatsapp/overview" target="_blank" rel="noopener noreferrer"
+                className="text-indigo-400 hover:text-indigo-300">Guía de Meta</a>
+            </p>
           </div>
         )
 
       case 2:
         return (
           <div className="space-y-5">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 rounded-2xl bg-green-500/10 text-green-400 flex items-center justify-center mx-auto mb-3">
-                <MessageCircle size={28} />
+            <div className="text-center mb-4">
+              <div className="w-16 h-16 rounded-2xl bg-blue-500/10 text-blue-400 flex items-center justify-center mx-auto mb-3">
+                <Mail size={28} />
               </div>
-              <h2 className="text-xl font-bold text-[#F1F5F9] font-syne">Conectar WhatsApp</h2>
-              <p className="text-sm text-[#94A3B8] mt-1">Conecta tu n\u00famero de WhatsApp Business</p>
+              <h2 className="text-xl font-bold text-[#F1F5F9]">Conectar Email</h2>
+              <p className="text-sm text-[#94A3B8] mt-1">Configura el envío de emails desde tu agencia</p>
             </div>
 
             <div>
-              <label className="block text-sm text-[#94A3B8] mb-1.5">N\u00famero de tel\u00e9fono</label>
-              <div className="flex gap-3">
-                <input
-                  type="tel"
-                  value={whatsapp.phone}
-                  onChange={e => setWhatsapp(prev => ({ ...prev, phone: e.target.value }))}
-                  placeholder="+34 612 345 678"
-                  className="flex-1 px-4 py-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-green-500/50 transition-colors"
-                />
-                <button className="flex items-center gap-2 px-6 py-3 bg-green-500 text-white rounded-xl hover:bg-green-600 transition-all text-sm font-medium">
-                  <Phone size={16} />
-                  Conectar
-                </button>
-              </div>
-              <p className="text-xs text-[#4A4A5E] mt-2">
-                Recibir\u00e1s un c\u00f3digo de verificaci\u00f3n en este n\u00famero
-              </p>
+              <label className="block text-sm text-[#94A3B8] mb-1.5">Proveedor</label>
+              <select value={email.provider} onChange={e => setEmail(prev => ({ ...prev, provider: e.target.value }))}
+                className="w-full px-4 py-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] focus:outline-none focus:border-blue-500/50">
+                <option value="sendgrid">SendGrid (recomendado)</option>
+                <option value="smtp">SMTP propio</option>
+              </select>
             </div>
 
-            {whatsapp.connected && (
-              <div className="flex items-center gap-2 text-sm text-green-400 bg-green-500/5 border border-green-500/20 rounded-xl px-4 py-3">
-                <Check size={16} />
-                WhatsApp conectado correctamente
+            <div>
+              <label className="block text-sm text-[#94A3B8] mb-1.5">API Key</label>
+              <input value={email.api_key} onChange={e => setEmail(prev => ({ ...prev, api_key: e.target.value }))}
+                placeholder="SG.xxxxx..."
+                className="w-full px-4 py-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-blue-500/50" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-[#94A3B8] mb-1.5">Email remitente</label>
+                <input value={email.from_email} onChange={e => setEmail(prev => ({ ...prev, from_email: e.target.value }))}
+                  placeholder="info@tuagencia.com"
+                  className="w-full px-4 py-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-blue-500/50" />
+              </div>
+              <div>
+                <label className="block text-sm text-[#94A3B8] mb-1.5">Nombre remitente</label>
+                <input value={email.from_name} onChange={e => setEmail(prev => ({ ...prev, from_name: e.target.value }))}
+                  placeholder="Tu Agencia"
+                  className="w-full px-4 py-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-blue-500/50" />
+              </div>
+            </div>
+
+            {email.api_key && (
+              <button onClick={testEmail}
+                className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-all text-sm font-medium">
+                <MailCheck size={16} /> Enviar email de prueba
+              </button>
+            )}
+
+            {email.connected && (
+              <div className="flex items-center gap-2 text-sm text-blue-400 bg-blue-500/5 border border-blue-500/20 rounded-xl px-4 py-3">
+                <Check size={16} /> Email configurado correctamente
               </div>
             )}
           </div>
@@ -221,12 +286,12 @@ export default function OnboardingPage() {
       case 3:
         return (
           <div className="space-y-5">
-            <div className="text-center mb-6">
+            <div className="text-center mb-4">
               <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mx-auto mb-3">
                 <Home size={28} />
               </div>
-              <h2 className="text-xl font-bold text-[#F1F5F9] font-syne">Importar propiedades</h2>
-              <p className="text-sm text-[#94A3B8] mt-1">A\u00f1ade al menos 3 propiedades para empezar</p>
+              <h2 className="text-xl font-bold text-[#F1F5F9]">Añadir primera propiedad</h2>
+              <p className="text-sm text-[#94A3B8] mt-1">Añade al menos 1 propiedad para que los agentes tengan con qué trabajar</p>
             </div>
 
             <div className="space-y-3">
@@ -235,90 +300,59 @@ export default function OnboardingPage() {
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-xs text-[#4A4A5E] font-medium">Propiedad #{i + 1}</span>
                     {properties.length > 1 && (
-                      <button
-                        onClick={() => removeProperty(i)}
-                        className="text-xs text-red-400 hover:text-red-300 transition-colors"
-                      >
-                        Eliminar
-                      </button>
+                      <button onClick={() => removeProperty(i)}
+                        className="text-xs text-red-400 hover:text-red-300">Eliminar</button>
                     )}
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="sm:col-span-2">
-                      <input
-                        type="text"
-                        value={prop.title}
-                        onChange={e => updateProperty(i, 'title', e.target.value)}
-                        placeholder="T\u00edtulo de la propiedad"
-                        className="w-full px-4 py-2.5 bg-[#13131A] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-indigo-500/50 transition-colors text-sm"
-                      />
+                      <input value={prop.title} onChange={e => updateProperty(i, 'title', e.target.value)}
+                        placeholder="Título de la propiedad"
+                        className="w-full px-4 py-2.5 bg-[#13131A] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-indigo-500/50 text-sm" />
                     </div>
-                    <select
-                      value={prop.type}
-                      onChange={e => updateProperty(i, 'type', e.target.value)}
-                      className="px-4 py-2.5 bg-[#13131A] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] focus:outline-none focus:border-indigo-500/50 transition-colors text-sm"
-                    >
+                    <select value={prop.type} onChange={e => updateProperty(i, 'type', e.target.value)}
+                      className="px-4 py-2.5 bg-[#13131A] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] focus:outline-none focus:border-indigo-500/50 text-sm">
                       <option value="piso">Piso</option>
                       <option value="chalet">Chalet</option>
                       <option value="local">Local</option>
                       <option value="oficina">Oficina</option>
                       <option value="terreno">Terreno</option>
                     </select>
-                    <input
-                      type="text"
-                      value={prop.location}
-                      onChange={e => updateProperty(i, 'location', e.target.value)}
-                      placeholder="Ubicaci\u00f3n"
-                      className="px-4 py-2.5 bg-[#13131A] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-indigo-500/50 transition-colors text-sm"
-                    />
-                    <input
-                      type="text"
-                      value={prop.price}
-                      onChange={e => updateProperty(i, 'price', e.target.value)}
-                      placeholder="Precio (ej: 250.000\u20AC)"
-                      className="px-4 py-2.5 bg-[#13131A] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-indigo-500/50 transition-colors text-sm"
-                    />
+                    <input value={prop.zone} onChange={e => updateProperty(i, 'zone', e.target.value)}
+                      placeholder="Zona / Ubicación"
+                      className="px-4 py-2.5 bg-[#13131A] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-indigo-500/50 text-sm" />
+                    <input value={prop.price} onChange={e => updateProperty(i, 'price', e.target.value)}
+                      placeholder="Precio (ej: 250.000€)"
+                      className="px-4 py-2.5 bg-[#13131A] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-indigo-500/50 text-sm" />
                   </div>
                 </div>
               ))}
             </div>
 
-            <button
-              onClick={addProperty}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#0A0A0F] border border-dashed border-[#1E1E2E] rounded-xl text-[#94A3B8] hover:border-indigo-500/50 hover:text-indigo-400 transition-all text-sm"
-            >
-              <Upload size={16} />
-              A\u00f1adir otra propiedad
+            <button onClick={addProperty}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#0A0A0F] border border-dashed border-[#1E1E2E] rounded-xl text-[#94A3B8] hover:border-indigo-500/50 hover:text-indigo-400 transition-all text-sm">
+              <Upload size={16} /> Añadir otra propiedad
             </button>
-
-            {properties.filter(p => p.title.trim()).length < 3 && (
-              <p className="text-xs text-amber-400 text-center">
-                A\u00f1ade al menos 3 propiedades para continuar ({properties.filter(p => p.title.trim()).length}/3)
-              </p>
-            )}
           </div>
         )
 
       case 4:
         return (
           <div className="space-y-5">
-            <div className="text-center mb-6">
+            <div className="text-center mb-4">
               <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mx-auto mb-3">
                 <Users2 size={28} />
               </div>
-              <h2 className="text-xl font-bold text-[#F1F5F9] font-syne">Activar agentes IA</h2>
-              <p className="text-sm text-[#94A3B8] mt-1">Selecciona los agentes de IA que quieres activar</p>
+              <h2 className="text-xl font-bold text-[#F1F5F9]">Activar agentes IA</h2>
+              <p className="text-sm text-[#94A3B8] mt-1">Activa los agentes que quieras en tu equipo</p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {agents.map((agent) => (
-                <div
-                  key={agent.id}
-                  onClick={() => toggleAgent(agent.id)}
+                <div key={agent.type}
+                  onClick={() => toggleAgent(agent.type)}
                   className={`bg-[#0A0A0F] border rounded-xl p-4 cursor-pointer transition-all ${
-                    agent.active
-                      ? 'border-indigo-500/30 bg-indigo-500/5'
-                      : 'border-[#1E1E2E] hover:border-[#2A2A3E]'
+                    agent.active ? 'border-indigo-500/30 bg-indigo-500/5' : 'border-[#1E1E2E] hover:border-[#2A2A3E]'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -332,20 +366,16 @@ export default function OnboardingPage() {
                         <div className="flex items-center gap-2">
                           <h3 className="text-sm font-semibold text-[#F1F5F9]">{agent.name}</h3>
                           {agent.recommended && (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-500/10 text-indigo-400">
-                              Recomendado
-                            </span>
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-500/10 text-indigo-400">Recomendado</span>
                           )}
                         </div>
                         <p className="text-xs text-[#94A3B8] mt-0.5">{agent.desc}</p>
                       </div>
                     </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); toggleAgent(agent.id) }}
+                    <button onClick={(e) => { e.stopPropagation(); toggleAgent(agent.type) }}
                       className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0 mt-1 ${
                         agent.active ? 'bg-indigo-500' : 'bg-[#2A2A3E]'
-                      }`}
-                    >
+                      }`}>
                       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
                         agent.active ? 'translate-x-[18px]' : 'translate-x-[3px]'
                       }`} />
@@ -357,117 +387,6 @@ export default function OnboardingPage() {
           </div>
         )
 
-      case 5:
-        return (
-          <div className="space-y-6 text-center">
-            {launched ? (
-              <motion.div
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ type: 'spring', stiffness: 200, damping: 15 }}
-                className="space-y-6"
-              >
-                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center mx-auto shadow-lg shadow-indigo-500/20">
-                  <Rocket size={48} className="text-white" />
-                </div>
-
-                <div>
-                  <h2 className="text-2xl font-bold text-[#F1F5F9] font-syne">
-                    \u00a1Todo listo!
-                  </h2>
-                  <p className="text-[#94A3B8] mt-2 max-w-md mx-auto">
-                    Tu agencia <strong className="text-[#F1F5F9]">{perfil.name}</strong> est\u00e1 configurada y lista para operar.
-                    Hemos activado {agents.filter(a => a.active).length} agentes de IA para tu equipo.
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-center gap-6 py-4">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-indigo-400">{properties.filter(p => p.title.trim()).length}</div>
-                    <div className="text-xs text-[#94A3B8]">Propiedades</div>
-                  </div>
-                  <div className="w-px h-10 bg-[#1E1E2E]" />
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-green-400">{agents.filter(a => a.active).length}</div>
-                    <div className="text-xs text-[#94A3B8]">Agentes IA</div>
-                  </div>
-                  <div className="w-px h-10 bg-[#1E1E2E]" />
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-amber-400">1</div>
-                    <div className="text-xs text-[#94A3B8]">WhatsApp</div>
-                  </div>
-                </div>
-
-                <a
-                  href="/dashboard"
-                  className="inline-flex items-center gap-2 px-8 py-3.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl hover:from-indigo-600 hover:to-purple-600 transition-all text-sm font-medium shadow-lg shadow-indigo-500/20"
-                >
-                  <Zap size={16} />
-                  Ir al Dashboard
-                </a>
-
-                <div className="flex items-center justify-center gap-6 text-xs text-[#4A4A5E]">
-                  <span className="flex items-center gap-1"><Shield size={12} /> Datos seguros</span>
-                  <span className="flex items-center gap-1"><Star size={12} /> Sin compromiso</span>
-                  <span className="flex items-center gap-1"><Sparkles size={12} /> IA activa</span>
-                </div>
-              </motion.div>
-            ) : (
-              <motion.div
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                className="space-y-6"
-              >
-                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center mx-auto shadow-lg shadow-indigo-500/20">
-                  <Rocket size={48} className="text-white" />
-                </div>
-
-                <div>
-                  <h2 className="text-2xl font-bold text-[#F1F5F9] font-syne">
-                    \u00a1Estamos listos para lanzar!
-                  </h2>
-                  <p className="text-[#94A3B8] mt-2 max-w-md mx-auto">
-                    Revisa que todos los datos sean correctos y pulsa el bot\u00f3n para activar tu agencia.
-                  </p>
-                </div>
-
-                <div className="bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl p-4 max-w-sm mx-auto text-left">
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-[#94A3B8]">Agencia</span>
-                      <span className="text-[#F1F5F9] font-medium">{perfil.name || 'Sin nombre'}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-[#94A3B8]">Ubicaci\u00f3n</span>
-                      <span className="text-[#F1F5F9] font-medium">{perfil.city ? `${perfil.city}, ${perfil.zone}` : 'No especificado'}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-[#94A3B8]">WhatsApp</span>
-                      <span className="text-[#F1F5F9] font-medium">{whatsapp.phone || 'No conectado'}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-[#94A3B8]">Propiedades</span>
-                      <span className="text-[#F1F5F9] font-medium">{properties.filter(p => p.title.trim()).length}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-[#94A3B8]">Agentes IA</span>
-                      <span className="text-[#F1F5F9] font-medium">{agents.filter(a => a.active).length} activos</span>
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  onClick={handleLaunch}
-                  className="inline-flex items-center gap-2 px-8 py-3.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl hover:from-indigo-600 hover:to-purple-600 transition-all text-sm font-medium shadow-lg shadow-indigo-500/20"
-                >
-                  <Rocket size={16} />
-                  \u00a1Lanzar agencia!
-                </button>
-              </motion.div>
-            )}
-          </div>
-        )
-
       default:
         return null
     }
@@ -476,7 +395,48 @@ export default function OnboardingPage() {
   if (launched) {
     return (
       <div className="min-h-screen bg-[#0A0A0F] flex items-center justify-center p-4">
-        {renderStep()}
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+          className="text-center space-y-6 max-w-md"
+        >
+          <div className="w-24 h-24 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center mx-auto shadow-lg shadow-indigo-500/20">
+            <Rocket size={48} className="text-white" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold text-[#F1F5F9]">¡Todo listo!</h2>
+            <p className="text-[#94A3B8] mt-2">
+              Tu agencia está configurada y lista para operar.
+              Hemos activado {agents.filter(a => a.active).length} agentes de IA para tu equipo.
+            </p>
+          </div>
+          <div className="flex items-center justify-center gap-6 py-4">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-green-400">{whatsapp.connected ? '✓' : '-'}</div>
+              <div className="text-xs text-[#94A3B8]">WhatsApp</div>
+            </div>
+            <div className="w-px h-10 bg-[#1E1E2E]" />
+            <div className="text-center">
+              <div className="text-2xl font-bold text-blue-400">{email.connected ? '✓' : '-'}</div>
+              <div className="text-xs text-[#94A3B8]">Email</div>
+            </div>
+            <div className="w-px h-10 bg-[#1E1E2E]" />
+            <div className="text-center">
+              <div className="text-2xl font-bold text-indigo-400">{properties.filter(p => p.title.trim()).length}</div>
+              <div className="text-xs text-[#94A3B8]">Propiedades</div>
+            </div>
+            <div className="w-px h-10 bg-[#1E1E2E]" />
+            <div className="text-center">
+              <div className="text-2xl font-bold text-amber-400">{agents.filter(a => a.active).length}</div>
+              <div className="text-xs text-[#94A3B8]">Agentes IA</div>
+            </div>
+          </div>
+          <a href="/dashboard"
+            className="inline-flex items-center gap-2 px-8 py-3.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl hover:from-indigo-600 hover:to-purple-600 transition-all text-sm font-medium shadow-lg shadow-indigo-500/20">
+            <Zap size={16} /> Ir al Dashboard
+          </a>
+        </motion.div>
       </div>
     )
   }
@@ -487,7 +447,7 @@ export default function OnboardingPage() {
         <div className="bg-[#13131A] border border-[#1E1E2E] rounded-3xl p-8">
           <div className="flex items-center justify-center mb-8 overflow-x-auto pb-1">
             <div className="flex items-center gap-1">
-              {steps.map((step, i) => (
+              {steps.map(step => (
                 <div key={step.id} className="flex items-center">
                   <StepIndicator step={step} current={currentStep} />
                 </div>
@@ -497,53 +457,53 @@ export default function OnboardingPage() {
 
           <div className="relative mb-2">
             <div className="w-full h-1.5 bg-[#1E1E2E] rounded-full overflow-hidden">
-              <motion.div
-                className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
+              <motion.div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
                 initial={{ width: 0 }}
                 animate={{ width: `${progress}%` }}
-                transition={{ duration: 0.4, ease: 'easeInOut' }}
-              />
+                transition={{ duration: 0.4, ease: 'easeInOut' }} />
             </div>
-            <span className="absolute right-0 top-2 text-xs text-[#4A4A5E]">
-              Paso {currentStep} de {totalSteps}
-            </span>
+            <span className="absolute right-0 top-2 text-xs text-[#4A4A5E]">Paso {currentStep} de {totalSteps}</span>
           </div>
 
           <div className="mt-10 mb-8">
             <AnimatePresence mode="wait">
-              <motion.div
-                key={currentStep}
-                variants={stepVariants}
-                initial="enter"
-                animate="center"
-                exit="exit"
-                transition={{ duration: 0.2, ease: 'easeInOut' }}
-              >
+              <motion.div key={currentStep} variants={stepVariants}
+                initial="enter" animate="center" exit="exit"
+                transition={{ duration: 0.2, ease: 'easeInOut' }}>
                 {renderStep()}
               </motion.div>
             </AnimatePresence>
           </div>
 
           <div className="flex items-center justify-between pt-4 border-t border-[#1E1E2E]">
-            <button
-              onClick={prevStep}
-              disabled={currentStep === 1}
-              className="flex items-center gap-2 px-5 py-2.5 text-sm text-[#94A3B8] hover:text-[#F1F5F9] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              <ArrowLeft size={16} />
-              Anterior
+            <button onClick={prevStep} disabled={currentStep === 1}
+              className="flex items-center gap-2 px-5 py-2.5 text-sm text-[#94A3B8] hover:text-[#F1F5F9] disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+              <ArrowLeft size={16} /> Anterior
             </button>
 
-            {currentStep < totalSteps ? (
-              <button
-                onClick={nextStep}
-                disabled={!canProceed()}
-                className="flex items-center gap-2 px-6 py-2.5 bg-indigo-500 text-white rounded-xl hover:bg-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all text-sm font-medium"
-              >
-                Siguiente
-                <ArrowRight size={16} />
-              </button>
-            ) : null}
+            <div className="flex gap-2">
+              {canSkip && currentStep <= 2 && (
+                <button onClick={nextStep}
+                  className="flex items-center gap-2 px-5 py-2.5 text-sm text-[#64748B] hover:text-[#94A3B8] transition-colors">
+                  Saltar <SkipForward size={14} />
+                </button>
+              )}
+              {currentStep < totalSteps ? (
+                <button onClick={nextStep} disabled={!canProceed()}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-indigo-500 text-white rounded-xl hover:bg-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all text-sm font-medium">
+                  Siguiente <ArrowRight size={16} />
+                </button>
+              ) : (
+                <button onClick={handleLaunch} disabled={saving}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl hover:from-indigo-600 hover:to-purple-700 disabled:opacity-40 transition-all text-sm font-medium">
+                  {saving ? (
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <><Rocket size={16} /> Lanzar PropIA</>
+                  )}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

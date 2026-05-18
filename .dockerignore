@@ -1,0 +1,9 @@
+node_modules
+.git
+.env
+data/
+*.db
+server/node_modules
+server/server-err.txt
+server/server-test.err
+server/server-test.log

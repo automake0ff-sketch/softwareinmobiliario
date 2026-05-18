@@ -6,7 +6,7 @@ import { WebSocketServer } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync } from 'fs';
 import crypto from 'crypto';
 import { initDB, all, get, run, saveDB } from './db/db.js';
 import { defaultQueue, JobQueue } from './services/queue.js';
@@ -507,9 +507,31 @@ async function start() {
     console.log('[Seed] Error seeding templates:', e.message);
   }
 
+  const distPath = join(__dirname, '..', 'dist');
+  if (existsSync(distPath)) {
+    app.use(express.static(distPath));
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api/') || req.path.startsWith('/webhooks/') || req.path.startsWith('/ws')) {
+        return next();
+      }
+      const indexPath = join(distPath, 'index.html');
+      if (existsSync(indexPath)) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(readFileSync(indexPath, 'utf-8'));
+      } else {
+        next();
+      }
+    });
+    console.log(`📦 Sirviendo frontend estático desde ${distPath}`);
+  } else {
+    console.log('⚠️  Frontend no construido. Ejecuta "npm run build" para servirlo.');
+    console.log('   El frontend en desarrollo se sirve desde Vite (http://localhost:5173)');
+  }
+
   server.listen(PORT, () => {
     console.log(`🏢 CRM Inmobiliario API corriendo en puerto ${PORT}`);
     console.log(`📍 http://localhost:${PORT}/api/health`);
+    console.log(`🌐 App completa: http://localhost:${PORT}`);
     initializeRAG();
   });
 }

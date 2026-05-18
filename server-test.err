@@ -61,10 +61,21 @@ SQL Error: duplicate column name: meta_page_id SQL: ALTER TABLE agencies ADD COL
 SQL Error: duplicate column name: plan SQL: ALTER TABLE agencies ADD COLUMN plan TEXT DEFAULT 'starter'
 SQL Error: duplicate column name: plan_status SQL: ALTER TABLE agencies ADD COLUMN plan_status TEXT DEFAULT 'trialing'
 SQL Error: duplicate column name: wa_verify_token SQL: ALTER TABLE agencies ADD COLUMN wa_verify_token TEXT
+SQL Error: duplicate column name: wa_webhook_token SQL: ALTER TABLE agencies ADD COLUMN wa_webhook_token TEXT
 SQL Error: duplicate column name: email_provider SQL: ALTER TABLE agencies ADD COLUMN email_provider TEXT DEFAULT 'sendgrid'
 SQL Error: duplicate column name: slugs SQL: ALTER TABLE agencies ADD COLUMN slugs TEXT
 SQL Error: duplicate column name: primary_color SQL: ALTER TABLE agencies ADD COLUMN primary_color TEXT DEFAULT '#6366f1'
+SQL Error: duplicate column name: secondary_color SQL: ALTER TABLE agencies ADD COLUMN secondary_color TEXT DEFAULT '#8b5cf6'
 SQL Error: duplicate column name: logo_url SQL: ALTER TABLE agencies ADD COLUMN logo_url TEXT
+SQL Error: duplicate column name: custom_domain SQL: ALTER TABLE agencies ADD COLUMN custom_domain TEXT
+SQL Error: duplicate column name: province SQL: ALTER TABLE agencies ADD COLUMN province TEXT
+SQL Error: duplicate column name: country SQL: ALTER TABLE agencies ADD COLUMN country TEXT DEFAULT 'ES'
+SQL Error: duplicate column name: timezone SQL: ALTER TABLE agencies ADD COLUMN timezone TEXT DEFAULT 'Europe/Madrid'
+SQL Error: duplicate column name: language SQL: ALTER TABLE agencies ADD COLUMN language TEXT DEFAULT 'es'
+SQL Error: duplicate column name: bot_name SQL: ALTER TABLE agencies ADD COLUMN bot_name TEXT DEFAULT 'Asistente IA'
+SQL Error: duplicate column name: bot_tone SQL: ALTER TABLE agencies ADD COLUMN bot_tone TEXT DEFAULT 'profesional'
+SQL Error: duplicate column name: working_hours SQL: ALTER TABLE agencies ADD COLUMN working_hours TEXT DEFAULT '{"start":"09:00","en
+SQL Error: duplicate column name: webhook_custom SQL: ALTER TABLE agencies ADD COLUMN webhook_custom TEXT
 SQL Error: duplicate column name: whatsapp_number SQL: ALTER TABLE users ADD COLUMN whatsapp_number TEXT
 SQL Error: duplicate column name: telegram_chat_id SQL: ALTER TABLE users ADD COLUMN telegram_chat_id TEXT
 SQL Error: duplicate column name: slack_user_id SQL: ALTER TABLE users ADD COLUMN slack_user_id TEXT
@@ -74,3 +85,25 @@ SQL Error: duplicate column name: agency_id SQL: ALTER TABLE conversations ADD C
 SQL Error: duplicate column name: timezone SQL: ALTER TABLE users ADD COLUMN timezone TEXT DEFAULT 'Europe/Madrid'
 SQL Error: duplicate column name: working_hours SQL: ALTER TABLE users ADD COLUMN working_hours TEXT DEFAULT '{"start":"09:00","end":
 SQL Error: duplicate column name: preferences SQL: ALTER TABLE users ADD COLUMN preferences TEXT DEFAULT '{}'
+SQL Error: duplicate column name: created_at SQL: ALTER TABLE usage_counters ADD COLUMN created_at TEXT DEFAULT (datetime('now'))
+node:events:496
+      throw er; // Unhandled 'error' event
+      ^
+
+Error: listen EADDRINUSE: address already in use :::3002
+    at Server.setupListenHandle [as _listen2] (node:net:1939:16)
+    at listenInCluster (node:net:1996:12)
+    at Server.listen (node:net:2101:7)
+    at start (file:///C:/Users/HP/Desktop/softwareinmobiliario/server/index.js:531:10)
+Emitted 'error' event on WebSocketServer instance at:
+    at Server.emit (node:events:518:28)
+    at emitErrorNT (node:net:1975:8)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+  code: 'EADDRINUSE',
+  errno: -4091,
+  syscall: 'listen',
+  address: '::',
+  port: 3002
+}
+
+Node.js v22.15.0

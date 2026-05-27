@@ -3,9 +3,28 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { toast } from 'react-hot-toast'
 import styles from './StudioPage.module.css'
 
-const OPENROUTER_URL = import.meta.env.VITE_OPENROUTER_URL || 'https://openrouter.ai/api/v1/chat/completions'
 const DEFAULT_MODEL = import.meta.env.VITE_OPENROUTER_MODEL || 'mistralai/mistral-7b-instruct'
-const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY || ''
+const apiKey = true;
+
+function getAuthHeaders() {
+  try {
+    const store = JSON.parse(localStorage.getItem('crm-inmobiliario-store') || '{}');
+    const token = store?.state?.user?.token;
+    const userId = store?.state?.user?.id;
+    
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+      headers['x-auth-token'] = token;
+    }
+    if (userId) {
+      headers['x-auth-user'] = userId;
+    }
+    return headers;
+  } catch (e) {
+    return {};
+  }
+}
 
 function uid() { return Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7) }
 function esc(str) { return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
@@ -37,28 +56,23 @@ const SKILLS = [
 ]
 
 async function callAI(systemPrompt, userMessage, maxTokens = 800) {
-  if (!apiKey) throw new Error('API key no configurada en .env')
-  const res = await fetch(OPENROUTER_URL, {
+  const res = await fetch('/api/tools/chat', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': window.location.origin,
-      'X-Title': 'PropBot Studio',
+      ...getAuthHeaders()
     },
     body: JSON.stringify({
       model: DEFAULT_MODEL,
-      max_tokens: maxTokens,
+      maxTokens,
       temperature: 0.7,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
+      systemPrompt,
+      userMessage,
     }),
   })
-  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e?.error?.message || `Error ${res.status}`) }
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e?.error || `Error ${res.status}`) }
   const data = await res.json()
-  return data.choices?.[0]?.message?.content || ''
+  return data.response || ''
 }
 
 function BotCard({ bot, onEdit, onDelete }) {
@@ -413,17 +427,28 @@ export default function StudioPage() {
     try {
       const bot = bots.find(b => b.id === selectedChatBotId)
       const sp = bot ? getSystemPrompt() : ''
-      const msgs = [
-        { role: 'system', content: sp || `Eres un asistente inmobiliario.` },
-        ...chatMessages.filter(m => m.role !== 'typing').slice(-10).map(m => ({ role: m.role, content: m.content })),
-        { role: 'user', content: userMsg },
-      ]
-      const res = await fetch(OPENROUTER_URL, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, 'HTTP-Referer': window.location.origin, 'X-Title': 'PropBot Chat' },
-        body: JSON.stringify({ model: DEFAULT_MODEL, max_tokens: 350, temperature: 0.7, messages: msgs }),
+      const msgs = chatMessages.filter(m => m.role !== 'typing').slice(-10).map(m => ({ role: m.role, content: m.content }))
+      const res = await fetch('/api/tools/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify({
+          model: DEFAULT_MODEL,
+          systemPrompt: sp || `Eres un asistente inmobiliario.`,
+          messages: msgs,
+          userMessage: userMsg,
+          maxTokens: 350,
+          temperature: 0.7
+        }),
       })
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e?.error || `Error ${res.status}`);
+      }
       const data = await res.json()
-      const reply = data.choices?.[0]?.message?.content || 'No pude procesar tu mensaje.'
+      const reply = data.response || 'No pude procesar tu mensaje.'
       setChatMessages(prev => prev.filter(m => m.role !== 'typing').concat({ role: 'assistant', content: reply }))
       if (!leadCaptured && /(quiero|me interesa|busco|precio)/i.test(userMsg) && /\d{9,}/.test(userMsg)) {
         setLeadCaptured(true); setLeadData({ name: 'Cliente', phone: userMsg.match(/\d{9,}/)?.[0] || '', interest: userMsg.slice(0, 100) })

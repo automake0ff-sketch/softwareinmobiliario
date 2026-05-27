@@ -536,6 +536,16 @@ export default function SettingsPage() {
         ],
       },
       {
+        id: 'appointments', title: 'Configuración de Citas', icon: '📅',
+        description: 'Zona horaria, horario laboral, salas online y encargado por defecto',
+        fields: [
+          { key: 'timezone', label: 'Zona horaria', type: 'text', placeholder: 'Europe/Madrid' },
+          { key: 'working_hours', label: 'Horario laboral (JSON)', type: 'text', placeholder: '{"start":"09:00","end":"20:00","days":[1,2,3,4,5]}' },
+          { key: 'online_meeting_url', label: 'Enlace base videollamadas', type: 'url', placeholder: 'https://meet.google.com/...' },
+          { key: 'appointment_attendant_name', label: 'Encargado de visitas por defecto', type: 'text', placeholder: 'Equipo Comercial' },
+        ],
+      },
+      {
         id: 'whatsapp', title: 'WhatsApp Business', icon: '💬',
         description: 'Conecta tu número para enviar mensajes reales a los leads',
         testable: true,
@@ -599,6 +609,15 @@ export default function SettingsPage() {
           { key: 'zapier_webhook_url', label: 'Zapier Webhook URL', type: 'url', placeholder: 'https://hooks.zapier.com/...' },
           { key: 'make_webhook_url', label: 'Make Webhook URL', type: 'url', placeholder: 'https://hook.eu1.make.com/...' },
           { key: 'n8n_webhook_url', label: 'n8n Webhook URL', type: 'url', placeholder: 'https://tu-n8n.com/webhook/...' },
+        ],
+      },
+      {
+        id: 'idealista', title: 'Idealista', icon: '🏠',
+        description: 'Configura la API de Idealista para importar propiedades automáticamente',
+        fields: [
+          { key: 'idealista_api_key', label: 'API Key / Client ID', type: 'password', placeholder: 'Tu API key de Idealista' },
+          { key: 'idealista_api_secret', label: 'API Secret', type: 'password', placeholder: 'Tu API secret de Idealista' },
+          { key: 'idealista_office_id', label: 'ID de agencia/oficina', type: 'text', placeholder: 'Opcional' },
         ],
       },
     ]

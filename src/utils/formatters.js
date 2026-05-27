@@ -53,47 +53,47 @@ export function getScoreLabel(score) {
 
 export function getStatusLabel(status) {
   const labels = {
-    new: 'Nuevo',
-    contacted: 'Contactado',
-    qualified: 'Calificado',
-    proposal: 'En propuesta',
-    negotiation: 'En negociación',
-    closed_won: 'Ganado',
-    closed_lost: 'Perdido',
-    follow_up: 'Seguimiento',
-    inactive: 'Inactivo',
+    nuevo: 'Nuevo',
+    contactado: 'Contactado',
+    interesado: 'Interesado',
+    visita_agendada: 'Visita agendada',
+    negociacion: 'En negociación',
+    reserva: 'Reserva',
+    cerrado: 'Cerrado',
+    perdido: 'Perdido',
+    archivo: 'Archivado',
   }
-  return labels[status] || status
+  return labels[status] || status || 'Nuevo'
 }
 
 export function getStatusColor(status) {
   const colors = {
-    new: 'bg-blue-100 text-blue-400 border-blue-200',
-    contacted: 'bg-gold-50 text-gold-400 border-gold-200',
-    qualified: 'bg-ok/10 text-ok border-ok/20',
-    proposal: 'bg-warn/10 text-warn border-warn/20',
-    negotiation: 'bg-err/10 text-err border-err/20',
-    closed_won: 'bg-ok/10 text-ok border-ok/20',
-    closed_lost: 'bg-err/10 text-err border-err/20',
-    follow_up: 'bg-blue-100 text-blue-400 border-blue-200',
-    inactive: 'bg-muted/10 text-muted border-muted/20',
+    nuevo: 'bg-blue-100 text-blue-500 border-blue-200',
+    contactado: 'bg-indigo-100 text-indigo-500 border-indigo-200',
+    interesado: 'bg-purple-100 text-purple-500 border-purple-200',
+    visita_agendada: 'bg-pink-100 text-pink-500 border-pink-200',
+    negociacion: 'bg-orange-100 text-orange-500 border-orange-200',
+    reserva: 'bg-amber-100 text-amber-500 border-amber-200',
+    cerrado: 'bg-emerald-100 text-emerald-500 border-emerald-200',
+    perdido: 'bg-red-100 text-red-500 border-red-200',
+    archivo: 'bg-gray-100 text-gray-500 border-gray-200',
   }
-  return colors[status] || 'bg-muted/10 text-muted border-muted/20'
+  return colors[status] || 'bg-gray-100 text-gray-500 border-gray-200'
 }
 
 export function getStatusDot(status) {
   const colors = {
-    new: 'bg-blue-300',
-    contacted: 'bg-gold-300',
-    qualified: 'bg-ok',
-    proposal: 'bg-warn',
-    negotiation: 'bg-err',
-    closed_won: 'bg-ok',
-    closed_lost: 'bg-err',
-    follow_up: 'bg-blue-300',
-    inactive: 'bg-muted',
+    nuevo: 'bg-blue-400',
+    contactado: 'bg-indigo-400',
+    interesado: 'bg-purple-400',
+    visita_agendada: 'bg-pink-400',
+    negociacion: 'bg-orange-400',
+    reserva: 'bg-amber-400',
+    cerrado: 'bg-emerald-400',
+    perdido: 'bg-red-400',
+    archivo: 'bg-gray-400',
   }
-  return colors[status] || 'bg-muted'
+  return colors[status] || 'bg-gray-400'
 }
 
 export function getInitials(name) {

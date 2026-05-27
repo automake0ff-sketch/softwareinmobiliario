@@ -5,25 +5,25 @@ import {
   Users, Plus, Search, Filter, ChevronLeft, ChevronRight,
   Mail, Phone, User, Target, Hash, Building2, MessageCircle,
   Globe, Star, TrendingUp, MoreHorizontal, Bot, Linkedin,
-  ExternalLink, Instagram, Facebook
+  ExternalLink, Instagram, Facebook, X
 } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { useStore } from '../lib/store'
 import {
   formatCurrency, formatDate, getScoreColor, getScoreLabel,
-  getStatusLabel, getStatusColor, getInitials
+  getStatusLabel, getStatusColor, getStatusDot, getInitials
 } from '../utils/formatters'
 
 const statusOptions = [
   { value: '', label: 'Todos los estados' },
-  { value: 'new', label: 'Nuevo' },
-  { value: 'contacted', label: 'Contactado' },
-  { value: 'qualified', label: 'Calificado' },
-  { value: 'proposal', label: 'En propuesta' },
-  { value: 'negotiation', label: 'En negociación' },
-  { value: 'closed_won', label: 'Ganado' },
-  { value: 'closed_lost', label: 'Perdido' },
-  { value: 'follow_up', label: 'Seguimiento' },
-  { value: 'inactive', label: 'Inactivo' },
+  { value: 'nuevo', label: 'Nuevo' },
+  { value: 'contactado', label: 'Contactado' },
+  { value: 'interesado', label: 'Interesado' },
+  { value: 'visita_agendada', label: 'Visita agendada' },
+  { value: 'negociacion', label: 'En negociación' },
+  { value: 'reserva', label: 'Reserva' },
+  { value: 'cerrado', label: 'Cerrado' },
+  { value: 'perdido', label: 'Perdido' },
 ]
 
 const sourceIcons = {
@@ -45,59 +45,64 @@ function SourceIcon({ source }) {
   return <Icon size={14} />
 }
 
-const initialLeads = [
-  { id: '1', name: 'María García López', phone: '+34 612 345 678', email: 'maria.garcia@email.com', budget: 350000, property_interest: 'Ático', source: 'whatsapp', ia_score: 92, status: 'qualified', assigned_to: 'Carlos Ruiz', created_at: '2026-05-10T09:30:00Z', zone: 'Centro' },
-  { id: '2', name: 'Antonio Martínez Ruiz', phone: '+34 623 456 789', email: 'antonio.martinez@email.com', budget: 180000, property_interest: 'Apartamento', source: 'web', ia_score: 78, status: 'new', assigned_to: 'Laura Sánchez', created_at: '2026-05-09T14:15:00Z', zone: 'Norte' },
-  { id: '3', name: 'Carmen Fernández Díaz', phone: '+34 634 567 890', email: 'carmen.fernandez@email.com', budget: 520000, property_interest: 'Casa', source: 'referral', ia_score: 88, status: 'proposal', assigned_to: 'Carlos Ruiz', created_at: '2026-05-08T11:00:00Z', zone: 'Sur' },
-  { id: '4', name: 'David López Sánchez', phone: '+34 645 678 901', email: 'david.lopez@email.com', budget: 220000, property_interest: 'Apartamento', source: 'instagram', ia_score: 45, status: 'contacted', assigned_to: 'Marta Pérez', created_at: '2026-05-07T16:45:00Z', zone: 'Este' },
-  { id: '5', name: 'Elena Torres Moreno', phone: '+34 656 789 012', email: 'elena.torres@email.com', budget: 680000, property_interest: 'Villa', source: 'linkedin', ia_score: 95, status: 'negotiation', assigned_to: 'Carlos Ruiz', created_at: '2026-05-06T08:30:00Z', zone: 'Oeste' },
-  { id: '6', name: 'Francisco Jiménez Ortiz', phone: '+34 667 890 123', email: 'francisco.jimenez@email.com', budget: 150000, property_interest: 'Estudio', source: 'web', ia_score: 32, status: 'inactive', assigned_to: 'Laura Sánchez', created_at: '2026-05-05T10:00:00Z', zone: 'Centro' },
-  { id: '7', name: 'Gloria Ramírez Castro', phone: '+34 678 901 234', email: 'gloria.ramirez@email.com', budget: 410000, property_interest: 'Dúplex', source: 'facebook', ia_score: 71, status: 'follow_up', assigned_to: 'Marta Pérez', created_at: '2026-05-04T13:20:00Z', zone: 'Norte' },
-  { id: '8', name: 'Héctor Navarro Gil', phone: '+34 689 012 345', email: 'hector.navarro@email.com', budget: 295000, property_interest: 'Apartamento', source: 'whatsapp', ia_score: 83, status: 'qualified', assigned_to: 'Carlos Ruiz', created_at: '2026-05-03T15:30:00Z', zone: 'Sur' },
-  { id: '9', name: 'Isabel Cruz Vega', phone: '+34 690 123 456', email: 'isabel.cruz@email.com', budget: 750000, property_interest: 'Ático', source: 'referral', ia_score: 97, status: 'closed_won', assigned_to: 'Laura Sánchez', created_at: '2026-05-02T09:00:00Z', zone: 'Este' },
-  { id: '10', name: 'Javier Molina Ríos', phone: '+34 601 234 567', email: 'javier.molina@email.com', budget: 120000, property_interest: 'Garaje', source: 'email', ia_score: 18, status: 'closed_lost', assigned_to: 'Marta Pérez', created_at: '2026-05-01T11:45:00Z', zone: 'Oeste' },
-  { id: '11', name: 'Karen Silva Paredes', phone: '+34 612 345 679', email: 'karen.silva@email.com', budget: 430000, property_interest: 'Casa', source: 'ads', ia_score: 65, status: 'new', assigned_to: 'Carlos Ruiz', created_at: '2026-04-30T08:15:00Z', zone: 'Centro' },
-  { id: '12', name: 'Luis Herrera Campos', phone: '+34 623 456 790', email: 'luis.herrera@email.com', budget: 890000, property_interest: 'Villa', source: 'bot', ia_score: 91, status: 'proposal', assigned_to: 'Laura Sánchez', created_at: '2026-04-29T14:30:00Z', zone: 'Norte' },
-]
-
 export default function LeadsPage() {
   const navigate = useNavigate()
-  const { leads, fetchLeads, setLoading, loading, createLead } = useStore()
+  const { leads, fetchLeads, loading, createLead } = useStore()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [page, setPage] = useState(1)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
-  const perPage = 5
+  const [formData, setFormData] = useState({
+    name: '', phone: '', email: '', budget: '', zone: '',
+    property_interest: '', source: 'manual',
+  })
+  const [saving, setSaving] = useState(false)
+  const perPage = 10
 
   useEffect(() => {
-    if (leads.length === 0) {
-      useStore.setState({ leads: [...initialLeads] })
-    }
-  }, [])
+    const delayDebounceFn = setTimeout(() => {
+      fetchLeads({
+        search: search.trim() || undefined,
+        stage: statusFilter || undefined,
+      })
+    }, 300)
+
+    return () => clearTimeout(delayDebounceFn)
+  }, [search, statusFilter])
 
   const filtered = useMemo(() => {
-    let result = leads.length > 0 ? leads : initialLeads
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      result = result.filter(l =>
-        l.name?.toLowerCase().includes(q) ||
-        l.email?.toLowerCase().includes(q) ||
-        l.phone?.includes(q) ||
-        l.property_interest?.toLowerCase().includes(q)
-      )
-    }
-    if (statusFilter) {
-      result = result.filter(l => l.status === statusFilter)
-    }
-    return result
-  }, [leads, search, statusFilter])
+    return leads || []
+  }, [leads])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage))
   const currentPage = Math.min(page, totalPages)
   const paginated = filtered.slice((currentPage - 1) * perPage, currentPage * perPage)
 
   useEffect(() => { setPage(1) }, [search, statusFilter])
+
+  const handleCreateLead = async () => {
+    if (!formData.name.trim()) return
+    setSaving(true)
+    try {
+      await createLead({
+        name: formData.name.trim(),
+        phone: formData.phone.trim(),
+        email: formData.email.trim(),
+        budget: formData.budget ? Number(formData.budget) : null,
+        zone: formData.zone.trim(),
+        property_interest: formData.property_interest.trim(),
+        source: formData.source,
+      })
+      toast.success('Lead creado correctamente')
+      setShowAddModal(false)
+      setFormData({ name: '', phone: '', email: '', budget: '', zone: '', property_interest: '', source: 'manual' })
+    } catch (e) {
+      console.error('Error creating lead:', e)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const container = {
     hidden: { opacity: 0 },
@@ -177,7 +182,14 @@ export default function LeadsPage() {
         </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {loading.leads && leads.length === 0 ? (
+        <div className="flex items-center justify-center min-h-[40vh]">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-10 h-10 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
+            <p className="text-sm text-muted">Cargando leads...</p>
+          </div>
+        </div>
+      ) : filtered.length === 0 ? (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -249,39 +261,40 @@ export default function LeadsPage() {
                           <div className="flex flex-col gap-0.5">
                             <div className="flex items-center gap-1.5 text-sm text-muted">
                               <Phone size={12} className="text-muted2" />
-                              <span>{lead.phone}</span>
+                              <span>{lead.phone || '—'}</span>
                             </div>
                             <div className="flex items-center gap-1.5 text-sm text-muted">
                               <Mail size={12} className="text-muted2" />
-                              <span className="truncate max-w-[180px]">{lead.email}</span>
+                              <span className="truncate max-w-[180px]">{lead.email || '—'}</span>
                             </div>
                           </div>
                         </td>
                         <td className="px-4 py-3.5 hidden lg:table-cell">
-                          <span className="text-sm font-medium text-ink">{formatCurrency(lead.budget)}</span>
+                          <span className="text-sm font-medium text-ink">
+                            {lead.budget ? formatCurrency(lead.budget) : '—'}
+                          </span>
                         </td>
                         <td className="px-4 py-3.5 hidden lg:table-cell">
                           <div className="flex items-center gap-1.5 text-sm text-muted">
                             <Building2 size={14} className="text-muted2" />
-                            <span>{lead.property_interest}</span>
+                            <span>{lead.property_interest || '—'}</span>
                           </div>
                         </td>
                         <td className="px-4 py-3.5 hidden xl:table-cell">
                           <div className="flex items-center gap-1.5 text-sm text-muted">
                             <SourceIcon source={lead.source} />
-                            <span className="capitalize">{lead.source}</span>
+                            <span className="capitalize">{lead.source || '—'}</span>
                           </div>
                         </td>
                         <td className="px-4 py-3.5">
                           <div className="flex items-center gap-2">
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${getScoreColor(lead.ia_score)} bg-opacity-10`}
-                              style={{ backgroundColor: `var(--${lead.ia_score >= 80 ? 'ok' : lead.ia_score >= 50 ? 'warn' : 'err'}-bg)` }}
-                            >
-                              <span className="opacity-0 absolute">bg</span>
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${
+                              lead.ia_score >= 80 ? 'bg-ok/10 text-ok' : lead.ia_score >= 50 ? 'bg-warn/10 text-warn' : 'bg-err/10 text-err'
+                            }`}>
                               <span className={`text-xs font-bold ${
                                 lead.ia_score >= 80 ? 'text-ok' : lead.ia_score >= 50 ? 'text-warn' : 'text-err'
                               }`}>
-                                {lead.ia_score}
+                                {lead.ia_score ?? '—'}
                               </span>
                             </div>
                             <span className="text-xs text-muted hidden lg:inline">{getScoreLabel(lead.ia_score)}</span>
@@ -289,23 +302,14 @@ export default function LeadsPage() {
                         </td>
                         <td className="px-4 py-3.5">
                           <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border ${getStatusColor(lead.status)}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${
-                              lead.status === 'new' ? 'bg-blue-300' :
-                              lead.status === 'contacted' ? 'bg-gold-300' :
-                              lead.status === 'qualified' ? 'bg-ok' :
-                              lead.status === 'proposal' ? 'bg-warn' :
-                              lead.status === 'negotiation' ? 'bg-err' :
-                              lead.status === 'closed_won' ? 'bg-ok' :
-                              lead.status === 'closed_lost' ? 'bg-err' :
-                              lead.status === 'follow_up' ? 'bg-blue-300' : 'bg-muted'
-                            }`} />
+                            <span className={`w-1.5 h-1.5 rounded-full ${getStatusDot(lead.status)}`} />
                             {getStatusLabel(lead.status)}
                           </span>
                         </td>
                         <td className="px-4 py-3.5 hidden xl:table-cell">
                           <div className="flex items-center gap-1.5 text-sm text-muted">
                             <User size={14} className="text-muted2" />
-                            <span>{lead.assigned_to}</span>
+                            <span>{lead.assigned_name || lead.assigned_to || 'Sin asignar'}</span>
                           </div>
                         </td>
                         <td className="px-4 py-3.5 hidden md:table-cell">
@@ -375,27 +379,64 @@ export default function LeadsPage() {
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-bold font-syne text-ink">Nuevo lead</h2>
                 <button onClick={() => setShowAddModal(false)} className="p-1.5 rounded-lg text-muted hover:text-ink hover:bg-surface2 transition-colors">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                  <X size={18} />
                 </button>
               </div>
               <div className="space-y-3">
-                {[
-                  { label: 'Nombre completo', placeholder: 'Ej: Juan Pérez' },
-                  { label: 'Teléfono', placeholder: '+34 600 000 000' },
-                  { label: 'Email', placeholder: 'juan@email.com' },
-                  { label: 'Presupuesto (€)', placeholder: '300000' },
-                  { label: 'Tipo de propiedad', placeholder: 'Apartamento, Casa...' },
-                  { label: 'Zona de interés', placeholder: 'Centro, Norte...' },
-                ].map(field => (
-                  <div key={field.label}>
-                    <label className="text-xs font-medium text-muted block mb-1">{field.label}</label>
-                    <input
-                      type="text"
-                      placeholder={field.placeholder}
-                      className="w-full px-3.5 py-2.5 text-sm bg-surface border border-border rounded-xl focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition-all outline-none"
-                    />
-                  </div>
-                ))}
+                <div>
+                  <label className="text-xs font-medium text-muted block mb-1">Nombre completo *</label>
+                  <input
+                    type="text" value={formData.name}
+                    onChange={e => setFormData(f => ({ ...f, name: e.target.value }))}
+                    placeholder="Ej: Juan Pérez"
+                    className="w-full px-3.5 py-2.5 text-sm bg-surface border border-border rounded-xl focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition-all outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted block mb-1">Teléfono</label>
+                  <input
+                    type="text" value={formData.phone}
+                    onChange={e => setFormData(f => ({ ...f, phone: e.target.value }))}
+                    placeholder="+34 600 000 000"
+                    className="w-full px-3.5 py-2.5 text-sm bg-surface border border-border rounded-xl focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition-all outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted block mb-1">Email</label>
+                  <input
+                    type="email" value={formData.email}
+                    onChange={e => setFormData(f => ({ ...f, email: e.target.value }))}
+                    placeholder="juan@email.com"
+                    className="w-full px-3.5 py-2.5 text-sm bg-surface border border-border rounded-xl focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition-all outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted block mb-1">Presupuesto (€)</label>
+                  <input
+                    type="number" value={formData.budget}
+                    onChange={e => setFormData(f => ({ ...f, budget: e.target.value }))}
+                    placeholder="300000"
+                    className="w-full px-3.5 py-2.5 text-sm bg-surface border border-border rounded-xl focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition-all outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted block mb-1">Tipo de propiedad</label>
+                  <input
+                    type="text" value={formData.property_interest}
+                    onChange={e => setFormData(f => ({ ...f, property_interest: e.target.value }))}
+                    placeholder="Apartamento, Casa..."
+                    className="w-full px-3.5 py-2.5 text-sm bg-surface border border-border rounded-xl focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition-all outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted block mb-1">Zona de interés</label>
+                  <input
+                    type="text" value={formData.zone}
+                    onChange={e => setFormData(f => ({ ...f, zone: e.target.value }))}
+                    placeholder="Centro, Norte..."
+                    className="w-full px-3.5 py-2.5 text-sm bg-surface border border-border rounded-xl focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition-all outline-none"
+                  />
+                </div>
               </div>
               <div className="flex items-center gap-2 mt-6">
                 <button
@@ -405,28 +446,11 @@ export default function LeadsPage() {
                   Cancelar
                 </button>
                 <button
-                  onClick={() => {
-                    useStore.setState(s => ({
-                      leads: [{
-                        id: String(Date.now()),
-                        name: 'Nuevo Lead',
-                        phone: '+34 600 000 000',
-                        email: 'nuevo@email.com',
-                        budget: 200000,
-                        property_interest: 'Apartamento',
-                        source: 'manual',
-                        ia_score: 50,
-                        status: 'new',
-                        assigned_to: 'Sin asignar',
-                        created_at: new Date().toISOString(),
-                        zone: 'Centro',
-                      }, ...s.leads]
-                    }))
-                    setShowAddModal(false)
-                  }}
-                  className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-all"
+                  onClick={handleCreateLead}
+                  disabled={saving || !formData.name.trim()}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all"
                 >
-                  Crear lead
+                  {saving ? 'Guardando...' : 'Crear lead'}
                 </button>
               </div>
             </motion.div>

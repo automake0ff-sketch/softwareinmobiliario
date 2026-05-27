@@ -79,7 +79,7 @@ export function checkLimit(type) {
         const row = get("SELECT COUNT(*) as count FROM ai_agents WHERE agency_id = @aid AND status = 'active'", { aid: agencyId })
         currentCount = row?.count || 0
       } else if (type === 'automations') {
-        const row = get("SELECT COUNT(*) as count FROM automations WHERE agency_id = @aid AND active = 1", { aid: agencyId })
+        const row = get("SELECT COUNT(*) as count FROM automations WHERE agency_id = @aid AND is_active = 1", { aid: agencyId })
         currentCount = row?.count || 0
       }
 

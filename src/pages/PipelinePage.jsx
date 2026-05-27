@@ -1,11 +1,15 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
+import { useNavigate } from 'react-router-dom'
+import toast from 'react-hot-toast'
+import { formatDistanceToNow } from 'date-fns'
+import { es } from 'date-fns/locale'
 import {
   Columns3, X, Phone, MessageCircle, Mail, Calendar,
   User, MapPin, Home, Euro, Sparkles, Globe,
   MessageSquare, ChevronDown, Clock, Building2,
-  Target, Zap, AlertCircle, ChevronRight,
+  Target, Zap, AlertCircle, ChevronRight, Plus,
 } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { formatCurrency } from '../utils/formatters'
@@ -187,6 +191,13 @@ function LeadCard({ lead, index, onSelect }) {
               </div>
             )}
 
+            {lead.last_contact_at && (
+              <div className="flex items-center gap-1 text-[10px] text-gray-400 mt-1">
+                <Clock size={10} />
+                <span>Contacto: {formatDistanceToNow(new Date(lead.last_contact_at), { addSuffix: true, locale: es })}</span>
+              </div>
+            )}
+
             <div className="flex items-center justify-between pt-0.5">
               <SourceBadge source={lead.source} />
               <QuickActions lead={lead} />
@@ -210,15 +221,22 @@ function ColumnEmptyState({ columnLabel }) {
   )
 }
 
-function Column({ column, leads, onSelectLead }) {
+function Column({ column, leads, onSelectLead, onAddLead }) {
   return (
     <div className="flex flex-col w-72 flex-shrink-0">
-      <div className="flex items-center gap-2 px-1 pb-3">
+      <div className="flex items-center gap-2 px-1 pb-3 group/header">
         <div className={`w-2.5 h-2.5 rounded-full ${column.dot} shadow-sm`} />
         <h3 className="text-sm font-semibold text-ink">{column.label}</h3>
-        <span className={`ml-auto text-[11px] font-medium px-1.5 py-0.5 rounded-md ${column.bg} ${column.text}`}>
+        <span className={`ml-1 text-[11px] font-medium px-1.5 py-0.5 rounded-md ${column.bg} ${column.text}`}>
           {leads.length}
         </span>
+        <button
+          onClick={() => onAddLead(column.id)}
+          className="ml-auto p-1 text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-md transition-all opacity-0 group-hover/header:opacity-100"
+          title={`Añadir lead a ${column.label}`}
+        >
+          <Plus size={14} />
+        </button>
       </div>
 
       <Droppable droppableId={column.id}>
@@ -395,8 +413,20 @@ function LeadDetailModal({ lead, onClose }) {
 }
 
 export default function PipelinePage() {
-  const { leads, fetchLeads, loading, moveLeadStatus } = useStore()
+  const { leads, fetchLeads, loading, moveLeadStatus, createLead } = useStore()
+  const navigate = useNavigate()
   const [selectedLead, setSelectedLead] = useState(null)
+  const [showAddModalForStage, setShowAddModalForStage] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [formData, setFormData] = useState({
+    name: '',
+    phone: '',
+    email: '',
+    budget: '',
+    property_interest: '',
+    zone: '',
+    source: 'manual'
+  })
 
   useEffect(() => {
     fetchLeads()
@@ -408,7 +438,7 @@ export default function PipelinePage() {
       groups[col.id] = []
     })
     leads.forEach((lead) => {
-      const status = lead.status || 'nuevo'
+      const status = lead.status || lead.pipeline_stage || 'nuevo'
       if (groups[status]) {
         groups[status].push(lead)
       }
@@ -429,8 +459,43 @@ export default function PipelinePage() {
   )
 
   const handleSelectLead = useCallback((lead) => {
-    setSelectedLead(lead)
-  }, [])
+    navigate(`/leads/${lead.id}`)
+  }, [navigate])
+
+  const handleOpenAddModal = (stageId) => {
+    setFormData({
+      name: '',
+      phone: '',
+      email: '',
+      budget: '',
+      property_interest: '',
+      zone: '',
+      source: 'manual'
+    })
+    setShowAddModalForStage(stageId)
+  }
+
+  const handleCreateLead = async () => {
+    if (!formData.name.trim()) return
+    try {
+      setSaving(true)
+      const payload = {
+        ...formData,
+        budget: formData.budget ? parseFloat(formData.budget) : 0,
+        status: showAddModalForStage,
+        pipeline_stage: showAddModalForStage
+      }
+      await createLead(payload)
+      toast.success('Lead creado correctamente')
+      setShowAddModalForStage(null)
+      fetchLeads()
+    } catch (e) {
+      console.error(e)
+      toast.error('Error al crear lead: ' + e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   if (loading.leads && leads.length === 0) {
     return (
@@ -487,17 +552,123 @@ export default function PipelinePage() {
               column={column}
               leads={groupedLeads[column.id] || []}
               onSelectLead={handleSelectLead}
+              onAddLead={handleOpenAddModal}
             />
           ))}
         </div>
       </DragDropContext>
 
       <AnimatePresence>
-        {selectedLead && (
-          <LeadDetailModal
-            lead={selectedLead}
-            onClose={() => setSelectedLead(null)}
-          />
+        {showAddModalForStage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setShowAddModalForStage(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              onClick={e => e.stopPropagation()}
+              className="bg-[#13131A] rounded-2xl shadow-modal border border-[#1E1E2E] w-full max-w-lg p-6"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold font-syne text-[#F1F5F9]">
+                  Nuevo Lead en etapa: <span className="text-indigo-400 capitalize">{PIPELINE_COLUMNS.find(c => c.id === showAddModalForStage)?.label}</span>
+                </h2>
+                <button onClick={() => setShowAddModalForStage(null)} className="p-1.5 rounded-lg text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-400 block mb-1">Nombre completo *</label>
+                  <input
+                    type="text" value={formData.name}
+                    onChange={e => setFormData(f => ({ ...f, name: e.target.value }))}
+                    placeholder="Ej: Juan Pérez"
+                    className="w-full px-3.5 py-2.5 text-sm bg-[#0A0A0F] border border-[#1E1E2E] text-white rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-400 block mb-1">Teléfono</label>
+                  <input
+                    type="text" value={formData.phone}
+                    onChange={e => setFormData(f => ({ ...f, phone: e.target.value }))}
+                    placeholder="+34 600 000 000"
+                    className="w-full px-3.5 py-2.5 text-sm bg-[#0A0A0F] border border-[#1E1E2E] text-white rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-400 block mb-1">Email</label>
+                  <input
+                    type="email" value={formData.email}
+                    onChange={e => setFormData(f => ({ ...f, email: e.target.value }))}
+                    placeholder="juan@email.com"
+                    className="w-full px-3.5 py-2.5 text-sm bg-[#0A0A0F] border border-[#1E1E2E] text-white rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-400 block mb-1">Presupuesto (€)</label>
+                  <input
+                    type="number" value={formData.budget}
+                    onChange={e => setFormData(f => ({ ...f, budget: e.target.value }))}
+                    placeholder="300000"
+                    className="w-full px-3.5 py-2.5 text-sm bg-[#0A0A0F] border border-[#1E1E2E] text-white rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-400 block mb-1">Tipo de propiedad de interés</label>
+                  <input
+                    type="text" value={formData.property_interest}
+                    onChange={e => setFormData(f => ({ ...f, property_interest: e.target.value }))}
+                    placeholder="Apartamento, Casa..."
+                    className="w-full px-3.5 py-2.5 text-sm bg-[#0A0A0F] border border-[#1E1E2E] text-white rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-400 block mb-1">Zona de interés</label>
+                  <input
+                    type="text" value={formData.zone}
+                    onChange={e => setFormData(f => ({ ...f, zone: e.target.value }))}
+                    placeholder="Centro, Sur..."
+                    className="w-full px-3.5 py-2.5 text-sm bg-[#0A0A0F] border border-[#1E1E2E] text-white rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-400 block mb-1">Origen del lead</label>
+                  <select
+                    value={formData.source}
+                    onChange={e => setFormData(f => ({ ...f, source: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 text-sm bg-[#0A0A0F] border border-[#1E1E2E] text-white rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                  >
+                    <option value="manual">Manual (Añadido por comercial)</option>
+                    <option value="whatsapp">WhatsApp</option>
+                    <option value="web">Sitio Web</option>
+                    <option value="idealista">Idealista</option>
+                    <option value="email">Email corporativo</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 mt-6">
+                <button
+                  onClick={() => setShowAddModalForStage(null)}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleCreateLead}
+                  disabled={saving || !formData.name.trim()}
+                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-glow transition-all"
+                >
+                  {saving ? 'Creando...' : 'Crear Lead'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
     </motion.div>

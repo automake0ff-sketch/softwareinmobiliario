@@ -4,16 +4,19 @@ import { BrowserRouter } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import App from './App'
 import api from './lib/api'
+import ErrorBoundary from './components/ErrorBoundary'
 import './index.css'
 
-const STORE_KEY = 'crm-inmobiliario-store'
-const stored = localStorage.getItem(STORE_KEY)
 let storedUser = null
-if (stored) {
-  try {
+try {
+  const STORE_KEY = 'crm-inmobiliario-store'
+  const stored = localStorage.getItem(STORE_KEY)
+  if (stored) {
     const parsed = JSON.parse(stored)
     storedUser = parsed.state?.user
-  } catch {}
+  }
+} catch {
+  console.warn('localStorage no disponible, iniciando sin sesión previa')
 }
 
 if (storedUser) {
@@ -27,6 +30,7 @@ if (storedUser) {
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
+  <ErrorBoundary>
   <React.StrictMode>
     <BrowserRouter>
       <Toaster
@@ -51,5 +55,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       />
       <App />
     </BrowserRouter>
-  </React.StrictMode>,
+  </React.StrictMode>
+  </ErrorBoundary>,
 )

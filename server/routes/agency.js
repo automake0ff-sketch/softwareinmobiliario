@@ -24,17 +24,18 @@ router.get('/:id', (req, res) => {
 
 router.post('/', requireRole('admin'), (req, res) => {
   try {
-    const { name, slug, logo_url, primary_color, domain } = req.body;
+    const { name, slug, logo_url, primary_color, domain, custom_domain } = req.body;
     if (!name || !slug) return res.status(400).json({ error: 'Faltan campos obligatorios: name, slug.' });
 
     const existing = get('SELECT id FROM agencies WHERE slug = @slug', { slug });
     if (existing) return res.status(409).json({ error: 'Ya existe una agencia con ese slug.' });
 
     const id = uuidv4();
+    const finalDomain = custom_domain || domain || null;
     run(
-      `INSERT INTO agencies (id, name, slug, logo_url, primary_color, domain, created_at)
-       VALUES (@id, @name, @slug, @logo_url, @primary_color, @domain, datetime('now'))`,
-      { id, name, slug, logo_url, primary_color: primary_color || '#2563eb', domain }
+      `INSERT INTO agencies (id, name, slug, logo_url, primary_color, custom_domain, created_at)
+       VALUES (@id, @name, @slug, @logo_url, @primary_color, @custom_domain, datetime('now'))`,
+      { id, name, slug, logo_url, primary_color: primary_color || '#2563eb', custom_domain: finalDomain }
     );
 
     const agency = get('SELECT * FROM agencies WHERE id = @id', { id });
@@ -50,14 +51,22 @@ router.patch('/:id', requireRole('admin', 'manager'), (req, res) => {
     const existing = get('SELECT * FROM agencies WHERE id = @id', { id: req.params.id });
     if (!existing) return res.status(404).json({ error: 'Agencia no encontrada.' });
 
-    const whiteLabelFields = ['logo_url', 'primary_color', 'domain'];
+    // Mapear domain a custom_domain para compatibilidad
+    if (req.body.domain !== undefined && req.body.custom_domain === undefined) {
+      req.body.custom_domain = req.body.domain;
+    }
+
+    const whiteLabelFields = ['logo_url', 'primary_color', 'custom_domain'];
     const hasWhiteLabelUpdate = whiteLabelFields.some(f => req.body[f] !== undefined);
     if (hasWhiteLabelUpdate) {
       const featureCheck = checkFeature('white_label')(req, res, () => {})
       if (featureCheck !== undefined) return // 402 sent by middleware
     }
 
-    const allowed = ['name', 'slug', 'logo_url', 'primary_color', 'domain'];
+    const allowed = ['name', 'slug', 'logo_url', 'primary_color', 'custom_domain',
+      'email', 'phone', 'address', 'city', 'province', 'website',
+      'idealista_api_key', 'idealista_api_secret', 'idealista_import_mode', 'idealista_office_id',
+    ];
     const updates = [];
     const params = { id: req.params.id };
 
@@ -161,6 +170,11 @@ const CONFIG_FIELDS = [
   'google_sheets_id',
   'zapier_webhook_url','make_webhook_url','n8n_webhook_url',
   'onboarding_completed','onboarding_step',
+  'online_meeting_url','appointment_attendant_name','working_hours','timezone',
+  'idealista_api_key','idealista_api_secret','idealista_import_mode','idealista_office_id',
+  'email_signature','auto_send_email','auto_send_whatsapp','require_email_confirmation',
+  'require_whatsapp_confirmation','default_channel','reminder_2h_enabled',
+  'app_Url',
 ]
 
 // GET /api/agency/config — Obtener configuración de la agencia actual

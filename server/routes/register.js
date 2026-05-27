@@ -3,6 +3,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { all, get, run } from '../db/db.js';
 import crypto from 'crypto';
 
+import bcrypt from 'bcryptjs';
+
 const router = Router();
 
 function slugify(text) {
@@ -16,26 +18,26 @@ function slugify(text) {
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 }
+import { registerSchema, validateBody } from '../middleware/validators.js';
 
 function hashPassword(password) {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-  return `${salt}:${hash}`;
+  return bcrypt.hashSync(password, 10);
 }
 
 function verifyPassword(password, stored) {
-  const [salt, hash] = stored.split(':');
+  if (stored.startsWith('$2a$') || stored.startsWith('$2b$')) {
+    return bcrypt.compareSync(password, stored);
+  }
+  const parts = stored.split(':');
+  if (parts.length !== 2) return false;
+  const [salt, hash] = parts;
   const verify = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
   return hash === verify;
 }
 
-router.post('/', (req, res) => {
+router.post('/', validateBody(registerSchema), (req, res) => {
   try {
     const { email, password, name, phone, agencyName, agencyCity, agencyPhone, agencyEmail, plan } = req.body;
-
-    if (!email || !password || !name || !agencyName) {
-      return res.status(400).json({ error: 'Faltan campos obligatorios: email, password, name, agencyName' });
-    }
 
     const existingUser = get('SELECT id FROM users WHERE email = @email', { email });
     if (existingUser) {
@@ -124,15 +126,13 @@ router.post('/', (req, res) => {
       );
     }
 
-    const trialEnd = new Date(Date.now() + 14 * 86400000).toISOString();
     run(
-      `INSERT INTO subscriptions (id, agency_id, plan_id, status, trial_end, billing_cycle, created_at)
-       VALUES (@id, @agency_id, @plan_id, 'trialing', @trial_end, 'monthly', @created_at)`,
+      `INSERT INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, created_at)
+       VALUES (@id, @agency_id, @plan_id, 'active', 'monthly', @created_at)`,
       {
         id: uuidv4(),
         agency_id: agencyId,
         plan_id: plan || 'starter',
-        trial_end: trialEnd,
         created_at: now,
       }
     );

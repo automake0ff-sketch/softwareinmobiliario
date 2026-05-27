@@ -1,0 +1,20 @@
+[project]
+name = "propia"
+version = "1.0.0"
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:3000/**"]
+disable_signup = false
+
+[auth.email]
+enable_confirmations = false
+enable_autoconfirm = true
+
+[api]
+port = 54321
+max_request_size = 10_000_000
+
+[db]
+port = 54322

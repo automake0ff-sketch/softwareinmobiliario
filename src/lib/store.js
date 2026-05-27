@@ -180,8 +180,8 @@ export const useStore = create(
         try {
           const data = await api.get('/properties', params)
           set({ properties: data.properties || data })
-        } catch {
-          // handled
+        } catch (e) {
+          console.error('fetchProperties error:', e)
         } finally {
           set((s) => ({ loading: { ...s.loading, properties: false } }))
         }
@@ -262,6 +262,11 @@ export const useStore = create(
         return property
       },
 
+      fetchProperty: async (id) => {
+        const data = await api.get(`/properties/${id}`)
+        return data
+      },
+
       updateProperty: async (id, propertyData) => {
         const updated = await api.patch(`/properties/${id}`, propertyData)
         set((s) => ({
@@ -270,6 +275,146 @@ export const useStore = create(
           ),
         }))
         return updated
+      },
+
+      deleteProperty: async (id) => {
+        await api.delete(`/properties/${id}`)
+        set((s) => ({
+          properties: s.properties.filter((p) => p.id !== id),
+        }))
+      },
+
+      importPropertyFromUrl: async (url) => {
+        const result = await api.post('/properties/import/url', { url })
+        if (result.created && result.created.length > 0) {
+          set((s) => ({ properties: [...result.created, ...s.properties] }))
+        }
+        return result
+      },
+
+      importPropertiesFromIdealista: async (urls) => {
+        const result = await api.post('/properties/import/idealista', { urls })
+        if (result.imported && result.imported.length > 0) {
+          set((s) => ({
+            properties: [...result.imported, ...s.properties],
+          }))
+        }
+        return result
+      },
+
+      importPropertiesFromCsv: async (csvData) => {
+        const result = await api.post('/properties/import/csv', { csv_data: csvData })
+        if (result.imported && result.imported.length > 0) {
+          set((s) => ({
+            properties: [...result.imported, ...s.properties],
+          }))
+        }
+        return result
+      },
+
+      fetchCompatibleLeads: async (propertyId) => {
+        const data = await api.post(`/properties/${propertyId}/match-leads`)
+        return data
+      },
+
+      duplicateProperty: async (id) => {
+        const property = await api.post(`/properties/${id}/duplicate`)
+        set((s) => ({ properties: [property, ...s.properties] }))
+        return property
+      },
+
+      changePropertyStatus: async (id, status) => {
+        const updated = await api.patch(`/properties/${id}/status`, { status })
+        set((s) => ({
+          properties: s.properties.map((p) =>
+            p.id === id ? { ...p, ...updated } : p
+          ),
+        }))
+        return updated
+      },
+
+      shareProperty: async (id) => {
+        const result = await api.post(`/properties/${id}/share`)
+        return result
+      },
+
+      generatePropertyDescription: async (id) => {
+        const result = await api.post(`/properties/${id}/generate-description`)
+        return result
+      },
+
+      previewCsv: async (csvData) => {
+        const result = await api.post('/properties/csv-preview', { csv_data: csvData })
+        return result
+      },
+
+      fetchPropertyMetrics: async () => {
+        const data = await api.get('/properties', { metrics: 'true' })
+        return data
+      },
+
+      fetchPropertyInterests: async (propertyId) => {
+        const data = await api.get(`/properties/${propertyId}/interests`)
+        return data
+      },
+
+      createPropertyInterest: async (propertyId, leadId, channel) => {
+        const data = await api.post(`/properties/${propertyId}/interests`, { lead_id: leadId, channel })
+        return data
+      },
+
+      deletePropertyInterest: async (propertyId, interestId) => {
+        await api.delete(`/properties/${propertyId}/interests/${interestId}`)
+      },
+
+      fetchPropertyStats: async (propertyId) => {
+        const data = await api.get(`/properties/${propertyId}/stats`)
+        return data
+      },
+
+      generateWhatsAppMessage: async (propertyId, phone) => {
+        const data = await api.post(`/properties/${propertyId}/generate-whatsapp`, { phone })
+        return data
+      },
+
+      generateEmailContent: async (propertyId, email) => {
+        const data = await api.post(`/properties/${propertyId}/generate-email`, { email })
+        return data
+      },
+
+      generateSocialPost: async (propertyId) => {
+        const data = await api.post(`/properties/${propertyId}/generate-post`)
+        return data
+      },
+
+      createPropertyAI: async (description) => {
+        const result = await api.post('/properties/create-ai', { description })
+        return result
+      },
+
+      improvePropertyAI: async (id) => {
+        const result = await api.post(`/properties/${id}/improve-ai`)
+        return result
+      },
+
+      generateMarketingAsset: async (id, action) => {
+        const result = await api.post(`/properties/${id}/marketing`, { action })
+        return result
+      },
+
+      fetchInterestedLeads: async (id) => {
+        const data = await api.get(`/properties/${id}/interested-leads`)
+        return data
+      },
+
+      fetchPropertyActivity: async (id) => {
+        const data = await api.get(`/properties/${id}/activity`)
+        return data
+      },
+
+      scrapePropertyUrl: async (url) => {
+        const data = await api.post('/properties/scrape-url', { url })
+        return data
       },
 
       selectLead: (lead) => set({ selectedLead: lead, showLeadProfile: true }),
@@ -318,9 +463,9 @@ export const useStore = create(
          try {
            const data = await api.get('/billing/limits')
            set({ limits: data })
-         } catch {
-           // handled
-         } finally {
+        } catch (e) {
+          console.error('fetchProperties error:', e)
+        } finally {
            set((s) => ({ loading: { ...s.loading, limits: false } }))
          }
        },
@@ -333,7 +478,7 @@ export const useStore = create(
 
        canUseFeature: (feature) => {
          const plan = get().getCurrentPlan()
-         return !!plan.features[feature]
+         return !!(plan?.features?.[feature])
        },
 
        isWithinLimit: (type) => {

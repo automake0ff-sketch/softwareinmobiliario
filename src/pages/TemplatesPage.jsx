@@ -178,7 +178,7 @@ export default function TemplatesPage() {
                   {locked
                     ? `Requiere plan ${template.min_plan}`
                     : isInstalled
-                    ? '✓ Instalada en tu agencia'
+                    ? '✓ Instalada'
                     : isInstalling
                     ? 'Instalando...'
                     : 'Instalar en mi agencia'

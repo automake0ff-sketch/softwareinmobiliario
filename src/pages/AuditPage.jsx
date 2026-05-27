@@ -13,13 +13,7 @@ export default function AuditPage() {
   const [progressMsg, setProgressMsg] = useState('')
   const { canAudit, incrementUsage, addToHistory, currentResult, setCurrentResult, clearResult, plan } = useStore()
 
-  const envKey = import.meta.env.VITE_OPENROUTER_API_KEY || ''
-
   const handleAudit = async (formData) => {
-    if (!envKey || envKey === 'sk-or-v1-TU_API_KEY_AQUI') {
-      toast.error('Configura VITE_OPENROUTER_API_KEY en tu archivo .env')
-      return
-    }
     if (!canAudit()) {
       toast.error('Has alcanzado el limite gratuito. Activa Pro para continuar.')
       return

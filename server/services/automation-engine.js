@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { all, get, run } from '../db/db.js'
 import { callOpenRouter, parseAgentReply, interpolate } from './openrouter.js'
 import { getAgentSystemPrompt } from '../agents/index.js'
+import { realtime } from './realtime.js'
 
 export function evaluateConditions(conditions, leadData) {
   if (!conditions || !Array.isArray(conditions) || conditions.length === 0) return true
@@ -66,8 +67,8 @@ async function sendWhatsApp(phone, message, agencyId, ctx = {}) {
         authToken: process.env.TWILIO_AUTH_TOKEN,
         phoneNumber: process.env.TWILIO_PHONE_NUMBER,
       })
-      await twilio.sendWhatsApp(`+${fullPhone}`, message)
-      return true
+      const result = await twilio.sendSMS(`+${fullPhone}`, message)
+      if (!result?.error) return true
     } catch { /* twilio not configured */ }
 
     console.log(`[WhatsApp Mock → ${fullPhone}]: ${message.substring(0, 80)}...`)
@@ -80,18 +81,32 @@ async function sendWhatsApp(phone, message, agencyId, ctx = {}) {
 
 function saveMessageToConversation(leadId, agencyId, content, senderType, senderId) {
   if (!leadId || !content) return
-  let conv = get('SELECT id FROM conversations WHERE lead_id = @lead_id ORDER BY created_at DESC LIMIT 1', { lead_id: leadId })
+  let conv = get('SELECT id, messages FROM conversations WHERE lead_id = @lead_id ORDER BY created_at DESC LIMIT 1', { lead_id: leadId })
   if (!conv) {
     const convId = uuidv4()
     run(
-      `INSERT INTO conversations (id, lead_id, agent_id, channel, messages, created_at)
-       VALUES (@id, @lead_id, @agent_id, @channel, @messages, datetime('now'))`,
-      { id: convId, lead_id: leadId, agent_id: null, channel: 'whatsapp', messages: '[]' }
+      `INSERT INTO conversations (id, agency_id, lead_id, channel, messages, created_at)
+       VALUES (@id, @agency_id, @lead_id, @channel, @messages, datetime('now'))`,
+      { id: convId, agency_id: agencyId, lead_id: leadId, channel: 'whatsapp', messages: '[]' }
     )
-    conv = { id: convId }
+    conv = { id: convId, messages: '[]' }
   }
 
   const msgId = uuidv4()
+  const newMessage = {
+    id: msgId,
+    role: senderType || 'ia_agent',
+    sender_type: senderType || 'ia_agent',
+    sender_id: senderId || 'automation',
+    content,
+    is_read: true,
+    timestamp: new Date().toISOString(),
+    created_at: new Date().toISOString(),
+  }
+  const msgs = JSON.parse(conv.messages || '[]')
+  msgs.push(newMessage)
+  run(`UPDATE conversations SET messages = @messages, updated_at = datetime('now') WHERE id = @id`, { messages: JSON.stringify(msgs), id: conv.id })
+
   run(
     `INSERT INTO messages (id, conversation_id, author, content, message_type, created_at)
      VALUES (@id, @conversation_id, @author, @content, @message_type, datetime('now'))`,
@@ -103,14 +118,23 @@ function saveMessageToConversation(leadId, agencyId, content, senderType, sender
       message_type: 'text',
     }
   )
+
+  if (realtime) {
+    realtime.broadcast('message', {
+      conversation_id: conv.id,
+      message: newMessage,
+    })
+  }
 }
 
 function logActivity(agencyId, leadId, type, title, description, metadata, agentType) {
+  const id = uuidv4()
+  const created_at = new Date().toISOString()
   run(
     `INSERT INTO activities (id, agency_id, lead_id, type, title, description, agent_type, metadata, created_at)
      VALUES (@id, @agency_id, @lead_id, @type, @title, @description, @agent_type, @metadata, datetime('now'))`,
     {
-      id: uuidv4(),
+      id,
       agency_id: agencyId,
       lead_id: leadId || null,
       type: type || 'automation_triggered',
@@ -120,6 +144,37 @@ function logActivity(agencyId, leadId, type, title, description, metadata, agent
       metadata: metadata ? JSON.stringify(metadata) : null,
     }
   )
+
+  if (realtime) {
+    realtime.broadcastActivity({
+      id,
+      agency_id: agencyId,
+      lead_id: leadId || null,
+      type: type || 'automation_triggered',
+      title: title || '',
+      description: description || '',
+      agent_type: agentType || null,
+      created_at,
+    })
+  }
+}
+
+export function incrementAgentStats(agentType, agencyId, isNewLead = false) {
+  if (!agentType || !agencyId) return
+  const agent = get('SELECT id, stats FROM ai_agents WHERE type = @type AND agency_id = @agency_id', { type: agentType, agency_id: agencyId })
+  if (agent) {
+    let parsed = { leads_today: 0, messages_today: 0, success_rate: null }
+    if (agent.stats) {
+      try { parsed = JSON.parse(agent.stats) } catch (e) { /* ignore */ }
+    }
+    parsed.messages_today = (parsed.messages_today || 0) + 1
+    if (isNewLead) {
+      parsed.leads_today = (parsed.leads_today || 0) + 1
+    }
+    parsed.success_rate = null
+
+    run('UPDATE ai_agents SET stats = @stats, last_action = datetime(\'now\') WHERE id = @id', { stats: JSON.stringify(parsed), id: agent.id })
+  }
 }
 
 function createNotification(agencyId, userId, leadId, title, message, level) {
@@ -156,7 +211,8 @@ function findLeastLoadedUser(agencyId, role) {
 
 export async function executeAction(action, leadContext, options = {}) {
   const { type, config = {} } = action
-  const { testMode = false, agencyId } = options
+  const { testMode = false } = options
+  const agencyId = options.agencyId || leadContext.agency_id || leadContext.agencyId
   const leadId = leadContext.lead_id
   const fill = (t) => interpolate(t || '', leadContext)
 
@@ -226,6 +282,8 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
             { agent_type: agentType, auto_send: autoSend, whatsapp_sent: whatsappSent, saved: savedToDb },
             agentType
           )
+
+          incrementAgentStats(agentType, agencyId, leadContext.status === 'nuevo')
 
           if (agentData) {
             const updates = { updated_at: new Date().toISOString(), last_contact_at: new Date().toISOString() }
@@ -612,5 +670,120 @@ export function checkTrigger(automation, leadContext) {
     case 'score_dropped': return true
     case 'property_matched': return true
     default: return true
+  }
+}
+
+export async function triggerAutomations({ trigger_type, lead_id, agency_id, trigger_payload }) {
+  try {
+    const aid = agency_id
+    if (!trigger_type || !lead_id) {
+      throw new Error('trigger_type y lead_id son requeridos')
+    }
+
+    // Get lead data from DB
+    const lead = get('SELECT * FROM leads WHERE id = @id', { id: lead_id })
+    if (!lead) throw new Error('Lead no encontrado.')
+
+    // Build lead context
+    const leadContext = {
+      ...trigger_payload,
+      lead_id: lead.id,
+      lead_name: lead.name,
+      phone: lead.phone,
+      email: lead.email,
+      score: lead.ia_score,
+      stage: lead.status,
+      zone: lead.zone,
+      budget: lead.budget,
+      lead_summary: lead.ia_summary,
+      source: lead.source,
+      assigned_to: lead.assigned_to,
+      last_activity: lead.last_activity,
+      agency_id: aid,
+    }
+
+    // Find matching automations
+    const automations = all(
+      'SELECT * FROM automations WHERE agency_id = @agency_id AND is_active = 1 AND trigger_type = @trigger_type',
+      { agency_id: aid, trigger_type }
+    )
+
+    if (!automations.length) {
+      return { message: 'No hay automatizaciones activas para este trigger', executed: 0, results: [] }
+    }
+
+    const results = []
+
+    for (const auto of automations) {
+      const conditions = JSON.parse(auto.conditions || '[]')
+      const actions = JSON.parse(auto.actions || '[]')
+      const triggerConfig = JSON.parse(auto.trigger_config || '{}')
+
+      const automationWithParsed = {
+        ...auto,
+        conditions,
+        actions,
+        trigger_config: triggerConfig,
+      }
+
+      // Check if trigger conditions are met
+      if (!checkTrigger(automationWithParsed, leadContext)) {
+        results.push({ automation_id: auto.id, name: auto.name, skipped: true, reason: 'Condiciones no cumplidas' })
+        continue
+      }
+
+      // Execute actions in sequence
+      const actionResults = []
+      for (const action of actions) {
+        try {
+          const result = await executeAction(action, leadContext, { agencyId: aid })
+          actionResults.push({ action_type: action.type, ...result })
+        } catch (err) {
+          actionResults.push({ action_type: action.type, success: false, result: err.message, aiUsed: false })
+        }
+      }
+
+      // Update run count
+      run('UPDATE automations SET run_count = COALESCE(run_count, 0) + 1, last_run_at = datetime(\'now\') WHERE id = @id',
+        { id: auto.id })
+
+      // Log activity
+      run(
+        `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
+         VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, datetime('now'))`,
+        {
+          id: uuidv4(),
+          agency_id: aid,
+          lead_id,
+          type: 'automation_triggered',
+          description: `Automatización: ${auto.name}`,
+          metadata: JSON.stringify({ automation_id: auto.id, trigger_type, actions_executed: actionResults.length }),
+        }
+      )
+
+      // Log in automation_logs table if it exists (try/catch)
+      try {
+        run(
+          `INSERT INTO automation_logs (id, automation_id, lead_id, status, actions_executed, created_at)
+           VALUES (@id, @automation_id, @lead_id, @status, @actions_executed, datetime('now'))`,
+          {
+            id: uuidv4(),
+            automation_id: auto.id,
+            lead_id,
+            status: 'success',
+            actions_executed: JSON.stringify(actionResults),
+          }
+        )
+      } catch (err) {
+        console.error('[Trigger Log Error] Could not save to automation_logs:', err.message)
+      }
+
+      results.push({ automation_id: auto.id, name: auto.name, executed: true, actions: actionResults })
+    }
+
+    return { executed: results.filter(r => r.executed).length, results }
+  } catch (error) {
+    console.error('Error executing automations in trigger function:', error)
+    throw error
   }
 }

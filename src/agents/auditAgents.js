@@ -1,36 +1,44 @@
-const OPENROUTER_URL = import.meta.env.VITE_OPENROUTER_URL || 'https://openrouter.ai/api/v1/chat/completions'
 const DEFAULT_MODEL = import.meta.env.VITE_OPENROUTER_MODEL || 'mistralai/mistral-small-3.2-24b-instruct'
 const QUALITY_MODEL = import.meta.env.VITE_OPENROUTER_MODEL || 'mistralai/mistral-medium-3'
 const TIMEOUT_MS = 15000
 
-function getApiKey() {
-  const key = import.meta.env.VITE_OPENROUTER_API_KEY || ''
-  if (!key.trim()) throw new Error('API key no configurada. Anade VITE_OPENROUTER_API_KEY en tu archivo .env')
-  return key.trim()
+function getAuthHeaders() {
+  try {
+    const store = JSON.parse(localStorage.getItem('crm-inmobiliario-store') || '{}');
+    const token = store?.state?.user?.token;
+    const userId = store?.state?.user?.id;
+    
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+      headers['x-auth-token'] = token;
+    }
+    if (userId) {
+      headers['x-auth-user'] = userId;
+    }
+    return headers;
+  } catch (e) {
+    return {};
+  }
 }
 
 async function callOpenRouter(model, systemPrompt, userMessage, maxTokens = 800) {
-  const apiKey = getApiKey()
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS)
 
   try {
-    const res = await fetch(OPENROUTER_URL, {
+    const res = await fetch('/api/tools/chat', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': window.location.origin,
-        'X-Title': 'PropAI Auditor Inmobiliario',
+        ...getAuthHeaders()
       },
       body: JSON.stringify({
         model,
-        max_tokens: maxTokens,
+        maxTokens,
         temperature: 0.7,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ],
+        systemPrompt,
+        userMessage,
       }),
       signal: controller.signal,
     })
@@ -39,11 +47,11 @@ async function callOpenRouter(model, systemPrompt, userMessage, maxTokens = 800)
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
-      throw new Error(err?.error?.message || `Error del servidor: ${res.status}`)
+      throw new Error(err?.error || `Error del servidor: ${res.status}`)
     }
 
     const data = await res.json()
-    return data.choices?.[0]?.message?.content || ''
+    return data.response || ''
   } catch (err) {
     clearTimeout(timeout)
     if (err.name === 'AbortError') throw new Error('La peticion supero el tiempo limite (15s). Intenta de nuevo.')

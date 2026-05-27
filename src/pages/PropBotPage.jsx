@@ -3,55 +3,55 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Wand, Settings, Code, Users, ArrowLeft, ArrowRight, Sparkles, RefreshCw, Copy, Send, Bot, Loader2, BarChart3, MessageSquare, Database, Globe, Home, BookOpen, Zap, ChevronRight } from 'lucide-react'
 import styles from './PropBotPage.module.css'
 
-const OPENROUTER_URL = import.meta.env.VITE_OPENROUTER_URL || 'https://openrouter.ai/api/v1/chat/completions'
 const DEFAULT_MODEL = import.meta.env.VITE_OPENROUTER_MODEL || 'mistralai/mistral-7b-instruct'
-const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY || ''
+const apiKey = true;
 
-function uid() { return Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7) }
-
-const KNOWLEDGE_MODULES = [
-  { id: 'legales', label: 'Normativa legal inmobiliaria', desc: 'LAU, plusvalía, ITP, IVA, AJD' },
-  { id: 'financiacion', label: 'Financiación hipotecaria', desc: 'Tipos de hipoteca, Euríbor, Tasación' },
-  { id: 'marketing', label: 'Marketing inmobiliario', desc: 'Home staging, fotografía, copy, redes' },
-  { id: 'tasacion', label: 'Tasación y valoración', desc: 'Métodos comparativos, coste reposición' },
-  { id: 'negociacion', label: 'Negociación y cierre', desc: 'Técnicas de negociación, objeciones' },
-  { id: 'fiscalidad', label: 'Fiscalidad inmobiliaria', desc: 'IRPF, plusvalía municipal, patrimonio' },
-  { id: 'urbanismo', label: 'Urbanismo y licencias', desc: 'Planeamiento, licencias de obra' },
-  { id: 'seguros', label: 'Seguros inmobiliarios', desc: 'Hogar, multirriesgo, responsabilidad civil' },
-]
-
-const SKILLS = [
-  { id: 'calificar', label: 'Calificar leads (BANT)', desc: 'Evalúa presupuesto, autoridad, necesidad y tiempo' },
-  { id: 'objeciones', label: 'Manejar objeciones', desc: 'Responde a "es muy caro", "lo voy a pensar"' },
-  { id: 'visitas', label: 'Reservar visitas', desc: 'Gestiona agenda y confirma citas' },
-  { id: 'seguimiento', label: 'Seguimiento post-visita', desc: 'Recordatorios y seguimiento' },
-  { id: 'escalar', label: 'Escalar a humano', desc: 'Deriva al agente cuando es necesario' },
-  { id: 'captura', label: 'Captura proactiva', desc: 'Solicita datos al detectar interés' },
-]
+function getAuthHeaders() {
+  try {
+    const store = JSON.parse(localStorage.getItem('crm-inmobiliario-store') || '{}');
+    const token = store?.state?.user?.token;
+    const userId = store?.state?.user?.id;
+    
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+      headers['x-auth-token'] = token;
+    }
+    if (userId) {
+      headers['x-auth-user'] = userId;
+    }
+    return headers;
+  } catch (e) {
+    return {};
+  }
+}
 
 async function callAI(systemPrompt, userMessage, maxTokens = 800) {
-  if (!apiKey) throw new Error('API key no configurada en .env')
-  const res = await fetch(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': window.location.origin,
-      'X-Title': 'PropBot',
-    },
-    body: JSON.stringify({
-      model: DEFAULT_MODEL,
-      max_tokens: maxTokens,
-      temperature: 0.7,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
-    }),
-  })
-  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e?.error?.message || `Error ${res.status}`) }
-  const data = await res.json()
-  return data.choices?.[0]?.message?.content || ''
+  try {
+    const res = await fetch('/api/tools/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify({
+        model: DEFAULT_MODEL,
+        maxTokens,
+        temperature: 0.7,
+        systemPrompt,
+        userMessage,
+      }),
+    })
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      throw new Error(e?.error || `Error ${res.status}`);
+    }
+    const data = await res.json()
+    return data.response || ''
+  } catch (err) {
+    console.error('[callAI Error]', err);
+    throw err;
+  }
 }
 
 function LeadsChart({ leads }) {
@@ -197,17 +197,30 @@ Responde SOLO el prompt. En ${botConfig.lang}.`, 900)
         else reply = `Entendido. Un asesor de ${botConfig.nombre} se pondrá en contacto contigo pronto.`
       } else {
         const sp = selectedChatBotId ? bots.find(b => b.id === selectedChatBotId)?.prompt || '' : ''
-        const messages = [
-          { role: 'system', content: sp || systemPrompt || `Eres un asistente inmobiliario de ${botConfig.nombre} en ${botConfig.ciudad}.` },
-          ...chatMessages.filter(m => m.role !== 'typing').slice(-6).map(m => ({ role: m.role, content: m.content })),
-          { role: 'user', content: userMsg },
-        ]
-        const res = await fetch(OPENROUTER_URL, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, 'HTTP-Referer': window.location.origin, 'X-Title': 'PropBot Chat' },
-          body: JSON.stringify({ model: DEFAULT_MODEL, max_tokens: 350, temperature: 0.7, messages }),
+        const systemPromptContent = sp || systemPrompt || `Eres un asistente inmobiliario de ${botConfig.nombre} en ${botConfig.ciudad}.`
+        const messages = chatMessages.filter(m => m.role !== 'typing').slice(-6).map(m => ({ role: m.role, content: m.content }))
+        
+        const res = await fetch('/api/tools/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders()
+          },
+          body: JSON.stringify({
+            model: DEFAULT_MODEL,
+            systemPrompt: systemPromptContent,
+            messages,
+            userMessage: userMsg,
+            maxTokens: 350,
+            temperature: 0.7
+          }),
         })
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({}));
+          throw new Error(e?.error || `Error ${res.status}`);
+        }
         const data = await res.json()
-        reply = data.choices?.[0]?.message?.content || 'No pude procesar tu mensaje.'
+        reply = data.response || 'No pude procesar tu mensaje.'
       }
       setChatMessages(prev => prev.filter(m => m.role !== 'typing').concat({ role: 'assistant', content: reply }))
       if (!leadCaptured && /(quiero|me interesa|busco|precio)/i.test(userMsg) && /\d{9,}/.test(userMsg)) {

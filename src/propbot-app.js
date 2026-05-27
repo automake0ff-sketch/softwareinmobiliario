@@ -216,11 +216,32 @@ var DB = {
   }
 };
 
+function getAuthHeaders() {
+  try {
+    var store = JSON.parse(localStorage.getItem('crm-inmobiliario-store') || '{}');
+    var token = store && store.state && store.state.user && store.state.user.token;
+    var userId = store && store.state && store.state.user && store.state.user.id;
+    
+    var headers = {};
+    if (token) {
+      headers['Authorization'] = 'Bearer ' + token;
+      headers['x-auth-token'] = token;
+    }
+    if (userId) {
+      headers['x-auth-user'] = userId;
+    }
+    return headers;
+  } catch (e) {
+    return {};
+  }
+}
+
 /* ════════════════════════════════════════════════════════════
    API  — OpenRouter integration
+   (Now secured via local backend proxy)
 ════════════════════════════════════════════════════════════ */
 var API = {
-  key: null,
+  key: 'true',
   model: 'mistralai/mistral-7b-instruct:free',
   demoMode: false,
 
@@ -229,7 +250,7 @@ var API = {
     var savedModel = localStorage.getItem('propbot_model');
     var savedDemo = localStorage.getItem('propbot_demo');
     if (savedDemo === 'true') { API.demoMode = true; }
-    if (saved) { API.key = saved; }
+    API.key = saved || 'true';
     if (savedModel) { API.model = savedModel; }
     API.updateUI();
   },
@@ -243,14 +264,8 @@ var API = {
       label.textContent = 'Modo demo';
       return;
     }
-    if (API.key) {
-      dot.className = 'api-pill-dot on';
-      label.textContent = 'API key configurada';
-    } else {
-      dot.className = 'api-pill-dot';
-      label.textContent = 'Sin API key';
-      setTimeout(function () { UI.openApiModal(); }, 500);
-    }
+    dot.className = 'api-pill-dot on';
+    label.textContent = 'Servidor AI Activo';
     var sModel = document.getElementById('s-model');
     if (sModel) sModel.value = API.model;
   },
@@ -324,7 +339,6 @@ var API = {
   },
 
   _call: function (messages, overrideKey, overrideModel) {
-    var key = overrideKey || API.key;
     var model = overrideModel || API.model;
     if (API.demoMode) {
       return new Promise(function (resolve) {
@@ -339,29 +353,47 @@ var API = {
         setTimeout(function () { resolve(demoResponses[idx]); }, 800 + Math.random() * 1200);
       });
     }
-    return fetch('https://openrouter.ai/api/v1/chat/completions', {
+
+    var systemPrompt = '';
+    var inputMsgs = [];
+    var userMessage = '';
+    
+    if (messages && messages.length > 0) {
+      // copy array to avoid mutation
+      var tempMsgs = messages.slice();
+      if (tempMsgs[0] && tempMsgs[0].role === 'system') {
+        systemPrompt = tempMsgs[0].content;
+        tempMsgs.shift();
+      }
+      if (tempMsgs.length > 0 && tempMsgs[tempMsgs.length - 1].role === 'user') {
+        userMessage = tempMsgs[tempMsgs.length - 1].content;
+        tempMsgs.pop();
+      }
+      inputMsgs = tempMsgs;
+    }
+
+    return fetch('/api/tools/chat', {
       method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + key,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': window.location.origin,
-        'X-Title': 'PropBot Studio'
-      },
+      headers: Object.assign({
+        'Content-Type': 'application/json'
+      }, getAuthHeaders()),
       body: JSON.stringify({
         model: model,
-        messages: messages,
-        temperature: 0.7,
-        max_tokens: 1024
+        systemPrompt: systemPrompt,
+        messages: inputMsgs,
+        userMessage: userMessage,
+        maxTokens: 1024,
+        temperature: 0.7
       })
     }).then(function (res) {
       if (!res.ok) {
         return res.json().then(function (d) {
-          throw new Error((d.error && d.error.message) || 'HTTP ' + res.status);
+          throw new Error(d.error || 'HTTP ' + res.status);
         });
       }
       return res.json();
     }).then(function (d) {
-      return d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content || '(respuesta vacía)';
+      return d.response || '(respuesta vacía)';
     });
   },
 

@@ -2,9 +2,43 @@ import { Router } from 'express';
 import { auth } from '../middleware/auth.js';
 import { runAgentWithTools } from '../tools/agent-runner.js';
 import { allTools } from '../tools/definitions.js';
+import { callOpenRouter } from '../services/openrouter.js';
 
 const router = Router();
 router.use(auth);
+
+router.post('/chat', async (req, res) => {
+  try {
+    const { model, systemPrompt, userMessage, messages, temperature, maxTokens } = req.body;
+
+    const inputMessages = [];
+    if (systemPrompt) {
+      inputMessages.push({ role: 'system', content: systemPrompt });
+    }
+    if (messages && Array.isArray(messages)) {
+      inputMessages.push(...messages);
+    }
+    if (userMessage) {
+      inputMessages.push({ role: 'user', content: userMessage });
+    }
+
+    if (inputMessages.length === 0) {
+      return res.status(400).json({ error: 'No se enviaron mensajes.' });
+    }
+
+    const response = await callOpenRouter({
+      messages: inputMessages,
+      model: model || 'smart',
+      temperature: temperature ?? 0.7,
+      maxTokens: maxTokens ?? 1000,
+    });
+
+    res.json({ response });
+  } catch (error) {
+    console.error('[TOOLS CHAT PROXY] Error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 router.post('/execute/:agentType', async (req, res) => {
   try {

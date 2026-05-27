@@ -3,3 +3,10 @@ node_modules
 dist
 data/
 *.db
+*.log
+*.txt
+.system_generated/
+server-test.err
+server-test.log
+vite-err.log
+vite-stdout.log

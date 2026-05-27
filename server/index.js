@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
@@ -58,9 +59,41 @@ const stripe = new BillingService({
 
 const API_TOKEN = process.env.API_TOKEN || 'demo-token-dev';
 
-app.use(cors());
+// Configuración de CORS restringido a dominios permitidos
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : ['http://localhost:5173', 'http://localhost:3002'];
 
-app.post('/webhooks/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1 || allowedOrigins.includes('*')) {
+      return callback(null, true);
+    } else {
+      return callback(new Error('No permitido por CORS.'));
+    }
+  },
+  credentials: true
+}));
+
+// Definición de limitadores de tasa (Rate Limiting)
+export const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 20, // Máximo 20 intentos por IP
+  message: { error: 'Demasiados intentos desde esta IP. Intente de nuevo en 15 minutos.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+export const webhookLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutos
+  max: 100, // Máximo 100 solicitudes de webhooks por IP
+  message: { error: 'Límite de tasa para webhooks excedido.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.post('/webhooks/stripe', webhookLimiter, express.raw({ type: 'application/json' }), async (req, res) => {
   try {
     let event;
     const sig = req.headers['stripe-signature'];
@@ -83,7 +116,7 @@ app.post('/webhooks/stripe', express.raw({ type: 'application/json' }), async (r
   }
 });
 
-app.post('/webhooks/paypal', express.json({ type: 'application/json' }), async (req, res) => {
+app.post('/webhooks/paypal', webhookLimiter, express.json({ type: 'application/json' }), async (req, res) => {
   try {
     const result = await stripe.handlePayPalWebhook(req.body);
     res.json(result);
@@ -116,6 +149,7 @@ async function start() {
   const agentsRouter = (await import('./routes/agents.js')).default;
   const agencyRouter = (await import('./routes/agency.js')).default;
   const conversationsRouter = (await import('./routes/conversations.js')).default;
+  const appointmentsRouter = (await import('./routes/appointments.js')).default;
   const { default: metaWebhook } = await import('./webhooks/meta.js');
   const { default: whatsappWebhook, waClient, MESSAGE_TEMPLATES } = await import('./webhooks/whatsapp.js');
 
@@ -124,18 +158,20 @@ async function start() {
   app.use('/api/agents', agentsRouter);
   app.use('/api/agency', agencyRouter);
   app.use('/api/conversations', conversationsRouter);
-  app.use('/webhooks/meta', metaWebhook);
-  app.use('/webhooks/whatsapp', whatsappWebhook);
+  app.use('/api', appointmentsRouter);
+  app.use('/webhooks/meta', webhookLimiter, metaWebhook);
+  app.use('/webhooks/whatsapp', webhookLimiter, whatsappWebhook);
   app.use('/api/rag', (await import('./routes/rag.js')).default);
   app.use('/api/tools', (await import('./routes/tools.js')).default);
   app.use('/api/mcp', (await import('./routes/mcp.js')).default);
   app.use('/api/automations', (await import('./routes/automations.js')).default);
   app.use('/api/automations', (await import('./routes/automations-execute-realtime.js')).default);
   app.use('/api/destinations', (await import('./routes/destinations.js')).default);
-  app.use('/api/auth/register', (await import('./routes/register.js')).default);
-  app.use('/api/login', (await import('./routes/login.js')).default);
+  app.use('/api/auth/register', authLimiter, (await import('./routes/register.js')).default);
+  app.use('/api/login', authLimiter, (await import('./routes/login.js')).default);
   app.use('/api/templates', (await import('./routes/templates.js')).default);
   app.use('/api/admin', (await import('./routes/admin.js')).default);
+  app.use('/api/leads', (await import('./routes/lead-preferences.js')).default);
 
   // Run DB migrations for automations table
   await runMigration();
@@ -265,7 +301,7 @@ async function start() {
     try {
       const { agencyId, triggerEvent } = job.data;
       const automations = all(
-        'SELECT * FROM automations WHERE agency_id = @agency_id AND trigger_event = @trigger AND active = 1',
+        'SELECT * FROM automations WHERE agency_id = @agency_id AND trigger_event = @trigger AND is_active = 1',
         { agency_id: agencyId, trigger: triggerEvent }
       );
       for (const auto of automations) {
@@ -332,6 +368,107 @@ async function start() {
     res.json({ plans: Object.values(PLAN_DEFS), paymentMethods: Object.values(PAYMENT_METHODS) });
   });
 
+  // ── /api/stats/dashboard — estadísticas reales del dashboard por agencia ──
+  app.get('/api/stats/dashboard', auth, async (req, res) => {
+    try {
+      const aid = req.user.agency_id;
+      const today = new Date().toISOString().slice(0, 10);
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      const somStr = startOfMonth.toISOString();
+
+      const leadsToday = get("SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND created_at >= @today", { aid, today })?.count || 0;
+      const totalLeads = get("SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid", { aid })?.count || 0;
+      const leadsThisMonth = get("SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND created_at >= @som", { aid, som: somStr })?.count || 0;
+
+      const leadsYesterday = get("SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND created_at >= @yesterday AND created_at < @today", { aid, yesterday, today })?.count || 0;
+
+      let leadsPctChange = '0%';
+      let leadsTrend = 'up';
+      if (leadsYesterday > 0) {
+        const diff = leadsToday - leadsYesterday;
+        const pct = Math.round((diff / leadsYesterday) * 100);
+        leadsPctChange = (pct >= 0 ? '+' : '') + pct + '%';
+        leadsTrend = pct >= 0 ? 'up' : 'down';
+      } else if (leadsToday > 0) {
+        leadsPctChange = '+100%';
+        leadsTrend = 'up';
+      } else {
+        leadsPctChange = '0%';
+        leadsTrend = 'down';
+      }
+
+      const messagesToday = get("SELECT COUNT(*) as count FROM messages m JOIN conversations c ON m.conversation_id = c.id JOIN leads l ON c.lead_id = l.id WHERE l.agency_id = @aid AND m.created_at >= @today", { aid, today })?.count || 0;
+      const messagesYesterday = get("SELECT COUNT(*) as count FROM messages m JOIN conversations c ON m.conversation_id = c.id JOIN leads l ON c.lead_id = l.id WHERE l.agency_id = @aid AND m.created_at >= @yesterday AND m.created_at < @today", { aid, yesterday, today })?.count || 0;
+
+      let messagesPctChange = '0%';
+      let messagesTrend = 'up';
+      if (messagesYesterday > 0) {
+        const diff = messagesToday - messagesYesterday;
+        const pct = Math.round((diff / messagesYesterday) * 100);
+        messagesPctChange = (pct >= 0 ? '+' : '') + pct + '%';
+        messagesTrend = pct >= 0 ? 'up' : 'down';
+      } else if (messagesToday > 0) {
+        messagesPctChange = '+100%';
+        messagesTrend = 'up';
+      } else {
+        messagesPctChange = '0%';
+        messagesTrend = 'down';
+      }
+
+      const automationsRun = get("SELECT COUNT(*) as count FROM activities WHERE agency_id = @aid AND type = 'automation' AND created_at >= @today", { aid, today })?.count || 0;
+
+      const activeAgents = get("SELECT COUNT(*) as count FROM ai_agents WHERE agency_id = @aid AND status = 'active'", { aid })?.count || 0;
+
+      const pipelineStats = all("SELECT status, COUNT(*) as count FROM leads WHERE agency_id = @aid GROUP BY status", { aid });
+      const totalPipeline = pipelineStats.reduce((sum, s) => sum + s.count, 0);
+
+      const totalProperties = get("SELECT COUNT(*) as count FROM properties WHERE agency_id = @aid", { aid })?.count || 0;
+
+      const activities = all(
+        "SELECT id, type, title, description, created_at FROM activities WHERE agency_id = @aid ORDER BY created_at DESC LIMIT 20",
+        { aid }
+      );
+
+      const conversions = all(
+        "SELECT DATE(created_at) as day, COUNT(*) as leads FROM leads WHERE agency_id = @aid AND created_at >= datetime('now', '-14 days') GROUP BY DATE(created_at) ORDER BY day",
+        { aid }
+      );
+
+      res.json({
+        liveStats: [
+          { id: 1, label: 'Agentes IA activos', value: activeAgents, icon: 'Bot', change: '', trend: 'up' },
+          { id: 2, label: 'Leads hoy', value: leadsToday, icon: 'Users', change: leadsPctChange, trend: leadsTrend },
+          { id: 3, label: 'Mensajes enviados hoy', value: messagesToday, icon: 'MessageSquare', change: messagesPctChange, trend: messagesTrend },
+          { id: 4, label: 'Automatizaciones ejecutadas', value: automationsRun, icon: 'Zap', change: '', trend: 'up' },
+        ],
+        totalLeads,
+        totalProperties,
+        totalPipeline,
+        pipelineStages: pipelineStats.map(s => ({
+          label: s.status === 'nuevo' ? 'Nuevo' : s.status === 'contactado' ? 'Contactado' : s.status === 'interesado' ? 'Interesado' : s.status === 'visita_agendada' ? 'Visita agendada' : s.status === 'negociacion' ? 'Negociación' : s.status === 'reserva' ? 'Reserva' : s.status === 'cerrado' ? 'Cerrado' : s.status,
+          count: s.count,
+          color: s.status === 'nuevo' ? 'bg-blue-400' : s.status === 'contactado' ? 'bg-amber-300' : s.status === 'interesado' ? 'bg-indigo-300' : s.status === 'visita_agendada' ? 'bg-purple-400' : s.status === 'negociacion' ? 'bg-orange-400' : s.status === 'reserva' ? 'bg-emerald-400' : 'bg-green-500',
+        })),
+        conversionData: conversions.map(c => ({
+          day: c.day ? new Date(c.day + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'short' }) : '',
+          leads: c.leads,
+          conversions: 0,
+        })),
+        activities: activities.map(a => ({
+          id: a.id,
+          type: a.type,
+          text: a.description || a.title || '',
+          time: a.created_at,
+        })),
+      });
+    } catch (e) {
+      console.error('[DASHBOARD STATS] Error:', e.message);
+      res.status(500).json({ error: 'Error al obtener estadísticas' });
+    }
+  });
+
   app.get('/api/billing/subscription', auth, async (req, res) => {
     const sub = await stripe.getSubscription(req.user.agency_id);
     res.json(sub);
@@ -359,7 +496,7 @@ async function start() {
       const usersCount = get("SELECT COUNT(*) as count FROM users WHERE agency_id = @aid AND active = 1", { aid: agencyId })?.count || 0
       const officesCount = get("SELECT COUNT(*) as count FROM offices WHERE agency_id = @aid", { aid: agencyId })?.count || 0
       const agentsCount = get("SELECT COUNT(*) as count FROM ai_agents WHERE agency_id = @aid AND status = 'active'", { aid: agencyId })?.count || 0
-      const automationsCount = get("SELECT COUNT(*) as count FROM automations WHERE agency_id = @aid AND active = 1", { aid: agencyId })?.count || 0
+      const automationsCount = get("SELECT COUNT(*) as count FROM automations WHERE agency_id = @aid AND is_active = 1", { aid: agencyId })?.count || 0
 
       const leadsLimit = plan.max_leads_per_month
       const leadsPct = leadsLimit === -1 ? 0 : Math.round((leadsCount / leadsLimit) * 100)
@@ -472,14 +609,28 @@ async function start() {
     });
   });
 
+  app.get('/api/activities', (req, res) => {
+    try {
+      const { limit = 50, offset = 0 } = req.query;
+      const agencyId = req.headers['x-auth-agency'];
+      if (!agencyId) return res.status(400).json({ error: 'Agency header required' });
+      const activities = all(
+        'SELECT a.*, u.name AS user_name FROM activities a LEFT JOIN users u ON a.user_id = u.id WHERE a.agency_id = @agency_id ORDER BY a.created_at DESC LIMIT @limit OFFSET @offset',
+        { agency_id: agencyId, limit: Number(limit), offset: Number(offset) }
+      );
+      res.json(activities);
+    } catch (error) {
+      console.error('Error listing activities:', error);
+      res.status(500).json({ error: 'Error al obtener actividades.' });
+    }
+  });
+
   const dataDir = join(__dirname, '..', 'data');
   if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
 
   try {
     const count = get('SELECT COUNT(*) as count FROM agencies');
-    if (!count || count.count === 0) {
-      seedDemoData();
-    } else {
+    if (count && count.count > 0) {
       seedAutomationsForExistingAgencies();
     }
   } catch (e) {
@@ -533,6 +684,13 @@ async function start() {
     console.log(`📍 http://localhost:${PORT}/api/health`);
     console.log(`🌐 App completa: http://localhost:${PORT}`);
     initializeRAG();
+
+    // Start background appointment reminder worker (runs every 1 hour)
+    import('./services/appointment-reminder-worker.js').then(({ startReminderWorker }) => {
+      startReminderWorker(60 * 60 * 1000, process.env.APP_URL || `http://localhost:5173`);
+    }).catch(err => {
+      console.error('Error starting appointment reminder worker:', err);
+    });
   });
 }
 
@@ -565,47 +723,58 @@ function generateAgentResponse(agentType, lead, messageBody, history) {
   };
 
   const agentResponses = responses[agentType] || responses.captador;
-  return agentResponses[Math.floor(Math.random() * agentResponses.length)];
+  const idx = Math.floor(Math.random() * agentResponses.length);
+  return agentResponses[idx];
 }
 
 // DB Migration: Expand tables schema
 async function runMigration() {
+  function columnExists(tableName, columnName) {
+    try {
+      const columns = all(`PRAGMA table_info(${tableName})`);
+      return columns.some(c => c.name === columnName);
+    } catch (e) {
+      return false;
+    }
+  }
+
   const migrations = [
-    `ALTER TABLE automations ADD COLUMN description TEXT DEFAULT ''`,
-    `ALTER TABLE automations ADD COLUMN is_active INTEGER DEFAULT 1`,
-    `ALTER TABLE automations ADD COLUMN trigger_type TEXT DEFAULT 'lead_created'`,
-    `ALTER TABLE automations ADD COLUMN trigger_config TEXT DEFAULT '{}'`,
-    `ALTER TABLE automations ADD COLUMN conditions TEXT DEFAULT '[]'`,
-    `ALTER TABLE automations ADD COLUMN actions TEXT DEFAULT '[]'`,
-    `ALTER TABLE automations ADD COLUMN run_count INTEGER DEFAULT 0`,
-    `ALTER TABLE automations ADD COLUMN last_run_at TEXT`,
-    `CREATE TABLE IF NOT EXISTS automation_logs (
+    { type: 'column', table: 'ai_agents', column: 'is_active', sql: `ALTER TABLE ai_agents ADD COLUMN is_active INTEGER DEFAULT 1` },
+    { type: 'column', table: 'ai_agents', column: 'stats', sql: `ALTER TABLE ai_agents ADD COLUMN stats TEXT DEFAULT '{"leads_today":0,"messages_today":0,"automations_today":0,"conversions_today":0}'` },
+    { type: 'column', table: 'conversations', column: 'ia_handling', sql: `ALTER TABLE conversations ADD COLUMN ia_handling INTEGER DEFAULT 1` },
+    { type: 'column', table: 'conversations', column: 'updated_at', sql: `ALTER TABLE conversations ADD COLUMN updated_at TEXT` },
+    { type: 'column', table: 'automations', column: 'description', sql: `ALTER TABLE automations ADD COLUMN description TEXT DEFAULT ''` },
+    { type: 'column', table: 'automations', column: 'is_active', sql: `ALTER TABLE automations ADD COLUMN is_active INTEGER DEFAULT 1` },
+    { type: 'column', table: 'automations', column: 'trigger_type', sql: `ALTER TABLE automations ADD COLUMN trigger_type TEXT DEFAULT 'lead_created'` },
+    { type: 'column', table: 'automations', column: 'trigger_config', sql: `ALTER TABLE automations ADD COLUMN trigger_config TEXT DEFAULT '{}'` },
+    { type: 'column', table: 'automations', column: 'conditions', sql: `ALTER TABLE automations ADD COLUMN conditions TEXT DEFAULT '[]'` },
+    { type: 'column', table: 'automations', column: 'actions', sql: `ALTER TABLE automations ADD COLUMN actions TEXT DEFAULT '[]'` },
+    { type: 'column', table: 'automations', column: 'run_count', sql: `ALTER TABLE automations ADD COLUMN run_count INTEGER DEFAULT 0` },
+    { type: 'column', table: 'automations', column: 'last_run_at', sql: `ALTER TABLE automations ADD COLUMN last_run_at TEXT` },
+    { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS automation_logs (
       id TEXT PRIMARY KEY,
       automation_id TEXT REFERENCES automations(id) ON DELETE CASCADE,
       lead_id TEXT REFERENCES leads(id) ON DELETE SET NULL,
       status TEXT NOT NULL DEFAULT 'success',
       actions_executed TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )`,
-    // Activities table: add title + agent_type for automation logging
-    `ALTER TABLE activities ADD COLUMN title TEXT`,
-    `ALTER TABLE activities ADD COLUMN agent_type TEXT`,
-    // Leads table: add extra columns used by automation engine
-    `ALTER TABLE leads ADD COLUMN last_contact_at TEXT`,
-    `ALTER TABLE leads ADD COLUMN ia_score_label TEXT`,
-    `ALTER TABLE leads ADD COLUMN ia_next_action TEXT`,
-    `ALTER TABLE leads ADD COLUMN ia_insights TEXT`,
-    `ALTER TABLE leads ADD COLUMN pipeline_stage TEXT`,
-    `ALTER TABLE leads ADD COLUMN pipeline_stage_updated_at TEXT`,
-    `ALTER TABLE leads ADD COLUMN operation_type TEXT`,
-    `ALTER TABLE leads ADD COLUMN budget_max REAL`,
-    `ALTER TABLE leads ADD COLUMN zones TEXT`,
-    `ALTER TABLE leads ADD COLUMN urgency TEXT`,
-    `ALTER TABLE leads ADD COLUMN property_type TEXT`,
-    // Destinations system for automations
-    `ALTER TABLE automations ADD COLUMN destinations TEXT DEFAULT '[]'`,
-    `ALTER TABLE automations ADD COLUMN version INTEGER DEFAULT 2`,
-    `CREATE TABLE IF NOT EXISTS agency_destinations (
+    )` },
+    { type: 'column', table: 'activities', column: 'title', sql: `ALTER TABLE activities ADD COLUMN title TEXT` },
+    { type: 'column', table: 'activities', column: 'agent_type', sql: `ALTER TABLE activities ADD COLUMN agent_type TEXT` },
+    { type: 'column', table: 'leads', column: 'last_contact_at', sql: `ALTER TABLE leads ADD COLUMN last_contact_at TEXT` },
+    { type: 'column', table: 'leads', column: 'ia_score_label', sql: `ALTER TABLE leads ADD COLUMN ia_score_label TEXT` },
+    { type: 'column', table: 'leads', column: 'ia_next_action', sql: `ALTER TABLE leads ADD COLUMN ia_next_action TEXT` },
+    { type: 'column', table: 'leads', column: 'ia_insights', sql: `ALTER TABLE leads ADD COLUMN ia_insights TEXT` },
+    { type: 'column', table: 'leads', column: 'pipeline_stage', sql: `ALTER TABLE leads ADD COLUMN pipeline_stage TEXT` },
+    { type: 'column', table: 'leads', column: 'pipeline_stage_updated_at', sql: `ALTER TABLE leads ADD COLUMN pipeline_stage_updated_at TEXT` },
+    { type: 'column', table: 'leads', column: 'operation_type', sql: `ALTER TABLE leads ADD COLUMN operation_type TEXT` },
+    { type: 'column', table: 'leads', column: 'budget_max', sql: `ALTER TABLE leads ADD COLUMN budget_max REAL` },
+    { type: 'column', table: 'leads', column: 'zones', sql: `ALTER TABLE leads ADD COLUMN zones TEXT` },
+    { type: 'column', table: 'leads', column: 'urgency', sql: `ALTER TABLE leads ADD COLUMN urgency TEXT` },
+    { type: 'column', table: 'leads', column: 'property_type', sql: `ALTER TABLE leads ADD COLUMN property_type TEXT` },
+    { type: 'column', table: 'automations', column: 'destinations', sql: `ALTER TABLE automations ADD COLUMN destinations TEXT DEFAULT '[]'` },
+    { type: 'column', table: 'automations', column: 'version', sql: `ALTER TABLE automations ADD COLUMN version INTEGER DEFAULT 2` },
+    { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS agency_destinations (
       id TEXT PRIMARY KEY,
       agency_id TEXT REFERENCES agencies(id) ON DELETE CASCADE,
       type TEXT NOT NULL,
@@ -615,66 +784,64 @@ async function runMigration() {
       last_tested_at TEXT,
       last_test_ok INTEGER,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )`,
-    `CREATE INDEX IF NOT EXISTS idx_agency_destinations ON agency_destinations(agency_id, type, is_active)`,
-    // ── Migración: columnas de configuración de agencia ─────
-    `ALTER TABLE agencies ADD COLUMN email TEXT`,
-    `ALTER TABLE agencies ADD COLUMN phone TEXT`,
-    `ALTER TABLE agencies ADD COLUMN whatsapp_token TEXT`,
-    `ALTER TABLE agencies ADD COLUMN whatsapp_phone_id TEXT`,
-    `ALTER TABLE agencies ADD COLUMN whatsapp_number TEXT`,
-    `ALTER TABLE agencies ADD COLUMN address TEXT`,
-    `ALTER TABLE agencies ADD COLUMN city TEXT`,
-    `ALTER TABLE agencies ADD COLUMN website TEXT`,
-    `ALTER TABLE agencies ADD COLUMN instagram TEXT`,
-    `ALTER TABLE agencies ADD COLUMN facebook TEXT`,
-    `ALTER TABLE agencies ADD COLUMN linkedin TEXT`,
-    `ALTER TABLE agencies ADD COLUMN tiktok TEXT`,
-    `ALTER TABLE agencies ADD COLUMN cif TEXT`,
-    `ALTER TABLE agencies ADD COLUMN legal_name TEXT`,
-    `ALTER TABLE agencies ADD COLUMN sendgrid_api_key TEXT`,
-    `ALTER TABLE agencies ADD COLUMN sendgrid_from_email TEXT`,
-    `ALTER TABLE agencies ADD COLUMN sendgrid_from_name TEXT`,
-    `ALTER TABLE agencies ADD COLUMN smtp_host TEXT`,
-    `ALTER TABLE agencies ADD COLUMN smtp_port INTEGER`,
-    `ALTER TABLE agencies ADD COLUMN smtp_user TEXT`,
-    `ALTER TABLE agencies ADD COLUMN smtp_password TEXT`,
-    `ALTER TABLE agencies ADD COLUMN telegram_bot_token TEXT`,
-    `ALTER TABLE agencies ADD COLUMN telegram_chat_id TEXT`,
-    `ALTER TABLE agencies ADD COLUMN slack_webhook_url TEXT`,
-    `ALTER TABLE agencies ADD COLUMN notion_api_key TEXT`,
-    `ALTER TABLE agencies ADD COLUMN notion_database_id TEXT`,
-    `ALTER TABLE agencies ADD COLUMN airtable_api_key TEXT`,
-    `ALTER TABLE agencies ADD COLUMN airtable_base_id TEXT`,
-    `ALTER TABLE agencies ADD COLUMN airtable_table TEXT`,
-    `ALTER TABLE agencies ADD COLUMN google_sheets_id TEXT`,
-    `ALTER TABLE agencies ADD COLUMN google_service_account TEXT`,
-    `ALTER TABLE agencies ADD COLUMN zapier_webhook_url TEXT`,
-    `ALTER TABLE agencies ADD COLUMN make_webhook_url TEXT`,
-    `ALTER TABLE agencies ADD COLUMN n8n_webhook_url TEXT`,
-    `ALTER TABLE agencies ADD COLUMN onboarding_completed INTEGER DEFAULT 0`,
-    `ALTER TABLE agencies ADD COLUMN onboarding_step INTEGER DEFAULT 0`,
-    `ALTER TABLE agencies ADD COLUMN meta_page_id TEXT`,
-    `ALTER TABLE agencies ADD COLUMN plan TEXT DEFAULT 'starter'`,
-    `ALTER TABLE agencies ADD COLUMN plan_status TEXT DEFAULT 'trialing'`,
-    `ALTER TABLE agencies ADD COLUMN wa_verify_token TEXT`,
-    `ALTER TABLE agencies ADD COLUMN wa_webhook_token TEXT`,
-    `ALTER TABLE agencies ADD COLUMN email_provider TEXT DEFAULT 'sendgrid'`,
-    `ALTER TABLE agencies ADD COLUMN slugs TEXT`,
-    // ── Multi-tenant: branding y configuración ────────────
-    `ALTER TABLE agencies ADD COLUMN primary_color TEXT DEFAULT '#6366f1'`,
-    `ALTER TABLE agencies ADD COLUMN secondary_color TEXT DEFAULT '#8b5cf6'`,
-    `ALTER TABLE agencies ADD COLUMN logo_url TEXT`,
-    `ALTER TABLE agencies ADD COLUMN custom_domain TEXT`,
-    `ALTER TABLE agencies ADD COLUMN province TEXT`,
-    `ALTER TABLE agencies ADD COLUMN country TEXT DEFAULT 'ES'`,
-    `ALTER TABLE agencies ADD COLUMN timezone TEXT DEFAULT 'Europe/Madrid'`,
-    `ALTER TABLE agencies ADD COLUMN language TEXT DEFAULT 'es'`,
-    `ALTER TABLE agencies ADD COLUMN bot_name TEXT DEFAULT 'Asistente IA'`,
-    `ALTER TABLE agencies ADD COLUMN bot_tone TEXT DEFAULT 'profesional'`,
-    `ALTER TABLE agencies ADD COLUMN working_hours TEXT DEFAULT '{"start":"09:00","end":"20:00","days":[1,2,3,4,5]}'`,
-    `ALTER TABLE agencies ADD COLUMN webhook_custom TEXT`,
-    `CREATE TABLE IF NOT EXISTS automation_templates (
+    )` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_agency_destinations ON agency_destinations(agency_id, type, is_active)` },
+    { type: 'column', table: 'agencies', column: 'email', sql: `ALTER TABLE agencies ADD COLUMN email TEXT` },
+    { type: 'column', table: 'agencies', column: 'phone', sql: `ALTER TABLE agencies ADD COLUMN phone TEXT` },
+    { type: 'column', table: 'agencies', column: 'whatsapp_token', sql: `ALTER TABLE agencies ADD COLUMN whatsapp_token TEXT` },
+    { type: 'column', table: 'agencies', column: 'whatsapp_phone_id', sql: `ALTER TABLE agencies ADD COLUMN whatsapp_phone_id TEXT` },
+    { type: 'column', table: 'agencies', column: 'whatsapp_number', sql: `ALTER TABLE agencies ADD COLUMN whatsapp_number TEXT` },
+    { type: 'column', table: 'agencies', column: 'address', sql: `ALTER TABLE agencies ADD COLUMN address TEXT` },
+    { type: 'column', table: 'agencies', column: 'city', sql: `ALTER TABLE agencies ADD COLUMN city TEXT` },
+    { type: 'column', table: 'agencies', column: 'website', sql: `ALTER TABLE agencies ADD COLUMN website TEXT` },
+    { type: 'column', table: 'agencies', column: 'instagram', sql: `ALTER TABLE agencies ADD COLUMN instagram TEXT` },
+    { type: 'column', table: 'agencies', column: 'facebook', sql: `ALTER TABLE agencies ADD COLUMN facebook TEXT` },
+    { type: 'column', table: 'agencies', column: 'linkedin', sql: `ALTER TABLE agencies ADD COLUMN linkedin TEXT` },
+    { type: 'column', table: 'agencies', column: 'tiktok', sql: `ALTER TABLE agencies ADD COLUMN tiktok TEXT` },
+    { type: 'column', table: 'agencies', column: 'cif', sql: `ALTER TABLE agencies ADD COLUMN cif TEXT` },
+    { type: 'column', table: 'agencies', column: 'legal_name', sql: `ALTER TABLE agencies ADD COLUMN legal_name TEXT` },
+    { type: 'column', table: 'agencies', column: 'sendgrid_api_key', sql: `ALTER TABLE agencies ADD COLUMN sendgrid_api_key TEXT` },
+    { type: 'column', table: 'agencies', column: 'sendgrid_from_email', sql: `ALTER TABLE agencies ADD COLUMN sendgrid_from_email TEXT` },
+    { type: 'column', table: 'agencies', column: 'sendgrid_from_name', sql: `ALTER TABLE agencies ADD COLUMN sendgrid_from_name TEXT` },
+    { type: 'column', table: 'agencies', column: 'smtp_host', sql: `ALTER TABLE agencies ADD COLUMN smtp_host TEXT` },
+    { type: 'column', table: 'agencies', column: 'smtp_port', sql: `ALTER TABLE agencies ADD COLUMN smtp_port INTEGER` },
+    { type: 'column', table: 'agencies', column: 'smtp_user', sql: `ALTER TABLE agencies ADD COLUMN smtp_user TEXT` },
+    { type: 'column', table: 'agencies', column: 'smtp_password', sql: `ALTER TABLE agencies ADD COLUMN smtp_password TEXT` },
+    { type: 'column', table: 'agencies', column: 'telegram_bot_token', sql: `ALTER TABLE agencies ADD COLUMN telegram_bot_token TEXT` },
+    { type: 'column', table: 'agencies', column: 'telegram_chat_id', sql: `ALTER TABLE agencies ADD COLUMN telegram_chat_id TEXT` },
+    { type: 'column', table: 'agencies', column: 'slack_webhook_url', sql: `ALTER TABLE agencies ADD COLUMN slack_webhook_url TEXT` },
+    { type: 'column', table: 'agencies', column: 'notion_api_key', sql: `ALTER TABLE agencies ADD COLUMN notion_api_key TEXT` },
+    { type: 'column', table: 'agencies', column: 'notion_database_id', sql: `ALTER TABLE agencies ADD COLUMN notion_database_id TEXT` },
+    { type: 'column', table: 'agencies', column: 'airtable_api_key', sql: `ALTER TABLE agencies ADD COLUMN airtable_api_key TEXT` },
+    { type: 'column', table: 'agencies', column: 'airtable_base_id', sql: `ALTER TABLE agencies ADD COLUMN airtable_base_id TEXT` },
+    { type: 'column', table: 'agencies', column: 'airtable_table', sql: `ALTER TABLE agencies ADD COLUMN airtable_table TEXT` },
+    { type: 'column', table: 'agencies', column: 'google_sheets_id', sql: `ALTER TABLE agencies ADD COLUMN google_sheets_id TEXT` },
+    { type: 'column', table: 'agencies', column: 'google_service_account', sql: `ALTER TABLE agencies ADD COLUMN google_service_account TEXT` },
+    { type: 'column', table: 'agencies', column: 'zapier_webhook_url', sql: `ALTER TABLE agencies ADD COLUMN zapier_webhook_url TEXT` },
+    { type: 'column', table: 'agencies', column: 'make_webhook_url', sql: `ALTER TABLE agencies ADD COLUMN make_webhook_url TEXT` },
+    { type: 'column', table: 'agencies', column: 'n8n_webhook_url', sql: `ALTER TABLE agencies ADD COLUMN n8n_webhook_url TEXT` },
+    { type: 'column', table: 'agencies', column: 'onboarding_completed', sql: `ALTER TABLE agencies ADD COLUMN onboarding_completed INTEGER DEFAULT 0` },
+    { type: 'column', table: 'agencies', column: 'onboarding_step', sql: `ALTER TABLE agencies ADD COLUMN onboarding_step INTEGER DEFAULT 0` },
+    { type: 'column', table: 'agencies', column: 'meta_page_id', sql: `ALTER TABLE agencies ADD COLUMN meta_page_id TEXT` },
+    { type: 'column', table: 'agencies', column: 'plan', sql: `ALTER TABLE agencies ADD COLUMN plan TEXT DEFAULT 'starter'` },
+    { type: 'column', table: 'agencies', column: 'plan_status', sql: `ALTER TABLE agencies ADD COLUMN plan_status TEXT DEFAULT 'trialing'` },
+    { type: 'column', table: 'agencies', column: 'wa_verify_token', sql: `ALTER TABLE agencies ADD COLUMN wa_verify_token TEXT` },
+    { type: 'column', table: 'agencies', column: 'wa_webhook_token', sql: `ALTER TABLE agencies ADD COLUMN wa_webhook_token TEXT` },
+    { type: 'column', table: 'agencies', column: 'email_provider', sql: `ALTER TABLE agencies ADD COLUMN email_provider TEXT DEFAULT 'sendgrid'` },
+    { type: 'column', table: 'agencies', column: 'slugs', sql: `ALTER TABLE agencies ADD COLUMN slugs TEXT` },
+    { type: 'column', table: 'agencies', column: 'primary_color', sql: `ALTER TABLE agencies ADD COLUMN primary_color TEXT DEFAULT '#6366f1'` },
+    { type: 'column', table: 'agencies', column: 'secondary_color', sql: `ALTER TABLE agencies ADD COLUMN secondary_color TEXT DEFAULT '#8b5cf6'` },
+    { type: 'column', table: 'agencies', column: 'logo_url', sql: `ALTER TABLE agencies ADD COLUMN logo_url TEXT` },
+    { type: 'column', table: 'agencies', column: 'custom_domain', sql: `ALTER TABLE agencies ADD COLUMN custom_domain TEXT` },
+    { type: 'column', table: 'agencies', column: 'province', sql: `ALTER TABLE agencies ADD COLUMN province TEXT` },
+    { type: 'column', table: 'agencies', column: 'country', sql: `ALTER TABLE agencies ADD COLUMN country TEXT DEFAULT 'ES'` },
+    { type: 'column', table: 'agencies', column: 'timezone', sql: `ALTER TABLE agencies ADD COLUMN timezone TEXT DEFAULT 'Europe/Madrid'` },
+    { type: 'column', table: 'agencies', column: 'language', sql: `ALTER TABLE agencies ADD COLUMN language TEXT DEFAULT 'es'` },
+    { type: 'column', table: 'agencies', column: 'bot_name', sql: `ALTER TABLE agencies ADD COLUMN bot_name TEXT DEFAULT 'Asistente IA'` },
+    { type: 'column', table: 'agencies', column: 'bot_tone', sql: `ALTER TABLE agencies ADD COLUMN bot_tone TEXT DEFAULT 'profesional'` },
+    { type: 'column', table: 'agencies', column: 'working_hours', sql: `ALTER TABLE agencies ADD COLUMN working_hours TEXT DEFAULT '{"start":"09:00","end":"20:00","days":[1,2,3,4,5]}'` },
+    { type: 'column', table: 'agencies', column: 'webhook_custom', sql: `ALTER TABLE agencies ADD COLUMN webhook_custom TEXT` },
+    { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS automation_templates (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       description TEXT,
@@ -692,22 +859,19 @@ async function runMigration() {
       is_featured INTEGER DEFAULT 0,
       sort_order INTEGER DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )`,
-    // ── Migración: columnas de contacto en users ────────────
-    `ALTER TABLE users ADD COLUMN whatsapp_number TEXT`,
-    `ALTER TABLE users ADD COLUMN telegram_chat_id TEXT`,
-    `ALTER TABLE users ADD COLUMN slack_user_id TEXT`,
-    `ALTER TABLE users ADD COLUMN notification_email TEXT`,
-    `ALTER TABLE users ADD COLUMN signature TEXT`,
-    // ── Migración: agency_id en conversations ─────────────
-    `ALTER TABLE conversations ADD COLUMN agency_id TEXT REFERENCES agencies(id) ON DELETE CASCADE`,
-    `CREATE INDEX IF NOT EXISTS idx_conversations_agency ON conversations(agency_id)`,
-    `ALTER TABLE users ADD COLUMN timezone TEXT DEFAULT 'Europe/Madrid'`,
-    `ALTER TABLE users ADD COLUMN working_hours TEXT DEFAULT '{"start":"09:00","end":"20:00","days":[1,2,3,4,5]}'`,
-    `ALTER TABLE users ADD COLUMN preferences TEXT DEFAULT '{}'`,
-    // ── Crear vista de contexto completo ────────────────────
-    `DROP VIEW IF EXISTS agency_full_context`,
-    `CREATE VIEW agency_full_context AS
+    )` },
+    { type: 'column', table: 'users', column: 'whatsapp_number', sql: `ALTER TABLE users ADD COLUMN whatsapp_number TEXT` },
+    { type: 'column', table: 'users', column: 'telegram_chat_id', sql: `ALTER TABLE users ADD COLUMN telegram_chat_id TEXT` },
+    { type: 'column', table: 'users', column: 'slack_user_id', sql: `ALTER TABLE users ADD COLUMN slack_user_id TEXT` },
+    { type: 'column', table: 'users', column: 'notification_email', sql: `ALTER TABLE users ADD COLUMN notification_email TEXT` },
+    { type: 'column', table: 'users', column: 'signature', sql: `ALTER TABLE users ADD COLUMN signature TEXT` },
+    { type: 'column', table: 'conversations', column: 'agency_id', sql: `ALTER TABLE conversations ADD COLUMN agency_id TEXT REFERENCES agencies(id) ON DELETE CASCADE` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_conversations_agency ON conversations(agency_id)` },
+    { type: 'column', table: 'users', column: 'timezone', sql: `ALTER TABLE users ADD COLUMN timezone TEXT DEFAULT 'Europe/Madrid'` },
+    { type: 'column', table: 'users', column: 'working_hours', sql: `ALTER TABLE users ADD COLUMN working_hours TEXT DEFAULT '{"start":"09:00","end":"20:00","days":[1,2,3,4,5]}'` },
+    { type: 'column', table: 'users', column: 'preferences', sql: `ALTER TABLE users ADD COLUMN preferences TEXT DEFAULT '{}'` },
+    { type: 'sql', sql: `DROP VIEW IF EXISTS agency_full_context` },
+    { type: 'sql', sql: `CREATE VIEW agency_full_context AS
       SELECT a.id AS agency_id, a.name AS agency_name, a.city AS agency_city,
         a.email AS agency_email, a.phone AS agency_phone,
         a.whatsapp_number AS agency_whatsapp, a.website AS agency_website,
@@ -722,11 +886,9 @@ async function runMigration() {
         a.airtable_api_key, a.airtable_base_id, a.airtable_table,
         a.google_sheets_id,
         a.zapier_webhook_url, a.make_webhook_url, a.n8n_webhook_url
-      FROM agencies a`,
-    // ── Migración: usage_counters.created_at ─────────────────
-    `ALTER TABLE usage_counters ADD COLUMN created_at TEXT DEFAULT (datetime('now'))`,
-    // ── Tabla usage_monthly para contadores con incremento ────
-    `CREATE TABLE IF NOT EXISTS usage_monthly (
+      FROM agencies a` },
+    { type: 'column', table: 'usage_counters', column: 'created_at', sql: `ALTER TABLE usage_counters ADD COLUMN created_at TEXT DEFAULT (datetime('now'))` },
+    { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS usage_monthly (
       id TEXT PRIMARY KEY,
       agency_id TEXT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
       period TEXT NOT NULL,
@@ -735,11 +897,182 @@ async function runMigration() {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(agency_id, period, counter)
-    )`,
-    `CREATE INDEX IF NOT EXISTS idx_usage_monthly ON usage_monthly(agency_id, period, counter)`,
-  ]
-  for (const sql of migrations) {
-    try { run(sql) } catch { /* column may already exist */ }
+    )` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_usage_monthly ON usage_monthly(agency_id, period, counter)` },
+    { type: 'column', table: 'automations', column: 'template_id', sql: `ALTER TABLE automations ADD COLUMN template_id TEXT REFERENCES automation_templates(id) ON DELETE SET NULL` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_automations_template ON automations(agency_id, template_id)` },
+    { type: 'column', table: 'agencies', column: 'online_meeting_url', sql: `ALTER TABLE agencies ADD COLUMN online_meeting_url TEXT` },
+    { type: 'column', table: 'agencies', column: 'appointment_attendant_name', sql: `ALTER TABLE agencies ADD COLUMN appointment_attendant_name TEXT` },
+    { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS appointments (
+      id TEXT PRIMARY KEY,
+      agency_id TEXT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      lead_id TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+      assigned_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      type TEXT CHECK(type IN ('online','physical')) NOT NULL,
+      status TEXT CHECK(status IN ('scheduled','confirmed','reschedule_requested','cancelled','completed','no_show')) NOT NULL DEFAULT 'scheduled',
+      starts_at TEXT NOT NULL,
+      ends_at TEXT NOT NULL,
+      timezone TEXT DEFAULT 'Europe/Madrid',
+      location TEXT,
+      online_url TEXT,
+      notes TEXT,
+      client_token TEXT UNIQUE NOT NULL,
+      reminder_48h_sent_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )` },
+    { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS appointment_messages (
+      id TEXT PRIMARY KEY,
+      appointment_id TEXT NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
+      channel TEXT CHECK(channel IN ('email','whatsapp')) NOT NULL,
+      type TEXT CHECK(type IN ('confirmation','reminder','update','cancel')) NOT NULL,
+      status TEXT NOT NULL,
+      sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+      error TEXT
+    )` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_appointments_client_token ON appointments(client_token)` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_appointments_lead ON appointments(lead_id)` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_appointments_agency ON appointments(agency_id)` },
+    // ── Properties new columns ──
+    { type: 'column', table: 'properties', column: 'operation_type', sql: `ALTER TABLE properties ADD COLUMN operation_type TEXT DEFAULT 'sale'` },
+    { type: 'column', table: 'properties', column: 'address', sql: `ALTER TABLE properties ADD COLUMN address TEXT` },
+    { type: 'column', table: 'properties', column: 'province', sql: `ALTER TABLE properties ADD COLUMN province TEXT` },
+    { type: 'column', table: 'properties', column: 'postal_code', sql: `ALTER TABLE properties ADD COLUMN postal_code TEXT` },
+    { type: 'column', table: 'properties', column: 'floor', sql: `ALTER TABLE properties ADD COLUMN floor TEXT` },
+    { type: 'column', table: 'properties', column: 'has_elevator', sql: `ALTER TABLE properties ADD COLUMN has_elevator INTEGER DEFAULT 0` },
+    { type: 'column', table: 'properties', column: 'has_terrace', sql: `ALTER TABLE properties ADD COLUMN has_terrace INTEGER DEFAULT 0` },
+    { type: 'column', table: 'properties', column: 'has_garage', sql: `ALTER TABLE properties ADD COLUMN has_garage INTEGER DEFAULT 0` },
+    { type: 'column', table: 'properties', column: 'condition', sql: `ALTER TABLE properties ADD COLUMN condition TEXT` },
+    { type: 'column', table: 'properties', column: 'source', sql: `ALTER TABLE properties ADD COLUMN source TEXT DEFAULT 'manual'` },
+    { type: 'column', table: 'properties', column: 'external_source', sql: `ALTER TABLE properties ADD COLUMN external_source TEXT` },
+    { type: 'column', table: 'properties', column: 'external_id', sql: `ALTER TABLE properties ADD COLUMN external_id TEXT` },
+    { type: 'column', table: 'properties', column: 'external_url', sql: `ALTER TABLE properties ADD COLUMN external_url TEXT` },
+    { type: 'column', table: 'properties', column: 'imported_at', sql: `ALTER TABLE properties ADD COLUMN imported_at TEXT` },
+    { type: 'column', table: 'properties', column: 'updated_at', sql: `ALTER TABLE properties ADD COLUMN updated_at TEXT` },
+    { type: 'column', table: 'properties', column: 'public_url', sql: `ALTER TABLE properties ADD COLUMN public_url TEXT` },
+    // ── Agencias columns for Idealista ──
+    { type: 'column', table: 'agencies', column: 'idealista_api_key', sql: `ALTER TABLE agencies ADD COLUMN idealista_api_key TEXT` },
+    { type: 'column', table: 'agencies', column: 'idealista_api_secret', sql: `ALTER TABLE agencies ADD COLUMN idealista_api_secret TEXT` },
+    { type: 'column', table: 'agencies', column: 'idealista_import_mode', sql: `ALTER TABLE agencies ADD COLUMN idealista_import_mode TEXT DEFAULT 'url'` },
+    { type: 'column', table: 'agencies', column: 'idealista_office_id', sql: `ALTER TABLE agencies ADD COLUMN idealista_office_id TEXT` },
+    // ── New indexes for properties ──
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_properties_source ON properties(source)` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_properties_operation ON properties(operation_type)` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_properties_external ON properties(external_source, external_id)` },
+    { type: 'column', table: 'properties', column: 'assigned_to', sql: `ALTER TABLE properties ADD COLUMN assigned_to TEXT REFERENCES users(id) ON DELETE SET NULL` },
+    { type: 'column', table: 'properties', column: 'quality_score', sql: `ALTER TABLE properties ADD COLUMN quality_score INTEGER DEFAULT 0` },
+    { type: 'column', table: 'properties', column: 'ai_generated', sql: `ALTER TABLE properties ADD COLUMN ai_generated INTEGER DEFAULT 0` },
+    { type: 'column', table: 'properties', column: 'marketing_assets', sql: `ALTER TABLE properties ADD COLUMN marketing_assets TEXT` },
+    { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS property_leads (
+      id TEXT PRIMARY KEY,
+      agency_id TEXT REFERENCES agencies(id) ON DELETE CASCADE,
+      property_id TEXT REFERENCES properties(id) ON DELETE CASCADE,
+      lead_id TEXT REFERENCES leads(id) ON DELETE CASCADE,
+      relation_type TEXT,
+      match_score REAL DEFAULT 0,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT
+    )` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_property_leads_agency ON property_leads(agency_id)` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_property_leads_property ON property_leads(property_id)` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_property_leads_lead ON property_leads(lead_id)` },
+    { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS property_marketing_assets (
+      id TEXT PRIMARY KEY,
+      agency_id TEXT REFERENCES agencies(id) ON DELETE CASCADE,
+      property_id TEXT REFERENCES properties(id) ON DELETE CASCADE,
+      type TEXT,
+      title TEXT,
+      content TEXT,
+      channel TEXT,
+      created_by_ai INTEGER DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_property_marketing_assets_agency ON property_marketing_assets(agency_id)` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_property_marketing_assets_prop ON property_marketing_assets(property_id)` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_properties_assigned ON properties(assigned_to)` },
+    { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS property_interests (
+      id TEXT PRIMARY KEY,
+      property_id TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+      lead_id TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+      agency_id TEXT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'interested',
+      channel TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT,
+      UNIQUE(property_id, lead_id)
+    )` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_property_interests_property ON property_interests(property_id)` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_property_interests_lead ON property_interests(lead_id)` },
+    // ── Lead Automation new tables ──
+    { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS communication_logs (
+      id TEXT PRIMARY KEY,
+      agency_id TEXT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      lead_id TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+      appointment_id TEXT REFERENCES appointments(id) ON DELETE SET NULL,
+      channel TEXT NOT NULL CHECK(channel IN ('email','whatsapp','sms','call')),
+      direction TEXT NOT NULL CHECK(direction IN ('outbound','inbound')),
+      subject TEXT,
+      body TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      provider_message_id TEXT,
+      error TEXT,
+      sent_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_comm_logs_lead ON communication_logs(lead_id)` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_comm_logs_agency ON communication_logs(agency_id)` },
+    { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS lead_automations (
+      id TEXT PRIMARY KEY,
+      agency_id TEXT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      lead_id TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      channel TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      payload TEXT,
+      result TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_lead_automations_lead ON lead_automations(lead_id)` },
+    { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS lead_preferences (
+      lead_id TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+      preferred_channel TEXT DEFAULT 'whatsapp',
+      preferred_time TEXT,
+      consent_email INTEGER DEFAULT 0,
+      consent_whatsapp INTEGER DEFAULT 0,
+      consent_calls INTEGER DEFAULT 0,
+      notes TEXT,
+      PRIMARY KEY (lead_id)
+    )` },
+    { type: 'column', table: 'appointments', column: 'reminder_2h_sent_at', sql: `ALTER TABLE appointments ADD COLUMN reminder_2h_sent_at TEXT` },
+    { type: 'column', table: 'appointments', column: 'property_id', sql: `ALTER TABLE appointments ADD COLUMN property_id TEXT REFERENCES properties(id) ON DELETE SET NULL` },
+    { type: 'column', table: 'agencies', column: 'email_signature', sql: `ALTER TABLE agencies ADD COLUMN email_signature TEXT` },
+    { type: 'column', table: 'agencies', column: 'auto_send_email', sql: `ALTER TABLE agencies ADD COLUMN auto_send_email INTEGER DEFAULT 0` },
+    { type: 'column', table: 'agencies', column: 'auto_send_whatsapp', sql: `ALTER TABLE agencies ADD COLUMN auto_send_whatsapp INTEGER DEFAULT 0` },
+    { type: 'column', table: 'agencies', column: 'require_email_confirmation', sql: `ALTER TABLE agencies ADD COLUMN require_email_confirmation INTEGER DEFAULT 1` },
+    { type: 'column', table: 'agencies', column: 'require_whatsapp_confirmation', sql: `ALTER TABLE agencies ADD COLUMN require_whatsapp_confirmation INTEGER DEFAULT 1` },
+    { type: 'column', table: 'agencies', column: 'default_channel', sql: `ALTER TABLE agencies ADD COLUMN default_channel TEXT DEFAULT 'email'` },
+    { type: 'column', table: 'agencies', column: 'reminder_2h_enabled', sql: `ALTER TABLE agencies ADD COLUMN reminder_2h_enabled INTEGER DEFAULT 1` },
+    { type: 'column', table: 'leads', column: 'last_channel', sql: `ALTER TABLE leads ADD COLUMN last_channel TEXT` },
+  ];
+
+  for (const migration of migrations) {
+    if (migration.type === 'column') {
+      if (!columnExists(migration.table, migration.column)) {
+        try {
+          run(migration.sql);
+        } catch (e) {
+          console.log(`[Migration] Error adding column ${migration.column} to ${migration.table}:`, e.message);
+        }
+      }
+    } else {
+      try {
+        run(migration.sql);
+      } catch (e) {
+        // Ignorar si la tabla, índice o vista ya existe o no se puede recrear temporalmente
+      }
+    }
   }
 
   // ── Seed plantillas globales del marketplace ──
@@ -757,251 +1090,7 @@ function hashPassword(password) {
   return `${salt}:${hash}`;
 }
 
-function seedDemoData() {
-  console.log('Seeding demo data...');
-
-  const agencyId = uuidv4();
-  try {
-    run(
-      `INSERT INTO agencies (id, name, slug, logo_url, primary_color, domain, created_at)
-       VALUES (@id, @name, @slug, @logo_url, @primary_color, @domain, datetime('now'))`,
-      { id: agencyId, name: 'InmoTech Realty', slug: 'inmotech-realty', logo_url: '', primary_color: '#2563eb', domain: '' }
-    );
-  } catch (e) {
-    console.log('Agency already exists, skipping seed');
-    return;
-  }
-
-  const offices = [
-    { name: 'Oficina Central Madrid', city: 'Madrid', address: 'Calle de Velázquez 42', phone: '+34 91 123 45 67' },
-    { name: 'Oficina Barcelona', city: 'Barcelona', address: 'Av. Diagonal 320', phone: '+34 93 234 56 78' },
-    { name: 'Oficina Valencia', city: 'Valencia', address: 'Calle Colón 15', phone: '+34 96 345 67 89' },
-  ];
-
-  const officeIds = offices.map(o => {
-    const id = uuidv4();
-    run(
-      `INSERT INTO offices (id, agency_id, name, city, address, phone, created_at)
-       VALUES (@id, @agency_id, @name, @city, @address, @phone, datetime('now'))`,
-      { id, agency_id: agencyId, name: o.name, city: o.city, address: o.address, phone: o.phone }
-    );
-    return id;
-  });
-
-  const m1 = uuidv4();
-  run(`INSERT INTO users (id, email, name, password_hash, role, agency_id, office_id, phone, created_at)
-    VALUES (@id, @email, @name, @password_hash, @role, @agency_id, @office_id, @phone, datetime('now'))`,
-    { id: m1, email: 'manager@inmotech.es', name: 'Carlos Martínez', password_hash: hashPassword('demo'), role: 'manager', agency_id: agencyId, office_id: officeIds[0], phone: '+34 611 111 111' });
-
-  const m2 = uuidv4();
-  run(`INSERT INTO users (id, email, name, password_hash, role, agency_id, office_id, phone, created_at)
-    VALUES (@id, @email, @name, @password_hash, @role, @agency_id, @office_id, @phone, datetime('now'))`,
-    { id: m2, email: 'manager2@inmotech.es', name: 'Laura García', password_hash: hashPassword('demo'), role: 'manager', agency_id: agencyId, office_id: officeIds[1], phone: '+34 622 222 222' });
-
-  const comercialData = [
-    { name: 'Ana López', email: 'ana@inmotech.es', office: 0, phone: '+34 633 333 333' },
-    { name: 'Pedro Sánchez', email: 'pedro@inmotech.es', office: 0, phone: '+34 644 444 444' },
-    { name: 'María Fernández', email: 'maria@inmotech.es', office: 1, phone: '+34 655 555 555' },
-    { name: 'Javier Ruiz', email: 'javier@inmotech.es', office: 1, phone: '+34 666 666 666' },
-    { name: 'Sara Díaz', email: 'sara@inmotech.es', office: 2, phone: '+34 677 777 777' },
-  ];
-
-  const comercialIds = comercialData.map(c => {
-    const id = uuidv4();
-    run(`INSERT INTO users (id, email, name, password_hash, role, agency_id, office_id, phone, created_at)
-      VALUES (@id, @email, @name, @password_hash, @role, @agency_id, @office_id, @phone, datetime('now'))`,
-      { id, email: c.email, name: c.name, password_hash: hashPassword('demo'), role: 'comercial', agency_id: agencyId, office_id: officeIds[c.office], phone: c.phone });
-    return id;
-  });
-
-  const leadTemplates = [
-    { name: 'Alejandro Gómez', phone: '+34 600 111 111', email: 'alejandro.gomez@email.com', budget: 250000, zone: 'Salamanca', property_interest: 'Piso', source: 'idealista', status: 'nuevo', assigned: null, score: 85 },
-    { name: 'Beatriz Herrera', phone: '+34 600 222 222', email: 'beatriz.herrera@email.com', budget: 350000, zone: 'Chamberí', property_interest: 'Ático', source: 'web', status: 'contactado', assigned: 0, score: 72 },
-    { name: 'Carlos Ruiz', phone: '+34 600 333 333', email: 'carlos.ruiz@email.com', budget: 180000, zone: 'Carabanchel', property_interest: 'Piso', source: 'meta_ads', status: 'interesado', assigned: 1, score: 65 },
-    { name: 'Diana Martín', phone: '+34 600 444 444', email: 'diana.martin@email.com', budget: 500000, zone: 'Chamartín', property_interest: 'Chalet', source: 'whatsapp', status: 'visita_agendada', assigned: 2, score: 93 },
-    { name: 'Eduardo Torres', phone: '+34 600 555 555', email: 'eduardo.torres@email.com', budget: 220000, zone: 'Usera', property_interest: 'Piso', source: 'idealista', status: 'negociacion', assigned: 0, score: 78 },
-    { name: 'Fátima López', phone: '+34 600 666 666', email: 'fatima.lopez@email.com', budget: 420000, zone: 'Eixample', property_interest: 'Piso', source: 'web', status: 'reserva', assigned: 2, score: 95 },
-    { name: 'Guillermo Sánchez', phone: '+34 600 777 777', email: 'guillermo.sanchez@email.com', budget: 150000, zone: 'Ciutat Vella', property_interest: 'Estudio', source: 'email', status: 'cerrado', assigned: 3, score: 60 },
-    { name: 'Helena Díaz', phone: '+34 600 888 888', email: 'helena.diaz@email.com', budget: 300000, zone: 'Gràcia', property_interest: 'Piso', source: 'meta_ads', status: 'nuevo', assigned: null, score: 45 },
-    { name: 'Ignacio Vega', phone: '+34 600 999 999', email: 'ignacio.vega@email.com', budget: 600000, zone: 'Pedralbes', property_interest: 'Casa', source: 'idealista', status: 'interesado', assigned: 3, score: 88 },
-    { name: 'Julia Romero', phone: '+34 611 000 000', email: 'julia.romero@email.com', budget: 190000, zone: 'Ruzafa', property_interest: 'Piso', source: 'web', status: 'contactado', assigned: 4, score: 55 },
-    { name: 'Kevin Navarro', phone: '+34 611 111 000', email: 'kevin.navarro@email.com', budget: 280000, zone: 'Ensanche', property_interest: 'Piso', source: 'whatsapp', status: 'nuevo', assigned: null, score: 35 },
-    { name: 'Laura Castillo', phone: '+34 611 222 000', email: 'laura.castillo@email.com', budget: 450000, zone: 'El Cabanyal', property_interest: 'Chalet', source: 'manual', status: 'visita_agendada', assigned: 4, score: 82 },
-    { name: 'Miguel Ángel Torres', phone: '+34 611 333 000', email: 'miguel.torres@email.com', budget: 320000, zone: 'Almagro', property_interest: 'Ático', source: 'idealista', status: 'negociacion', assigned: 1, score: 90 },
-    { name: 'Natalia Jiménez', phone: '+34 611 444 000', email: 'natalia.jimenez@email.com', budget: 210000, zone: 'Tetuán', property_interest: 'Piso', source: 'meta_ads', status: 'interesado', assigned: 0, score: 68 },
-    { name: 'Óscar Delgado', phone: '+34 611 555 000', email: 'oscar.delgado@email.com', budget: 550000, zone: 'Sarrià', property_interest: 'Casa', source: 'web', status: 'nuevo', assigned: null, score: 25 },
-    { name: 'Patricia Flores', phone: '+34 611 666 000', email: 'patricia.flores@email.com', budget: 170000, zone: 'Villaverde', property_interest: 'Piso', source: 'email', status: 'contactado', assigned: 1, score: 42 },
-    { name: 'Rafael Mendoza', phone: '+34 611 777 000', email: 'rafael.mendoza@email.com', budget: 380000, zone: 'Retiro', property_interest: 'Piso', source: 'idealista', status: 'reserva', assigned: 2, score: 96 },
-    { name: 'Sofía Guerrero', phone: '+34 611 888 000', email: 'sofia.guerrero@email.com', budget: 250000, zone: 'La Latina', property_interest: 'Piso', source: 'whatsapp', status: 'cerrado', assigned: 3, score: 75 },
-    { name: 'Tomás Iglesias', phone: '+34 611 999 000', email: 'tomas.iglesias@email.com', budget: 700000, zone: 'La Moraleja', property_interest: 'Chalet', source: 'web', status: 'nuevo', assigned: null, score: 15 },
-    { name: 'Valentina Ríos', phone: '+34 622 000 000', email: 'valentina.rios@email.com', budget: 200000, zone: 'Benimaclet', property_interest: 'Piso', source: 'meta_ads', status: 'interesado', assigned: 4, score: 58 },
-  ];
-
-  const leadIds = leadTemplates.map(lt => {
-    const id = uuidv4();
-    const assigned = lt.assigned !== null ? comercialIds[lt.assigned] : null;
-    try {
-      run(
-        `INSERT INTO leads (id, agency_id, office_id, assigned_to, name, phone, email, budget, zone, property_interest, source, status, ia_score, ia_insight, ia_summary, created_at, updated_at)
-         VALUES (@id, @agency_id, @office_id, @assigned_to, @name, @phone, @email, @budget, @zone, @property_interest, @source, @status, @ia_score, @ia_insight, @ia_summary, datetime('now'), datetime('now'))`,
-        {
-          id, agency_id: agencyId, office_id: officeIds[Math.floor(Math.random() * 3)],
-          assigned_to: assigned, name: lt.name, phone: lt.phone, email: lt.email,
-          budget: lt.budget, zone: lt.zone, property_interest: lt.property_interest,
-          source: lt.source, status: lt.status, ia_score: lt.score,
-          ia_insight: lt.score > 70 ? 'Alta probabilidad de compra. Responde rápido y hace preguntas concretas.' : lt.score > 40 ? 'Muestra interés pero necesita seguimiento. Compara varias opciones.' : 'Lead frío. Poco engagement. Recomendar campaña de re-engagement.',
-          ia_summary: `${lt.name} busca ${lt.property_interest.toLowerCase()} en ${lt.zone} con presupuesto de ${lt.budget.toLocaleString('es-ES')}€. ` + (lt.score > 70 ? 'Cliente calificado con alta intención de compra.' : lt.score > 40 ? 'Cliente en fase de investigación, requiere nutrición.' : 'Cliente con interés inicial, necesita ser calificado.')
-        }
-      );
-    } catch (e) { console.log('Lead insert error (might be duplicate):', e.message); }
-    return id;
-  });
-
-  const properties = [
-    { title: 'Ático de lujo en Salamanca', desc: 'Impresionante ático de 120m2 con terraza de 40m2. Reformado, 3 hab, 2 baños.', price: 495000, type: 'ático', city: 'Madrid', zone: 'Salamanca', beds: 3, baths: 2, surf: 120, office: 0 },
-    { title: 'Piso reformado en Chamberí', desc: 'Piso exterior 85m2 reformado. 3 hab, 1 baño, cocina americana, balcón.', price: 295000, type: 'piso', city: 'Madrid', zone: 'Chamberí', beds: 3, baths: 1, surf: 85, office: 0 },
-    { title: 'Chalet independiente La Moraleja', desc: 'Chalet 350m2 en parcela 800m2. 5 hab, 4 baños, piscina, jardín.', price: 1250000, type: 'chalet', city: 'Madrid', zone: 'La Moraleja', beds: 5, baths: 4, surf: 350, office: 0 },
-    { title: 'Estudio céntrico Ciutat Vella', desc: 'Estudio 35m2 en centro Barcelona. Amueblado, cocina abierta.', price: 145000, type: 'estudio', city: 'Barcelona', zone: 'Ciutat Vella', beds: 1, baths: 1, surf: 35, office: 1 },
-    { title: 'Piso con encanto en Gràcia', desc: 'Piso 70m2 en Gràcia. 2 hab, 1 baño, balcón, ascensor.', price: 265000, type: 'piso', city: 'Barcelona', zone: 'Gràcia', beds: 2, baths: 1, surf: 70, office: 1 },
-    { title: 'Casa modernista en Eixample', desc: 'Casa 200m2 modernista. 4 hab, 2 baños, patio, techos altos.', price: 580000, type: 'casa', city: 'Barcelona', zone: 'Eixample', beds: 4, baths: 2, surf: 200, office: 1 },
-    { title: 'Piso luminoso en Ruzafa', desc: 'Piso 90m2 en Ruzafa. 3 hab, 2 baños, terraza, garaje.', price: 220000, type: 'piso', city: 'Valencia', zone: 'Ruzafa', beds: 3, baths: 2, surf: 90, office: 2 },
-    { title: 'Ático dúplex Ensanche', desc: 'Ático dúplex 110m2, terraza 30m2, vistas. 3 hab, 2 baños, piscina.', price: 350000, type: 'ático', city: 'Valencia', zone: 'Ensanche', beds: 3, baths: 2, surf: 110, office: 2 },
-    { title: 'Piso en Almagro con ascensor', desc: 'Piso 100m2 en Almagro. 3 hab, 2 baños, parquet, armarios.', price: 390000, type: 'piso', city: 'Madrid', zone: 'Almagro', beds: 3, baths: 2, surf: 100, office: 0 },
-    { title: 'Casa rural Sierra Madrid', desc: 'Casa rural 180m2, parcela 2000m2. 4 hab, chimenea, porche.', price: 280000, type: 'casa', city: 'Madrid', zone: 'Sierra Norte', beds: 4, baths: 2, surf: 180, office: 0 },
-    { title: 'Piso obra nueva Villaverde', desc: 'Piso 65m2 obra nueva. 2 hab, terraza, trastero. Entrega 2026.', price: 195000, type: 'piso', city: 'Madrid', zone: 'Villaverde', beds: 2, baths: 1, surf: 65, office: 0 },
-    { title: 'Piso en Benimaclet terraza', desc: 'Piso 75m2, terraza 15m2. 2 hab, reformado, armarios.', price: 175000, type: 'piso', city: 'Valencia', zone: 'Benimaclet', beds: 2, baths: 1, surf: 75, office: 2 },
-    { title: 'Chalet adosado El Cabanyal', desc: 'Chalet 150m2 a 200m playa. 4 hab, 2 baños, patio, terraza.', price: 320000, type: 'chalet', city: 'Valencia', zone: 'El Cabanyal', beds: 4, baths: 2, surf: 150, office: 2 },
-    { title: 'Local comercial Gran Vía', desc: 'Local 80m2 en Gran Vía. Escaparate 6m, altura 4m.', price: 450000, type: 'local', city: 'Madrid', zone: 'Centro', beds: 0, baths: 1, surf: 80, office: 0 },
-    { title: 'Oficina Pedralbes', desc: 'Oficina 120m2 zona negocios. Recepción, 3 despachos, sala reuniones.', price: 520000, type: 'local', city: 'Barcelona', zone: 'Pedralbes', beds: 0, baths: 2, surf: 120, office: 1 },
-  ];
-
-  const propertyIds = properties.map(p => {
-    const id = uuidv4();
-    run(
-      `INSERT INTO properties (id, agency_id, office_id, title, description, price, type, city, zone, bedrooms, bathrooms, surface, features, status, created_at)
-       VALUES (@id, @agency_id, @office_id, @title, @description, @price, @type, @city, @zone, @bedrooms, @bathrooms, @surface, @features, @status, datetime('now'))`,
-      { id, agency_id: agencyId, office_id: officeIds[p.office], title: p.title, description: p.desc, price: p.price, type: p.type, city: p.city, zone: p.zone, bedrooms: p.beds, bathrooms: p.baths, surface: p.surf, features: '[]', status: Math.random() > 0.3 ? 'disponible' : 'reservado' }
-    );
-    return id;
-  });
-
-  const agentTypes = [
-    { type: 'captador', name: 'Carlos Captador' },
-    { type: 'vendedor', name: 'Vicky Vendedora' },
-    { type: 'coordinador', name: 'Cristina Coordinadora' },
-    { type: 'copywriter', name: 'César Copy' },
-    { type: 'tasador', name: 'Tomás Tasador' },
-    { type: 'analista', name: 'Ada Analista' },
-    { type: 'agendador', name: 'Alicia Agendadora' },
-    { type: 'nurturing', name: 'Nadia Nurturing' },
-    { type: 'documentador', name: 'Damián Documentador' },
-    { type: 'seo', name: 'Sergio SEO' },
-    { type: 'financiero', name: 'Felipe Financiero' },
-    { type: 'notificador', name: 'Nora Notificadora' },
-  ];
-  const agentIds = agentTypes.map(a => {
-    const id = uuidv4();
-    run(`INSERT INTO ai_agents (id, agency_id, type, name, status, config, metrics, created_at)
-      VALUES (@id, @agency_id, @type, @name, 'active', @config, @metrics, datetime('now'))`,
-      { id, agency_id: agencyId, type: a.type, name: a.name, config: '{}', metrics: JSON.stringify({ executions: Math.floor(Math.random() * 500), today: Math.floor(Math.random() * 30) }) });
-    return id;
-  });
-
-  const matchings = [
-    { leadIdx: 0, propIdx: 0, score: 92, reason: 'Presupuesto y zona coinciden exactamente con la propiedad' },
-    { leadIdx: 1, propIdx: 1, score: 88, reason: 'Busca piso en Chamberí, presupuesto alineado' },
-    { leadIdx: 3, propIdx: 2, score: 85, reason: 'Chalet en zona premium, presupuesto suficiente' },
-    { leadIdx: 4, propIdx: 3, score: 75, reason: 'Piso en Usera, presupuesto ajustado pero viable' },
-    { leadIdx: 6, propIdx: 4, score: 70, reason: 'Estudio en Ciutat Vella, presupuesto adecuado' },
-    { leadIdx: 8, propIdx: 5, score: 90, reason: 'Casa en Pedralbes, cliente premium' },
-    { leadIdx: 11, propIdx: 12, score: 82, reason: 'Chalet en El Cabanyal, busca zona de playa' },
-    { leadIdx: 12, propIdx: 8, score: 87, reason: 'Ático en Almagro, alto poder adquisitivo' },
-  ];
-  matchings.forEach(m => {
-    if (!leadIds[m.leadIdx] || !propertyIds[m.propIdx]) return;
-    run(`INSERT INTO matchings (id, lead_id, property_id, score, reason, created_at)
-      VALUES (@id, @lead_id, @property_id, @score, @reason, datetime('now'))`,
-      { id: uuidv4(), lead_id: leadIds[m.leadIdx], property_id: propertyIds[m.propIdx], score: m.score, reason: m.reason });
-  });
-
-  const sampleTasks = [
-    { leadIdx: 0, assignedIdx: 0, title: 'Llamar a Alejandro para presentación', desc: 'Contactar para explicar servicios de la agencia', due: 1 },
-    { leadIdx: 1, assignedIdx: 1, title: 'Enviar dossier de propiedades en Chamberí', desc: 'Seleccionar las 5 mejores opciones', due: 2 },
-    { leadIdx: 3, assignedIdx: 2, title: 'Preparar visita al chalet de La Moraleja', desc: 'Confirmar disponibilidad con el propietario', due: 1 },
-    { leadIdx: 5, assignedIdx: 2, title: 'Revisar documentación para reserva', desc: 'Verificar que toda la documentación está en orden', due: 3 },
-    { leadIdx: 8, assignedIdx: 3, title: 'Seguimiento post-visita Pedralbes', desc: 'Llamar para conocer impresiones tras la visita', due: 2 },
-    { leadIdx: 12, assignedIdx: 1, title: 'Negociar condiciones del ático en Almagro', desc: 'Reunión con el propietario para ajustar precio', due: 5 },
-  ];
-  sampleTasks.forEach(t => {
-    if (!leadIds[t.leadIdx]) return;
-    const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + t.due);
-    run(`INSERT INTO tasks (id, lead_id, assigned_to, title, description, due_date, completed, created_at)
-      VALUES (@id, @lead_id, @assigned_to, @title, @description, @due_date, 0, datetime('now'))`,
-      { id: uuidv4(), lead_id: leadIds[t.leadIdx], assigned_to: comercialIds[t.assignedIdx] || comercialIds[0], title: t.title, description: t.desc, due_date: dueDate.toISOString() });
-  });
-
-  const planData = [
-    { id: 'starter', name: 'Starter', price_monthly: 7900, price_yearly: 6900, max_users: 5, max_offices: 1, max_agents: 3, max_leads_per_month: 500, max_automations: 10, available_agent_types: JSON.stringify(['captador','vendedor','coordinador']), feature_whatsapp: 1, feature_meta_ads: 0, feature_white_label: 0, feature_api_access: 0, feature_analytics_advanced: 0, feature_priority_support: 0, feature_dedicated_support: 0, description: 'Para agentes y pequeñas agencias.', sort_order: 1 },
-    { id: 'profesional', name: 'Profesional', price_monthly: 19900, price_yearly: 16900, max_users: 15, max_offices: 3, max_agents: 8, max_leads_per_month: 2000, max_automations: -1, available_agent_types: JSON.stringify(['captador','vendedor','coordinador','copywriter','tasador','analista','agendador','nurturing']), feature_whatsapp: 1, feature_meta_ads: 1, feature_white_label: 0, feature_api_access: 1, feature_analytics_advanced: 1, feature_priority_support: 1, feature_dedicated_support: 0, description: 'Para agencias en crecimiento.', sort_order: 2 },
-    { id: 'agencia', name: 'Agencia', price_monthly: 49900, price_yearly: 41900, max_users: -1, max_offices: -1, max_agents: 12, max_leads_per_month: -1, max_automations: -1, available_agent_types: JSON.stringify(['captador','vendedor','coordinador','copywriter','tasador','analista','agendador','nurturing','documentador','seo','financiero','notificador']), feature_whatsapp: 1, feature_meta_ads: 1, feature_white_label: 1, feature_api_access: 1, feature_analytics_advanced: 1, feature_priority_support: 1, feature_dedicated_support: 1, description: 'Para agencias consolidadas.', sort_order: 3 },
-  ];
-  planData.forEach(p => {
-    run(`INSERT OR REPLACE INTO plans (id, name, description, price_monthly, price_yearly, max_users, max_offices, max_agents, max_leads_per_month, max_automations, available_agent_types, feature_whatsapp, feature_meta_ads, feature_white_label, feature_api_access, feature_analytics_advanced, feature_priority_support, feature_dedicated_support, sort_order)
-      VALUES (@id, @name, @description, @price_monthly, @price_yearly, @max_users, @max_offices, @max_agents, @max_leads_per_month, @max_automations, @available_agent_types, @feature_whatsapp, @feature_meta_ads, @feature_white_label, @feature_api_access, @feature_analytics_advanced, @feature_priority_support, @feature_dedicated_support, @sort_order)`,
-      { ...p });
-  });
-
-  leadIds.slice(0, 10).forEach((lid, i) => {
-    if (!lid) return;
-    const msgs = [
-      { role: 'lead', content: 'Hola, estoy interesado en el piso que vi en su web.', ts: new Date(Date.now() - 86400000 * (5 - i)).toISOString() },
-      { role: 'agent', content: '¡Buenos días! Encantado de atenderle. ¿Podría indicarme qué tipo de propiedad busca?', ts: new Date(Date.now() - 86400000 * (4 - i)).toISOString() },
-      { role: 'lead', content: 'Busco un piso de unos 200-250 mil euros en zona céntrica.', ts: new Date(Date.now() - 86400000 * (3 - i)).toISOString() },
-    ];
-    try {
-      run(`INSERT INTO conversations (id, lead_id, channel, messages, created_at)
-        VALUES (@id, @lead_id, @channel, @messages, datetime('now'))`,
-        { id: uuidv4(), lead_id: lid, channel: 'whatsapp', messages: JSON.stringify(msgs) });
-    } catch (e) {}
-  });
-
-  [0, 2, 4, 6, 8, 10, 12, 14].forEach(i => {
-    if (!leadIds[i]) return;
-    const types = ['lead_created', 'status_change', 'conversation', 'visita', 'email_sent', 'lead_assigned'];
-    const descs = ['Lead registrado en el sistema', 'Estado actualizado', 'Conversación por WhatsApp', 'Visita agendada', 'Email enviado', 'Lead asignado a comercial'];
-    const idx = Math.floor(Math.random() * types.length);
-    run(`INSERT INTO activities (id, agency_id, lead_id, user_id, type, description, created_at)
-      VALUES (@id, @agency_id, @lead_id, @user_id, @type, @description, datetime('now'))`,
-      { id: uuidv4(), agency_id: agencyId, lead_id: leadIds[i], user_id: comercialIds[i % comercialIds.length], type: types[idx], description: descs[idx] });
-  });
-
-  [1, 3, 5, 7, 9].forEach(i => {
-    if (!leadIds[i]) return;
-    const agentActivities = [
-      { type: 'ia_insight', desc: 'Lead analizado por agente IA', agentIdx: 0 },
-      { type: 'ia_match', desc: 'Propiedad recomendada por IA', agentIdx: 6 },
-      { type: 'ia_nurturing', desc: 'Mensaje de nurturing enviado', agentIdx: 7 },
-      { type: 'ia_document', desc: 'Documentación solicitada automáticamente', agentIdx: 8 },
-      { type: 'ia_notification', desc: 'Notificación de match enviada', agentIdx: 11 },
-    ];
-    const a = agentActivities[i % agentActivities.length];
-    run(`INSERT INTO activities (id, agency_id, lead_id, agent_id, type, description, created_at)
-      VALUES (@id, @agency_id, @lead_id, @agent_id, @type, @description, datetime('now'))`,
-      { id: uuidv4(), agency_id: agencyId, lead_id: leadIds[i], agent_id: agentIds[a.agentIdx], type: a.type, description: a.desc });
-  });
-
-  [0, 3, 6, 9, 12].forEach(i => {
-    if (!leadIds[i]) return;
-    run(`INSERT INTO notifications (id, agency_id, user_id, lead_id, title, body, type, created_at)
-      VALUES (@id, @agency_id, @user_id, @lead_id, @title, @body, @type, datetime('now'))`,
-      { id: uuidv4(), agency_id: agencyId, user_id: comercialIds[i % comercialIds.length], lead_id: leadIds[i], title: 'Nuevo lead asignado', body: `Se te ha asignado un nuevo lead: ${leadTemplates[i].name}`, type: 'lead_assigned' });
-  });
-
-  seedAutomationsIntoDb(agencyId);
-
-  console.log('✅ Demo data seeded successfully.');
-}
+// seedDemoData eliminada — las agencias nuevas empiezan con datos vacíos
 
 function seedAutomationsForExistingAgencies() {
   const agencies = all('SELECT id FROM agencies');

@@ -107,6 +107,42 @@ export class EmailService {
     });
   }
 
+  async sendAppointmentConfirmation(lead, appointment, agency, modifyUrl) {
+    const html = this.generateEmailTemplate('appointment_confirmation', { lead, appointment, agency, modifyUrl });
+    return this.sendEmail({
+      to: lead.email,
+      subject: `Confirmación de tu cita - ${agency.name || 'PropIA Inmobiliaria'}`,
+      html,
+    });
+  }
+
+  async sendAppointmentReminder(lead, appointment, agency, modifyUrl) {
+    const html = this.generateEmailTemplate('appointment_reminder', { lead, appointment, agency, modifyUrl });
+    return this.sendEmail({
+      to: lead.email,
+      subject: `Recordatorio de tu cita - ${agency.name || 'PropIA Inmobiliaria'}`,
+      html,
+    });
+  }
+
+  async sendAppointmentUpdate(lead, appointment, agency, modifyUrl) {
+    const html = this.generateEmailTemplate('appointment_update', { lead, appointment, agency, modifyUrl });
+    return this.sendEmail({
+      to: lead.email,
+      subject: `Modificación de tu cita - ${agency.name || 'PropIA Inmobiliaria'}`,
+      html,
+    });
+  }
+
+  async sendAppointmentCancellation(lead, appointment, agency) {
+    const html = this.generateEmailTemplate('appointment_cancel', { lead, appointment, agency });
+    return this.sendEmail({
+      to: lead.email,
+      subject: `Cancelación de tu cita - ${agency.name || 'PropIA Inmobiliaria'}`,
+      html,
+    });
+  }
+
   generateEmailTemplate(type, data) {
     const templates = {
       welcome: () => {
@@ -214,6 +250,162 @@ export class EmailService {
               ${b.highlights.map(h => `<p style="color:#a8d8ea;font-size:13px;margin:3px 0">• ${h}</p>`).join('')}
             </div>` : ''}
             <p style="color:#888;font-size:12px;text-align:center;margin-top:20px">CRM Inmobiliario IA · Generado automáticamente</p>
+          </div>
+        </div>`;
+      },
+
+      appointment_confirmation: () => {
+        const lead = data.lead || {};
+        const appt = data.appointment || {};
+        const agency = data.agency || {};
+        const modifyUrl = data.modifyUrl || '#';
+        const formattedDate = new Date(appt.starts_at).toLocaleString('es-ES', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        const typeStr = appt.type === 'online' ? 'Videollamada' : 'Cita presencial';
+        const locationStr = appt.type === 'online'
+          ? `<strong>Enlace de reunión:</strong> <a href="${appt.online_url || '#'}" style="color:#e94560">${appt.online_url || 'Google Meet'}</a>`
+          : `<strong>Dirección:</strong> ${appt.location || agency.address || 'Oficina principal'}`;
+
+        const attendant = appt.attendant_name || agency.appointment_attendant_name || 'Comercial asignado';
+
+        return `<div style="background:#1a1a2e;padding:40px;font-family:Arial,sans-serif">
+          <div style="max-width:600px;margin:auto;background:#16213e;border-radius:12px;padding:30px">
+            <h1 style="color:#e94560;font-size:22px;margin-bottom:8px">Cita Confirmada ✅</h1>
+            <p style="color:#e0e0e0;font-size:15px;line-height:1.6">Hola ${lead.name || 'Estimado cliente'},</p>
+            <p style="color:#e0e0e0;font-size:15px;line-height:1.6">Te confirmamos los detalles de tu próxima cita con <strong>${agency.name || 'PropIA Inmobiliaria'}</strong>:</p>
+            
+            <div style="background:#0f3460;border-radius:8px;padding:20px;margin:20px 0">
+              <p style="color:white;font-size:15px;margin:4px 0">📅 <strong>Fecha:</strong> ${formattedDate}</p>
+              <p style="color:white;font-size:15px;margin:4px 0">⏱ <strong>Duración:</strong> ${appt.ends_at ? Math.round((new Date(appt.ends_at) - new Date(appt.starts_at)) / 60000) : 30} minutos</p>
+              <p style="color:white;font-size:15px;margin:4px 0">📌 <strong>Tipo:</strong> ${typeStr}</p>
+              <p style="color:white;font-size:15px;margin:4px 0">📍 ${locationStr}</p>
+              <p style="color:white;font-size:15px;margin:4px 0">👤 <strong>Persona que te atenderá:</strong> ${attendant}</p>
+              ${appt.notes ? `<p style="color:#a8d8ea;font-size:14px;margin:12px 0 0">📝 <strong>Notas adicionales:</strong> ${appt.notes}</p>` : ''}
+            </div>
+
+            <p style="color:#e0e0e0;font-size:14px;line-height:1.6">Si necesitas modificar la fecha/hora o necesitas cancelar la cita, puedes gestionarlo directamente sin necesidad de iniciar sesión pulsando el siguiente enlace:</p>
+            
+            <div style="text-align:center;margin:30px 0">
+              <a href="${modifyUrl}" style="display:inline-block;background:#e94560;color:white;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:15px">Gestionar mi Cita</a>
+            </div>
+
+            <hr style="border:1px solid #0f3460;margin:20px 0">
+            <p style="color:#888;font-size:12px;text-align:center">Este mensaje fue enviado automáticamente por ${agency.name || 'PropIA'}.</p>
+          </div>
+        </div>`;
+      },
+
+      appointment_reminder: () => {
+        const lead = data.lead || {};
+        const appt = data.appointment || {};
+        const agency = data.agency || {};
+        const modifyUrl = data.modifyUrl || '#';
+        const formattedDate = new Date(appt.starts_at).toLocaleString('es-ES', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        const typeStr = appt.type === 'online' ? 'Videollamada' : 'Cita presencial';
+        const locationStr = appt.type === 'online'
+          ? `<strong>Enlace de reunión:</strong> <a href="${appt.online_url || '#'}" style="color:#e94560">${appt.online_url || 'Google Meet'}</a>`
+          : `<strong>Dirección:</strong> ${appt.location || agency.address || 'Oficina principal'}`;
+
+        const attendant = appt.attendant_name || agency.appointment_attendant_name || 'Comercial asignado';
+
+        return `<div style="background:#1a1a2e;padding:40px;font-family:Arial,sans-serif">
+          <div style="max-width:600px;margin:auto;background:#16213e;border-radius:12px;padding:30px">
+            <h1 style="color:#e94560;font-size:22px;margin-bottom:8px">Recordatorio de Cita ⏰</h1>
+            <p style="color:#e0e0e0;font-size:15px;line-height:1.6">Hola ${lead.name || 'Estimado cliente'},</p>
+            <p style="color:#e0e0e0;font-size:15px;line-height:1.6">Te recordamos que en 48 horas tenemos agendada una cita contigo:</p>
+            
+            <div style="background:#0f3460;border-radius:8px;padding:20px;margin:20px 0">
+              <p style="color:white;font-size:15px;margin:4px 0">📅 <strong>Fecha:</strong> ${formattedDate}</p>
+              <p style="color:white;font-size:15px;margin:4px 0">📌 <strong>Tipo:</strong> ${typeStr}</p>
+              <p style="color:white;font-size:15px;margin:4px 0">📍 ${locationStr}</p>
+              <p style="color:white;font-size:15px;margin:4px 0">👤 <strong>Persona que te atenderá:</strong> ${attendant}</p>
+            </div>
+
+            <p style="color:#e0e0e0;font-size:14px;line-height:1.6"><strong>Importante:</strong> Rogamos que acudas puntualmente o tengas lista la información relevante si aplica. Si te surge algún inconveniente, por favor confírmanos tu asistencia, cámbiala o cancélala desde aquí:</p>
+            
+            <div style="text-align:center;margin:30px 0">
+              <a href="${modifyUrl}" style="display:inline-block;background:#e94560;color:white;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:15px">Confirmar o Modificar Cita</a>
+            </div>
+
+            <hr style="border:1px solid #0f3460;margin:20px 0">
+            <p style="color:#888;font-size:12px;text-align:center">Este mensaje fue enviado automáticamente por ${agency.name || 'PropIA'}.</p>
+          </div>
+        </div>`;
+      },
+
+      appointment_update: () => {
+        const lead = data.lead || {};
+        const appt = data.appointment || {};
+        const agency = data.agency || {};
+        const modifyUrl = data.modifyUrl || '#';
+        const formattedDate = new Date(appt.starts_at).toLocaleString('es-ES', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        const typeStr = appt.type === 'online' ? 'Videollamada' : 'Cita presencial';
+        const locationStr = appt.type === 'online'
+          ? `<strong>Enlace de reunión:</strong> <a href="${appt.online_url || '#'}" style="color:#e94560">${appt.online_url || 'Google Meet'}</a>`
+          : `<strong>Dirección:</strong> ${appt.location || agency.address || 'Oficina principal'}`;
+
+        const attendant = appt.attendant_name || agency.appointment_attendant_name || 'Comercial asignado';
+
+        return `<div style="background:#1a1a2e;padding:40px;font-family:Arial,sans-serif">
+          <div style="max-width:600px;margin:auto;background:#16213e;border-radius:12px;padding:30px">
+            <h1 style="color:#e94560;font-size:22px;margin-bottom:8px">Cita Modificada 📅</h1>
+            <p style="color:#e0e0e0;font-size:15px;line-height:1.6">Hola ${lead.name || 'Estimado cliente'},</p>
+            <p style="color:#e0e0e0;font-size:15px;line-height:1.6">Te informamos que tu cita ha sido reprogramada. Aquí tienes los nuevos detalles de la cita:</p>
+            
+            <div style="background:#0f3460;border-radius:8px;padding:20px;margin:20px 0">
+              <p style="color:white;font-size:15px;margin:4px 0">📅 <strong>Fecha:</strong> ${formattedDate}</p>
+              <p style="color:white;font-size:15px;margin:4px 0">📌 <strong>Tipo:</strong> ${typeStr}</p>
+              <p style="color:white;font-size:15px;margin:4px 0">📍 ${locationStr}</p>
+              <p style="color:white;font-size:15px;margin:4px 0">👤 <strong>Persona que te atenderá:</strong> ${attendant}</p>
+            </div>
+
+            <p style="color:#e0e0e0;font-size:14px;line-height:1.6">Si necesitas realizar cualquier otra consulta o modificación:</p>
+            
+            <div style="text-align:center;margin:30px 0">
+              <a href="${modifyUrl}" style="display:inline-block;background:#e94560;color:white;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:15px">Ver / Modificar Detalles</a>
+            </div>
+
+            <hr style="border:1px solid #0f3460;margin:20px 0">
+            <p style="color:#888;font-size:12px;text-align:center">Este mensaje fue enviado automáticamente por ${agency.name || 'PropIA'}.</p>
+          </div>
+        </div>`;
+      },
+
+      appointment_cancel: () => {
+        const lead = data.lead || {};
+        const appt = data.appointment || {};
+        const agency = data.agency || {};
+
+        return `<div style="background:#1a1a2e;padding:40px;font-family:Arial,sans-serif">
+          <div style="max-width:600px;margin:auto;background:#16213e;border-radius:12px;padding:30px">
+            <h1 style="color:#e94560;font-size:22px;margin-bottom:8px">Cita Cancelada ❌</h1>
+            <p style="color:#e0e0e0;font-size:15px;line-height:1.6">Hola ${lead.name || 'Estimado cliente'},</p>
+            <p style="color:#e0e0e0;font-size:15px;line-height:1.6">Te confirmamos que la cita que tenías agendada con <strong>${agency.name || 'PropIA Inmobiliaria'}</strong> ha sido cancelada correctamente.</p>
+            
+            <p style="color:#e0e0e0;font-size:15px;line-height:1.6">Si crees que esto ha sido un error, o si deseas volver a agendar una cita en otro momento, no dudes en ponerte en contacto con nosotros.</p>
+
+            <hr style="border:1px solid #0f3460;margin:20px 0">
+            <p style="color:#888;font-size:12px;text-align:center">Saludos cordiales,<br>El equipo de ${agency.name || 'PropIA'}</p>
           </div>
         </div>`;
       },

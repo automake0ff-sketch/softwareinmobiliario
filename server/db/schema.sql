@@ -83,6 +83,8 @@ CREATE TABLE IF NOT EXISTS agencies (
   -- Metadatos
   meta_page_id TEXT,
   slugs TEXT,
+  online_meeting_url TEXT,
+  appointment_attendant_name TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT
 );
@@ -139,6 +141,7 @@ CREATE TABLE IF NOT EXISTS leads (
   zones TEXT,
   urgency TEXT,
   property_type TEXT,
+  last_channel TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -151,15 +154,35 @@ CREATE TABLE IF NOT EXISTS properties (
   description TEXT,
   price REAL NOT NULL,
   type TEXT NOT NULL,
+  operation_type TEXT DEFAULT 'sale',
   city TEXT NOT NULL,
   zone TEXT,
+  address TEXT,
+  province TEXT,
+  postal_code TEXT,
   bedrooms INTEGER DEFAULT 0,
   bathrooms INTEGER DEFAULT 0,
   surface REAL,
+  floor TEXT,
+  has_elevator INTEGER DEFAULT 0,
+  has_terrace INTEGER DEFAULT 0,
+  has_garage INTEGER DEFAULT 0,
+  condition TEXT,
   features TEXT,
   images TEXT,
+  public_url TEXT,
   status TEXT CHECK(status IN ('disponible','reservado','vendido','alquilado')) NOT NULL DEFAULT 'disponible',
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  source TEXT DEFAULT 'manual',
+  external_source TEXT,
+  external_id TEXT,
+  external_url TEXT,
+  imported_at TEXT,
+  assigned_to TEXT REFERENCES users(id) ON DELETE SET NULL,
+  quality_score INTEGER DEFAULT 0,
+  ai_generated INTEGER DEFAULT 0,
+  marketing_assets TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS conversations (
@@ -513,3 +536,132 @@ CREATE INDEX IF NOT EXISTS idx_conv_embeddings_agency ON successful_conversation
 CREATE INDEX IF NOT EXISTS idx_conv_embeddings_outcome ON successful_conversation_embeddings(outcome);
 CREATE INDEX IF NOT EXISTS idx_kb_embeddings_agency ON knowledge_base_embeddings(agency_id);
 CREATE INDEX IF NOT EXISTS idx_kb_embeddings_category ON knowledge_base_embeddings(category);
+
+-- ═══════════════════════════════════════════════════════
+-- CITAS Y MENSAJES DE CITAS (CRM LEADS CALENDAR)
+-- ═══════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS appointments (
+  id TEXT PRIMARY KEY,
+  agency_id TEXT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+  lead_id TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+  assigned_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  type TEXT CHECK(type IN ('online','physical')) NOT NULL,
+  status TEXT CHECK(status IN ('scheduled','confirmed','reschedule_requested','cancelled','completed','no_show')) NOT NULL DEFAULT 'scheduled',
+  starts_at TEXT NOT NULL,
+  ends_at TEXT NOT NULL,
+  timezone TEXT DEFAULT 'Europe/Madrid',
+  location TEXT,
+  online_url TEXT,
+  notes TEXT,
+  client_token TEXT UNIQUE NOT NULL,
+  property_id TEXT REFERENCES properties(id) ON DELETE SET NULL,
+  reminder_48h_sent_at TEXT,
+  reminder_2h_sent_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS appointment_messages (
+  id TEXT PRIMARY KEY,
+  appointment_id TEXT NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
+  channel TEXT CHECK(channel IN ('email','whatsapp')) NOT NULL,
+  type TEXT CHECK(type IN ('confirmation','reminder','update','cancel')) NOT NULL,
+  status TEXT NOT NULL,
+  sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+  error TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_appointments_client_token ON appointments(client_token);
+CREATE INDEX IF NOT EXISTS idx_appointments_lead ON appointments(lead_id);
+CREATE INDEX IF NOT EXISTS idx_appointments_agency ON appointments(agency_id);
+
+-- Communication logs for email/WhatsApp tracking
+CREATE TABLE IF NOT EXISTS communication_logs (
+  id TEXT PRIMARY KEY,
+  agency_id TEXT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+  lead_id TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+  appointment_id TEXT REFERENCES appointments(id) ON DELETE SET NULL,
+  channel TEXT NOT NULL CHECK(channel IN ('email','whatsapp','sms','call')),
+  direction TEXT NOT NULL CHECK(direction IN ('outbound','inbound')),
+  subject TEXT,
+  body TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  provider_message_id TEXT,
+  error TEXT,
+  sent_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_comm_logs_lead ON communication_logs(lead_id);
+CREATE INDEX IF NOT EXISTS idx_comm_logs_agency ON communication_logs(agency_id);
+
+-- Lead automations tracking
+CREATE TABLE IF NOT EXISTS lead_automations (
+  id TEXT PRIMARY KEY,
+  agency_id TEXT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+  lead_id TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  channel TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  payload TEXT,
+  result TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_lead_automations_lead ON lead_automations(lead_id);
+
+-- Lead communication preferences
+CREATE TABLE IF NOT EXISTS lead_preferences (
+  lead_id TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+  preferred_channel TEXT DEFAULT 'whatsapp',
+  preferred_time TEXT,
+  consent_email INTEGER DEFAULT 0,
+  consent_whatsapp INTEGER DEFAULT 0,
+  consent_calls INTEGER DEFAULT 0,
+  notes TEXT,
+  PRIMARY KEY (lead_id)
+);
+
+-- Property Leads matching/interests
+CREATE TABLE IF NOT EXISTS property_leads (
+  id TEXT PRIMARY KEY,
+  agency_id TEXT REFERENCES agencies(id) ON DELETE CASCADE,
+  property_id TEXT REFERENCES properties(id) ON DELETE CASCADE,
+  lead_id TEXT REFERENCES leads(id) ON DELETE CASCADE,
+  relation_type TEXT,
+  match_score REAL DEFAULT 0,
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_property_leads_agency ON property_leads(agency_id);
+CREATE INDEX IF NOT EXISTS idx_property_leads_property ON property_leads(property_id);
+CREATE INDEX IF NOT EXISTS idx_property_leads_lead ON property_leads(lead_id);
+
+-- Property Marketing Assets
+CREATE TABLE IF NOT EXISTS property_marketing_assets (
+  id TEXT PRIMARY KEY,
+  agency_id TEXT REFERENCES agencies(id) ON DELETE CASCADE,
+  property_id TEXT REFERENCES properties(id) ON DELETE CASCADE,
+  type TEXT,
+  title TEXT,
+  content TEXT,
+  channel TEXT,
+  created_by_ai INTEGER DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_property_marketing_assets_agency ON property_marketing_assets(agency_id);
+CREATE INDEX IF NOT EXISTS idx_property_marketing_assets_prop ON property_marketing_assets(property_id);
+
+
+-- Agency automation preference columns (added via migration)
+-- email_signature TEXT
+-- auto_send_email INTEGER DEFAULT 0
+-- auto_send_whatsapp INTEGER DEFAULT 0
+-- require_email_confirmation INTEGER DEFAULT 1
+-- require_whatsapp_confirmation INTEGER DEFAULT 1
+-- default_channel TEXT DEFAULT 'email'
+-- reminder_2h_enabled INTEGER DEFAULT 1
+

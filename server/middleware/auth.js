@@ -1,5 +1,7 @@
 import { get } from '../db/db.js';
+import jwt from 'jsonwebtoken';
 
+const JWT_SECRET = process.env.JWT_SECRET || 'crm-inmobiliario-secret-dev-key-2026';
 const API_TOKEN = process.env.API_TOKEN || 'demo-token-dev';
 
 export function getAgencyFromUser(userId) {
@@ -9,45 +11,67 @@ export function getAgencyFromUser(userId) {
 }
 
 export function auth(req, res, next) {
-  const token = req.headers['x-auth-token'];
-  const userId = req.headers['x-auth-user'];
+  const authHeader = req.headers['authorization'];
+  const xAuthToken = req.headers['x-auth-token'];
+  let token = null;
 
-  if (!token || !userId) {
-    return res.status(401).json({ error: 'Se requiere autenticación. Envíe x-auth-token y x-auth-user.' });
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.substring(7);
+  } else if (xAuthToken) {
+    token = xAuthToken;
   }
 
-  if (token !== API_TOKEN) {
-    return res.status(401).json({ error: 'Token inválido.' });
+  if (!token) {
+    return res.status(401).json({ error: 'Se requiere token de autenticación.' });
   }
 
-  let agencyId = req.headers['x-auth-agency'] || null
-  const officeId = req.headers['x-auth-office'] || null
-
-  if (!agencyId) {
-    agencyId = getAgencyFromUser(userId)
+  // Soporte legacy para API_TOKEN de desarrollo (si no es formato JWT)
+  if (token === API_TOKEN && !token.includes('.')) {
+    const userId = req.headers['x-auth-user'];
+    if (!userId) {
+      return res.status(401).json({ error: 'Se requiere x-auth-user para autenticación de desarrollo legacy.' });
+    }
+    const user = get('SELECT id, role, agency_id, office_id FROM users WHERE id = @id AND active = 1', { id: userId });
+    if (!user) {
+      return res.status(401).json({ error: 'Usuario no encontrado o inactivo.' });
+    }
+    const sub = get('SELECT plan_id, status FROM subscriptions WHERE agency_id = @aid ORDER BY created_at DESC LIMIT 1', { aid: user.agency_id });
+    
+    req.user = {
+      id: user.id,
+      role: user.role,
+      agency_id: user.agency_id,
+      office_id: user.office_id,
+      plan_id: sub?.plan_id || 'starter',
+      plan_status: sub?.status || 'active',
+    };
+    return next();
   }
 
-  if (!agencyId) {
-    return res.status(401).json({ error: 'Usuario no tiene agencia asignada. Contacte al administrador.' });
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const userId = decoded.userId;
+
+    const user = get('SELECT id, role, agency_id, office_id FROM users WHERE id = @id AND active = 1', { id: userId });
+    if (!user) {
+      return res.status(401).json({ error: 'Usuario no encontrado o inactivo.' });
+    }
+
+    const sub = get('SELECT plan_id, status FROM subscriptions WHERE agency_id = @aid ORDER BY created_at DESC LIMIT 1', { aid: user.agency_id });
+
+    req.user = {
+      id: user.id,
+      role: user.role,
+      agency_id: user.agency_id,
+      office_id: user.office_id,
+      plan_id: sub?.plan_id || 'starter',
+      plan_status: sub?.status || 'active',
+    };
+
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Token inválido o expirado.' });
   }
-
-  const agency = get('SELECT id FROM agencies WHERE id = @id', { id: agencyId })
-  if (!agency) {
-    return res.status(404).json({ error: 'Agencia no encontrada.' });
-  }
-
-  const sub = get('SELECT plan_id, status FROM subscriptions WHERE agency_id = @aid ORDER BY created_at DESC LIMIT 1', { aid: agencyId })
-
-  req.user = {
-    id: userId,
-    role: req.headers['x-auth-role'] || 'comercial',
-    agency_id: agencyId,
-    office_id: officeId,
-    plan_id: sub?.plan_id || 'starter',
-    plan_status: sub?.status || 'active',
-  };
-
-  next();
 }
 
 export function requireRole(...roles) {

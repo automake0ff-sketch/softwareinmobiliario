@@ -2,6 +2,14 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { all, get, run } from '../db/db.js';
 import { auth } from '../middleware/auth.js';
+import { checkLimit } from '../services/plan-checker.js';
+
+// Auto-run schema migrations for automations table
+try {
+  run('ALTER TABLE automations ADD COLUMN template_id TEXT');
+} catch (e) {
+  // Column already exists
+}
 
 const router = Router();
 router.use(auth);
@@ -38,10 +46,10 @@ router.get('/', (req, res) => {
     const templates = all(query, params);
 
     const agencyAutomations = all(
-      'SELECT name FROM automations WHERE agency_id = @aid',
+      'SELECT template_id FROM automations WHERE agency_id = @aid AND template_id IS NOT NULL',
       { aid: agencyId }
     );
-    const installedNames = new Set(agencyAutomations.map(a => a.name));
+    const installedTemplateIds = new Set(agencyAutomations.map(a => a.template_id));
 
     const templatesWithAccess = templates.map(t => {
       const requires = JSON.parse(t.requires || '[]');
@@ -52,7 +60,7 @@ router.get('/', (req, res) => {
         actions: JSON.parse(t.actions || '[]'),
         trigger_config: JSON.parse(t.trigger_config || '{}'),
         can_install: (PLAN_ORDER[t.min_plan] || 1) <= agencyPlanLevel,
-        already_installed: installedNames.has(t.name),
+        already_installed: installedTemplateIds.has(t.id),
       };
     });
 
@@ -63,11 +71,12 @@ router.get('/', (req, res) => {
   }
 });
 
-router.post('/:id/install', (req, res) => {
+router.post('/:id/install', checkLimit('automations'), (req, res) => {
   try {
     const agencyId = req.user.agency_id;
     const templateId = req.params.id;
 
+    // 1. Carga la plantilla de automation_templates
     const template = get(
       'SELECT * FROM automation_templates WHERE id = @id AND is_active = 1',
       { id: templateId }
@@ -76,20 +85,38 @@ router.post('/:id/install', (req, res) => {
       return res.status(404).json({ error: 'Plantilla no encontrada' });
     }
 
+    // 2. Verifica que el plan de la agencia permite esta plantilla (comparar min_plan con plan actual)
+    const agency = get('SELECT plan FROM agencies WHERE id = @id', { id: agencyId });
+    if (!agency) return res.status(404).json({ error: 'Agencia no encontrada' });
+
+    const agencyPlanLevel = PLAN_ORDER[agency.plan] || 1;
+    const templateMinPlanLevel = PLAN_ORDER[template.min_plan] || 1;
+
+    if (agencyPlanLevel < templateMinPlanLevel) {
+      return res.status(402).json({
+        error: `Esta plantilla requiere el plan ${template.min_plan}. Tu plan actual es ${agency.plan}.`,
+        code: 'PLAN_UPGRADE_REQUIRED',
+        current_plan: agency.plan,
+        upgrade_to: template.min_plan,
+      });
+    }
+
+    // 3. Comprueba si ya está instalada (busca en automations WHERE template_id=X AND agency_id=Y)
     const existing = get(
-      'SELECT id FROM automations WHERE agency_id = @aid AND name = @name',
-      { aid: agencyId, name: template.name }
+      'SELECT id FROM automations WHERE agency_id = @aid AND template_id = @template_id',
+      { aid: agencyId, template_id: templateId }
     );
     if (existing) {
       return res.status(409).json({ error: 'Ya tienes esta plantilla instalada' });
     }
 
+    // 4. Si no está instalada, hace INSERT en automations con is_active=false y template_id referenciando la plantilla
     const automationId = uuidv4();
     run(
-      `INSERT INTO automations (id, agency_id, name, description, is_active,
-        trigger_type, trigger_event, trigger_config, conditions, actions, run_count, created_at)
-       VALUES (@id, @agency_id, @name, @description, 0,
-        @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, 0, datetime('now'))`,
+      `INSERT INTO automations (id, agency_id, name, description, is_active, active,
+        trigger_type, trigger_event, trigger_config, conditions, actions, run_count, created_at, template_id)
+       VALUES (@id, @agency_id, @name, @description, 0, 0,
+        @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, 0, datetime('now'), @template_id)`,
       {
         id: automationId,
         agency_id: agencyId,
@@ -99,14 +126,22 @@ router.post('/:id/install', (req, res) => {
         trigger_config: template.trigger_config,
         conditions: template.conditions,
         actions: template.actions,
+        template_id: templateId,
       }
     );
 
+    // 5. Incrementa automation_templates.installs en +1
     run('UPDATE automation_templates SET installs = installs + 1 WHERE id = @id', { id: templateId });
 
-    console.log(`[TEMPLATES] Installed "${template.name}" for agency ${agencyId}`);
+    console.log(`[TEMPLATES] Installed template "${template.name}" (ID: ${templateId}) for agency ${agencyId}`);
 
-    res.json({ automation_id: automationId, name: template.name });
+    // 6. Devuelve {ok: true, automation_id, name: template.name, message: 'Instalada correctamente'}
+    res.json({
+      ok: true,
+      automation_id: automationId,
+      name: template.name,
+      message: 'Instalada correctamente'
+    });
   } catch (error) {
     console.error('[TEMPLATES] Error installing:', error.message);
     res.status(500).json({ error: 'Error al instalar plantilla' });
@@ -121,3 +156,4 @@ router.get('/categories', (req, res) => {
 });
 
 export default router;
+

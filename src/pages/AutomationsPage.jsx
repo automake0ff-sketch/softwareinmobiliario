@@ -47,6 +47,9 @@ const itemAnim = {
 }
 
 export default function AutomationsPage() {
+  const { hasCapacity, usage, plan, refresh } = usePlan()
+  const canCreate = hasCapacity('automations')
+
   const [automations, setAutomations] = useState([])
   const [loading, setLoading] = useState(true)
   const [aiBuilderOpen, setAiBuilderOpen] = useState(false)
@@ -92,18 +95,17 @@ export default function AutomationsPage() {
 
   const toggleAutomation = async (id) => {
     const prev = automations.find(a => a.id === id)
-    setAutomations(prev => prev.map(a =>
-      a.id === id ? { ...a, is_active: a.is_active ? 0 : 1 } : a
-    ))
+    if (!prev) return
+    const nextActive = prev.is_active ? 0 : 1
+
     try {
-      const updated = await api.post(`/automations/${id}/toggle`)
+      const updated = await api.patch(`/automations/${id}`, { is_active: nextActive })
       setAutomations(prev => prev.map(a =>
         a.id === id ? { ...a, is_active: updated.is_active } : a
       ))
-    } catch {
-      setAutomations(prev => prev.map(a =>
-        a.id === id ? { ...a, is_active: prev.is_active } : a
-      ))
+      refresh()
+    } catch (err) {
+      alert(err.response?.data?.error || err.message || 'Error al cambiar estado de la automatización')
     }
   }
 
@@ -112,6 +114,7 @@ export default function AutomationsPage() {
     setAutomations(prev => prev.filter(a => a.id !== id))
     try {
       await api.delete(`/automations/${id}`)
+      refresh()
     } catch {
       setAutomations(prev)
     }
@@ -140,8 +143,9 @@ export default function AutomationsPage() {
       setAiBuilderOpen(false)
       setAiDescription('')
       setGeneratedAutomation(null)
+      refresh()
     } catch (e) {
-      alert('Error al guardar: ' + e.message)
+      alert(e.response?.data?.error || e.message || 'Error al guardar')
     }
   }
 
@@ -207,6 +211,7 @@ export default function AutomationsPage() {
         ...b,
         automations: b.automations.map(a => a.name === name ? { ...a, installed: true } : a),
       })))
+      refresh()
     } catch (e) { console.error(e) }
     finally { setInstalling(null) }
   }
@@ -237,7 +242,11 @@ export default function AutomationsPage() {
           <CapacityBadge />
           <button
             onClick={() => setAiBuilderOpen(!aiBuilderOpen)}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-xl transition-all"
+            disabled={!canCreate}
+            className={`flex items-center gap-2 px-4 py-2 text-white text-sm rounded-xl transition-all ${
+              canCreate ? 'bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-500/10' : 'bg-indigo-950/40 border border-white/5 text-white/30 cursor-not-allowed'
+            }`}
+            title={!canCreate ? 'Has alcanzado el límite de automatizaciones activas de tu plan' : ''}
           >
             <Sparkles size={16} />
             Crear con IA

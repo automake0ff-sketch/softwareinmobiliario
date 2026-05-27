@@ -62,10 +62,11 @@ function normalizeParams(params) {
   if (!params || typeof params !== 'object') return params;
   const normalized = {};
   for (const [key, val] of Object.entries(params)) {
+    const finalVal = val === undefined ? null : val;
     if (key.startsWith('@') || key.startsWith('$') || key.startsWith(':')) {
-      normalized[key] = val;
+      normalized[key] = finalVal;
     } else {
-      normalized['@' + key] = val;
+      normalized['@' + key] = finalVal;
     }
   }
   return normalized;

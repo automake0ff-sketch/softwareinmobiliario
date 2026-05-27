@@ -2,26 +2,143 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { all, get, run } from '../db/db.js';
 import { auth } from '../middleware/auth.js';
-import { callClaude } from '../services/claude.js';
+import { realtime } from '../services/realtime.js';
+
+// Auto-run schema migrations for conversations table
+const convMigrations = [
+  `ALTER TABLE conversations ADD COLUMN ia_handling INTEGER DEFAULT 1`,
+  `ALTER TABLE conversations ADD COLUMN updated_at TEXT`,
+  `ALTER TABLE conversations ADD COLUMN status TEXT DEFAULT 'active'`,
+  `ALTER TABLE conversations ADD COLUMN agency_id TEXT`,
+];
+for (const sql of convMigrations) {
+  try { run(sql); } catch (e) { /* column already exists */ }
+}
 
 const router = Router();
 router.use(auth);
 
+// POST /api/conversations - Create a new conversation for a lead
+router.post('/', (req, res) => {
+  try {
+    const { lead_id, channel = 'whatsapp', content = 'Chat iniciado' } = req.body;
+    const agencyId = req.user.agency_id;
+
+    if (!lead_id) return res.status(400).json({ error: 'lead_id es obligatorio.' });
+
+    // Verify lead belongs to agency
+    const lead = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: lead_id, agency_id: agencyId });
+    if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' });
+
+    // Check if a conversation already exists for this lead+channel
+    let existing = null;
+    try {
+      existing = get(
+        'SELECT * FROM conversations WHERE lead_id = @lead_id AND channel = @channel AND agency_id = @agency_id',
+        { lead_id, channel, agency_id: agencyId }
+      );
+    } catch (e) {
+      // agency_id column might not exist yet, fallback without it
+      existing = get(
+        'SELECT * FROM conversations WHERE lead_id = @lead_id AND channel = @channel',
+        { lead_id, channel }
+      );
+    }
+
+    if (existing) {
+      const messages = existing.messages ? JSON.parse(existing.messages) : [];
+      return res.status(200).json({
+        id: existing.id,
+        lead_id: existing.lead_id,
+        channel: existing.channel,
+        status: existing.status || 'active',
+        ia_handling: existing.ia_handling !== 0,
+        messages,
+        created_at: existing.created_at,
+        updated_at: existing.updated_at || existing.created_at,
+      });
+    }
+
+    // Create new conversation
+    const convId = uuidv4();
+    const firstMsg = {
+      id: uuidv4(),
+      role: 'system',
+      sender_type: 'system',
+      content,
+      is_read: true,
+      timestamp: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    };
+    const messages = [firstMsg];
+
+    // Insert using only the guaranteed base columns
+    run(
+      `INSERT INTO conversations (id, lead_id, channel, messages, created_at)
+       VALUES (@id, @lead_id, @channel, @messages, datetime('now'))`,
+      { id: convId, lead_id, channel, messages: JSON.stringify(messages) }
+    );
+    // Update optional columns separately (safe even if they were just migrated)
+    try {
+      run(
+        `UPDATE conversations SET agency_id = @agency_id, status = 'active', ia_handling = 1, updated_at = datetime('now') WHERE id = @id`,
+        { agency_id: agencyId, id: convId }
+      );
+    } catch (e) { /* ignore if columns still not available */ }
+
+    res.status(201).json({
+      id: convId,
+      lead_id,
+      channel,
+      status: 'active',
+      ia_handling: true,
+      messages,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Error creating conversation:', error);
+    res.status(500).json({ error: 'Error al crear la conversación.' });
+  }
+});
+
+// GET /api/conversations - List conversations with lead details, last message, and unread counts
 router.get('/', (req, res) => {
   try {
-    const { lead_id, channel } = req.query;
-    let sql = 'SELECT c.*, u.name AS agent_name FROM conversations c LEFT JOIN users u ON c.agent_id = u.id WHERE c.agency_id = @agency_id';
-    const params = { agency_id: req.user.agency_id };
+    const agencyId = req.user.agency_id;
 
-    if (lead_id) { sql += ' AND c.lead_id = @lead_id'; params.lead_id = lead_id; }
-    if (channel) { sql += ' AND c.channel = @channel'; params.channel = channel; }
+    const sql = `
+      SELECT c.*, l.name AS lead_name, l.phone AS lead_phone, l.ia_score AS lead_ia_score, l.pipeline_stage AS lead_pipeline_stage
+      FROM conversations c
+      JOIN leads l ON c.lead_id = l.id
+      WHERE c.agency_id = @agency_id
+      ORDER BY c.updated_at DESC, c.created_at DESC
+    `;
+    const params = { agency_id: agencyId };
 
-    sql += ' ORDER BY c.created_at DESC';
+    const conversations = all(sql, params).map(c => {
+      const messagesList = c.messages ? JSON.parse(c.messages) : [];
+      const unreadCount = messagesList.filter(m => (m.role === 'lead' || m.sender_type === 'lead') && !m.is_read).length;
 
-    const conversations = all(sql, params).map(c => ({
-      ...c,
-      messages: c.messages ? JSON.parse(c.messages) : [],
-    }));
+      return {
+        id: c.id,
+        lead_id: c.lead_id,
+        channel: c.channel,
+        status: c.status,
+        ia_handling: c.ia_handling !== 0,
+        updated_at: c.updated_at || c.created_at,
+        lead: {
+          id: c.lead_id,
+          name: c.lead_name,
+          phone: c.lead_phone,
+          ia_score: c.lead_ia_score,
+          pipeline_stage: c.lead_pipeline_stage
+        },
+        messages: messagesList,
+        last_message: messagesList[messagesList.length - 1] || null,
+        unread_count: unreadCount
+      };
+    });
 
     res.json(conversations);
   } catch (error) {
@@ -30,78 +147,143 @@ router.get('/', (req, res) => {
   }
 });
 
-router.post('/', (req, res) => {
+// GET /api/conversations/:id/messages - GET messages and mark as read
+router.get('/:id/messages', (req, res) => {
   try {
-    const { lead_id, agent_id, channel, content } = req.body;
-    if (!lead_id || !channel) {
-      return res.status(400).json({ error: 'Faltan campos obligatorios: lead_id, channel.' });
+    const conv = get('SELECT * FROM conversations WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
+    if (!conv) return res.status(404).json({ error: 'Conversación no encontrada.' });
+
+    const messagesList = conv.messages ? JSON.parse(conv.messages) : [];
+
+    // Mark lead messages as read
+    let updated = false;
+    const markedList = messagesList.map(m => {
+      if ((m.role === 'lead' || m.sender_type === 'lead') && !m.is_read) {
+        updated = true;
+        return { ...m, is_read: true };
+      }
+      return m;
+    });
+
+    if (updated) {
+      run('UPDATE conversations SET messages = @messages WHERE id = @id', { messages: JSON.stringify(markedList), id: req.params.id });
+      // update DB messages table too if active
+      try {
+        run('UPDATE messages SET is_read = 1 WHERE conversation_id = @id AND author = \'lead\'', { id: req.params.id });
+      } catch (me) {}
     }
 
-    const lead = get('SELECT * FROM leads WHERE id = @id', { id: lead_id });
-    if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' });
-
-    const id = uuidv4();
-    const messages = content ? [{ role: 'user', content, timestamp: new Date().toISOString() }] : [];
-
-    run(
-      `INSERT INTO conversations (id, agency_id, lead_id, agent_id, channel, messages, created_at)
-       VALUES (@id, @agency_id, @lead_id, @agent_id, @channel, @messages, datetime('now'))`,
-      {
-        id,
-        agency_id: lead.agency_id || req.user.agency_id,
-        lead_id,
-        agent_id: agent_id || req.user.id,
-        channel,
-        messages: JSON.stringify(messages),
-      }
-    );
-
-    run("UPDATE leads SET last_activity = datetime('now'), updated_at = datetime('now') WHERE id = @id", { id: lead_id });
-
-    run(
-      `INSERT INTO activities (id, agency_id, lead_id, user_id, type, description, created_at)
-       VALUES (@id, @agency_id, @lead_id, @user_id, @type, @description, datetime('now'))`,
-      {
-        id: uuidv4(),
-        agency_id: lead.agency_id,
-        lead_id,
-        user_id: req.user.id,
-        type: 'conversation',
-        description: `Nueva conversación por ${channel}.`,
-      }
-    );
-
-    const conversation = get('SELECT * FROM conversations WHERE id = @id', { id });
-    conversation.messages = JSON.parse(conversation.messages);
-    res.status(201).json(conversation);
+    res.json(markedList);
   } catch (error) {
-    console.error('Error creating conversation:', error);
-    res.status(500).json({ error: 'Error al crear conversación.' });
+    console.error('Error getting messages:', error);
+    res.status(500).json({ error: 'Error al obtener mensajes.' });
   }
 });
 
-router.post('/:id/analyze', async (req, res) => {
+// POST /api/conversations/:id/messages - POST a message, sync via Meta WhatsApp API, and broadcast
+router.post('/:id/messages', (req, res) => {
   try {
-    const conversation = get('SELECT * FROM conversations WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
-    if (!conversation) return res.status(404).json({ error: 'Conversación no encontrada.' });
+    const { content } = req.body;
+    const conversationId = req.params.id;
+    const agencyId = req.user.agency_id;
+    const userId = req.user.id;
 
-    const messages = conversation.messages ? JSON.parse(conversation.messages) : [];
-    const transcript = messages.map(m => `${m.role}: ${m.content}`).join('\n');
+    if (!content) return res.status(400).json({ error: 'El contenido es obligatorio.' });
 
-    const summary = await callClaude(
-      'Eres un analizador de conversaciones inmobiliarias. Resume la conversación, detecta la intención del lead, y sugiere los próximos pasos. Responde en español.',
-      transcript || 'No hay mensajes en esta conversación.'
+    const conv = get('SELECT * FROM conversations WHERE id = @id AND agency_id = @agency_id', { id: conversationId, agency_id: agencyId });
+    if (!conv) return res.status(404).json({ error: 'Conversación no encontrada.' });
+
+    const messagesList = conv.messages ? JSON.parse(conv.messages) : [];
+    const newMsg = {
+      id: uuidv4(),
+      role: 'agent',
+      sender_type: 'user',
+      sender_id: userId,
+      content,
+      is_read: true,
+      timestamp: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    };
+    messagesList.push(newMsg);
+
+    run(
+      `UPDATE conversations
+       SET messages = @messages, updated_at = datetime('now')
+       WHERE id = @id`,
+      { messages: JSON.stringify(messagesList), id: conversationId }
     );
 
-    run('UPDATE conversations SET summary = @summary WHERE id = @id', { summary, id: req.params.id });
+    // Save to messages table
+    run(
+      `INSERT INTO messages (id, conversation_id, author, content, message_type, created_at)
+       VALUES (@id, @conversation_id, @author, @content, 'text', datetime('now'))`,
+      {
+        id: newMsg.id,
+        conversation_id: conversationId,
+        author: 'agent',
+        content,
+      }
+    );
 
-    const leadId = conversation.lead_id;
-    run("UPDATE leads SET ia_summary = @summary, updated_at = datetime('now') WHERE id = @id", { summary, id: leadId });
+    // Fetch lead details
+    const lead = get('SELECT * FROM leads WHERE id = @id', { id: conv.lead_id });
 
-    res.json({ id: req.params.id, summary });
+    // WhatsApp config Meta Graph API check
+    const agency = get('SELECT wa_token, wa_phone_id FROM agencies WHERE id = @aid', { aid: agencyId });
+    if (agency?.wa_token && agency?.wa_phone_id && lead?.phone) {
+      const phone = String(lead.phone).replace(/[\s\-\(\)\+]/g, '');
+      const fullPhone = phone.startsWith('34') ? phone : `34${phone}`;
+
+      globalThis.fetch(`https://graph.facebook.com/v18.0/${agency.wa_phone_id}/messages`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${agency.wa_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: fullPhone,
+          type: 'text',
+          text: { body: content }
+        })
+      }).catch(err => console.error('[WhatsApp Webhook POST] Error sending WhatsApp message:', err));
+    }
+    if (realtime) {
+      realtime.broadcast('message', {
+        conversation_id: conversationId,
+        message: newMsg
+      });
+    }
+
+    res.status(201).json(newMsg);
   } catch (error) {
-    console.error('Error analyzing conversation:', error);
-    res.status(500).json({ error: 'Error al analizar conversación.' });
+    console.error('Error posting message:', error);
+    res.status(500).json({ error: 'Error al enviar mensaje.' });
+  }
+});
+
+// PATCH /api/conversations/:id - Toggle ia_handling
+router.patch('/:id', (req, res) => {
+  try {
+    const { ia_handling } = req.body;
+    const agencyId = req.user.agency_id;
+    const conversationId = req.params.id;
+
+    const conv = get('SELECT * FROM conversations WHERE id = @id AND agency_id = @agency_id', { id: conversationId, agency_id: agencyId });
+    if (!conv) return res.status(404).json({ error: 'Conversación no encontrada.' });
+
+    const val = ia_handling ? 1 : 0;
+    run('UPDATE conversations SET ia_handling = @val, updated_at = datetime(\'now\') WHERE id = @id AND agency_id = @agency_id', {
+      val,
+      id: conversationId,
+      agency_id: agencyId
+    });
+
+    res.json({ ok: true, id: conversationId, ia_handling: !!ia_handling });
+  } catch (error) {
+    console.error('Error patching conversation:', error);
+    res.status(500).json({ error: 'Error al actualizar conversación.' });
   }
 });
 

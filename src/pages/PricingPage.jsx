@@ -2,11 +2,11 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Check, Zap, Building2, Crown, Star,
-  Users, Shield, Infinity, ChevronDown, CreditCard, Banknote, Loader2, Sparkles
+  Users, Shield, Infinity, ChevronDown, CreditCard, Banknote, Sparkles
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import api from '../lib/api'
 import { useStore } from '../lib/store'
+import PaymentModal from '../components/billing/PaymentModal'
 
 const PAYMENT_METHODS = [
   { id: 'stripe', name: 'Tarjeta (Stripe)', desc: 'Pago seguro con tarjeta', icon: CreditCard },
@@ -110,10 +110,10 @@ const itemAnim = {
 
 export default function PricingPage() {
   const [annual, setAnnual] = useState(false)
-  const [selectedPlan, setSelectedPlan] = useState(null)
   const [selectedMethods, setSelectedMethods] = useState({})
-  const [loading, setLoading] = useState(false)
   const [openFaq, setOpenFaq] = useState(null)
+  const [modalPlan, setModalPlan] = useState(null)
+  const [modalMethod, setModalMethod] = useState(null)
   const subscription = useStore(s => s.subscription)
   const fetchSubscription = useStore(s => s.fetchSubscription)
   const userPlan = subscription?.planId || null
@@ -131,39 +131,6 @@ export default function PricingPage() {
       window.history.replaceState({}, '', '/pricing')
     }
   }, [fetchSubscription])
-
-  const handleSelect = async (planId) => {
-    if (userPlan === planId && (planStatus === 'active' || planStatus === 'trialing')) {
-      toast.success('Ya tienes este plan activo')
-      return
-    }
-    setSelectedPlan(planId)
-    setLoading(true)
-    try {
-      const data = await api.post('/billing/create-checkout', {
-        planId,
-        interval: annual ? 'year' : 'month',
-        paymentMethod: selectedMethods[planId] || 'stripe',
-      })
-
-      if (data.url) {
-        window.location.href = data.url
-      } else if (data.mock) {
-        toast.success(
-          `[MODO DEMO] Plan ${
-            PLANS.find(p => p.id === planId)?.name
-          } contratado (${selectedMethods[planId] || 'stripe'}).${data.message ? ' ' + data.message : ''}`
-        )
-        fetchSubscription()
-      } else {
-        toast.error('Error al crear la sesión de pago')
-      }
-    } catch (e) {
-      toast.error('Error al procesar la solicitud')
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const toggleFaq = (i) => {
     setOpenFaq(openFaq === i ? null : i)
@@ -301,30 +268,35 @@ export default function PricingPage() {
                   {PAYMENT_METHODS.map((pm) => {
                     const PmIcon = pm.icon
                     return (
-                      <button
-                        key={pm.id}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setSelectedMethods(prev => ({ ...prev, [plan.id]: pm.id }))
-                        }}
-                        className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-lg text-[10px] font-medium transition-all ${
-                          (selectedMethods[plan.id] || 'stripe') === pm.id
-                            ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/30'
-                            : 'bg-[#1A1A24] text-[#64748B] border border-transparent hover:border-[#2A2A3E]'
-                        }`}
-                      >
-                        <PmIcon size={14} />
-                        <span className="truncate w-full text-center leading-tight">
-                          {pm.name.split(' ')[0]}
-                        </span>
-                      </button>
+                        <button
+                          key={pm.id}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelectedMethods(prev => ({ ...prev, [plan.id]: pm.id }))
+                            setModalPlan(plan)
+                            setModalMethod(pm.id)
+                          }}
+                          className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-lg text-[10px] font-medium transition-all ${
+                            (selectedMethods[plan.id] || 'stripe') === pm.id
+                              ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/30'
+                              : 'bg-[#1A1A24] text-[#64748B] border border-transparent hover:border-[#2A2A3E]'
+                          }`}
+                        >
+                          <PmIcon size={14} />
+                          <span className="truncate w-full text-center leading-tight">
+                            {pm.name.split(' ')[0]}
+                          </span>
+                        </button>
                     )
                   })}
                 </div>
 
                 <button
-                  onClick={() => handleSelect(plan.id)}
-                  disabled={(loading && selectedPlan === plan.id) || (userPlan === plan.id && (planStatus === 'active' || planStatus === 'trialing'))}
+                  onClick={() => {
+                    setModalPlan(plan)
+                    setModalMethod(selectedMethods[plan.id] || 'stripe')
+                  }}
+                  disabled={userPlan === plan.id && (planStatus === 'active' || planStatus === 'trialing')}
                   className={`w-full py-3 rounded-xl text-sm font-medium transition-all mb-6 flex items-center justify-center gap-2 ${
                     userPlan === plan.id && (planStatus === 'active' || planStatus === 'trialing')
                       ? 'bg-emerald-600/20 text-emerald-400 cursor-default'
@@ -333,9 +305,7 @@ export default function PricingPage() {
                         : 'bg-[#1E1E2E] text-[#F1F5F9] hover:bg-[#2A2A3E]'
                   } disabled:opacity-60 disabled:cursor-not-allowed`}
                 >
-                  {loading && selectedPlan === plan.id ? (
-                    <><Loader2 size={16} className="animate-spin" /> Procesando...</>
-                  ) : userPlan === plan.id && (planStatus === 'active' || planStatus === 'trialing') ? (
+                  {userPlan === plan.id && (planStatus === 'active' || planStatus === 'trialing') ? (
                     'Plan activo ✓'
                   ) : (
                     plan.cta
@@ -422,6 +392,15 @@ export default function PricingPage() {
             ))}
           </div>
         </div>
+
+        <PaymentModal
+          plan={modalPlan}
+          interval={annual ? 'year' : 'month'}
+          open={!!modalPlan}
+          initialMethod={modalMethod || 'stripe'}
+          onClose={() => { setModalPlan(null); setModalMethod(null) }}
+          onSuccess={() => { setModalPlan(null); setModalMethod(null) }}
+        />
       </div>
     </motion.div>
   )

@@ -3,8 +3,10 @@ import { v4 as uuidv4 } from 'uuid'
 import { all, get, run } from '../db/db.js'
 import { auth, requireRole } from '../middleware/auth.js'
 import { callOpenRouter } from '../services/openrouter.js'
-import { evaluateConditions, executeAction, checkTrigger } from '../services/automation-engine.js'
+import { evaluateConditions, executeAction, checkTrigger, triggerAutomations } from '../services/automation-engine.js'
 import { checkLimit } from '../services/plan-checker.js'
+import { PLANS, limitLabel } from '../services/plans.js'
+import { automationSchema, validateBody } from '../middleware/validators.js'
 
 const router = Router()
 router.use(auth)
@@ -84,7 +86,7 @@ router.get('/agents', async (req, res) => {
 })
 
 // POST /api/automations - Create new automation
-router.post('/', checkLimit('automations'), (req, res) => {
+router.post('/', checkLimit('automations'), validateBody(automationSchema), (req, res) => {
   try {
     const agencyId = req.user.agency_id || req.body.agency_id
     if (!agencyId) return res.status(400).json({ error: 'agency_id requerido' })
@@ -132,8 +134,31 @@ router.post('/:id/toggle', (req, res) => {
     if (!auto) return res.status(404).json({ error: 'Automatización no encontrada.' })
 
     const newStatus = auto.is_active ? 0 : 1
-    run('UPDATE automations SET is_active = @is_active WHERE id = @id AND agency_id = @agency_id',
-      { is_active: newStatus, id: req.params.id, agency_id: agencyId })
+
+    // Check quota if activating
+    if (newStatus === 1) {
+      const planId = req.user?.plan_id || 'starter'
+      const plan = PLANS[planId] || PLANS.starter
+      const planLimit = plan.max_automations
+
+      if (planLimit !== -1) {
+        const row = get("SELECT COUNT(*) as count FROM automations WHERE agency_id = @aid AND is_active = 1", { aid: agencyId })
+        const currentCount = row?.count || 0
+        if (currentCount >= planLimit) {
+          return res.status(402).json({
+            error: `Has alcanzado el límite de ${limitLabel('automations', planId)} de tu plan`,
+            code: 'QUOTA_EXCEEDED',
+            current_plan: planId,
+            upgrade_to: 'profesional',
+            current: currentCount,
+            limit: planLimit,
+          })
+        }
+      }
+    }
+
+    run('UPDATE automations SET is_active = @is_active, active = @active WHERE id = @id AND agency_id = @agency_id',
+      { is_active: newStatus, active: newStatus, id: req.params.id, agency_id: agencyId })
 
     const updated = get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
       { id: req.params.id, agency_id: agencyId })
@@ -149,8 +174,93 @@ router.post('/:id/toggle', (req, res) => {
   }
 })
 
+// PATCH /api/automations/:id - Update partial fields of an automation (e.g. is_active)
+router.patch('/:id', validateBody(automationSchema.partial()), (req, res) => {
+  try {
+    const agencyId = req.user.agency_id
+    const auto = get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
+      { id: req.params.id, agency_id: agencyId })
+    if (!auto) return res.status(404).json({ error: 'Automatización no encontrada.' })
+
+    const { is_active, name, description } = req.body
+
+    // Check quota if attempting to activate
+    if (is_active !== undefined && (is_active === 1 || is_active === true) && !auto.is_active) {
+      const planId = req.user?.plan_id || 'starter'
+      const plan = PLANS[planId] || PLANS.starter
+      const planLimit = plan.max_automations
+
+      if (planLimit !== -1) {
+        const row = get("SELECT COUNT(*) as count FROM automations WHERE agency_id = @aid AND is_active = 1", { aid: agencyId })
+        const currentCount = row?.count || 0
+        if (currentCount >= planLimit) {
+          return res.status(402).json({
+            error: `Has alcanzado el límite de ${limitLabel('automations', planId)} de tu plan`,
+            code: 'QUOTA_EXCEEDED',
+            current_plan: planId,
+            upgrade_to: 'profesional',
+            current: currentCount,
+            limit: planLimit,
+          })
+        }
+      }
+    }
+
+    const updates = []
+    const params = { id: req.params.id, agency_id: agencyId }
+
+    if (is_active !== undefined) {
+      updates.push('is_active = @is_active')
+      updates.push('active = @active')
+      params.is_active = is_active ? 1 : 0
+      params.active = is_active ? 1 : 0
+    }
+    if (name !== undefined) {
+      updates.push('name = @name')
+      params.name = name
+    }
+    if (description !== undefined) {
+      updates.push('description = @description')
+      params.description = description
+    }
+
+    if (updates.length > 0) {
+      run(`UPDATE automations SET ${updates.join(', ')} WHERE id = @id AND agency_id = @agency_id`, params)
+    }
+
+    const updated = get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
+      { id: req.params.id, agency_id: agencyId })
+    res.json({
+      ...updated,
+      conditions: JSON.parse(updated.conditions || '[]'),
+      actions: JSON.parse(updated.actions || '[]'),
+      trigger_config: JSON.parse(updated.trigger_config || '{}'),
+    })
+  } catch (error) {
+    console.error('Error updating automation (patch):', error)
+    res.status(500).json({ error: error.message || 'Error al actualizar automatización.' })
+  }
+})
+
+// POST /api/automations/trigger - Execute automations in background for a given trigger
+router.post('/trigger', async (req, res) => {
+  try {
+    const { trigger_type, lead_id, agency_id, trigger_payload } = req.body
+    const aid = agency_id || req.user?.agency_id
+    if (!trigger_type || !lead_id) {
+      return res.status(400).json({ error: 'trigger_type y lead_id son requeridos' })
+    }
+
+    const result = await triggerAutomations({ trigger_type, lead_id, agency_id: aid, trigger_payload })
+    res.json(result)
+  } catch (error) {
+    console.error('Error executing automations in trigger:', error)
+    res.status(500).json({ error: error.message || 'Error al ejecutar automatizaciones.' })
+  }
+})
+
 // PUT /api/automations/:id - Update automation
-router.put('/:id', (req, res) => {
+router.put('/:id', validateBody(automationSchema.partial()), (req, res) => {
   try {
     const agencyId = req.user.agency_id
     const auto = get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
@@ -164,7 +274,7 @@ router.put('/:id', (req, res) => {
         name = @name, description = @description, trigger_type = @trigger_type,
         trigger_event = @trigger_type,
         trigger_config = @trigger_config, conditions = @conditions, actions = @actions,
-        is_active = @is_active
+        is_active = @is_active, active = @active
        WHERE id = @id AND agency_id = @agency_id`,
       {
         name: name || auto.name,
@@ -174,6 +284,7 @@ router.put('/:id', (req, res) => {
         conditions: JSON.stringify(conditions || JSON.parse(auto.conditions || '[]')),
         actions: JSON.stringify(actions || JSON.parse(auto.actions || '[]')),
         is_active: is_active !== undefined ? (is_active ? 1 : 0) : auto.is_active,
+        active: is_active !== undefined ? (is_active ? 1 : 0) : auto.is_active,
         id: req.params.id,
         agency_id: agencyId,
       }
@@ -429,7 +540,7 @@ router.get('/templates', async (req, res) => {
 })
 
 // POST /api/automations/install-template - Install a template by name
-router.post('/install-template', async (req, res) => {
+router.post('/install-template', checkLimit('automations'), async (req, res) => {
   try {
     const agencyId = req.user.agency_id
     const { name } = req.body
@@ -443,9 +554,10 @@ router.post('/install-template', async (req, res) => {
     if (!template) return res.status(404).json({ error: 'Plantilla no encontrada' })
 
     const id = uuidv4()
+    const templateId = name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()
     run(
-      `INSERT INTO automations (id, agency_id, name, description, is_active, trigger_type, trigger_event, trigger_config, conditions, actions, run_count, created_at)
-       VALUES (@id, @agency_id, @name, @description, 1, @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, 0, datetime('now'))`,
+      `INSERT INTO automations (id, agency_id, name, description, is_active, active, trigger_type, trigger_event, trigger_config, conditions, actions, run_count, created_at, template_id)
+       VALUES (@id, @agency_id, @name, @description, 1, 1, @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, 0, datetime('now'), @template_id)`,
       {
         id, agency_id: agencyId,
         name: template.name, description: template.description,
@@ -453,6 +565,7 @@ router.post('/install-template', async (req, res) => {
         trigger_config: template.trigger_config,
         conditions: template.conditions,
         actions: template.actions,
+        template_id: templateId,
       }
     )
 

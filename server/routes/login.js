@@ -1,10 +1,17 @@
 import { Router } from 'express';
 import { get } from '../db/db.js';
 import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 
 const router = Router();
+const JWT_SECRET = process.env.JWT_SECRET || 'crm-inmobiliario-secret-dev-key-2026';
 
 function verifyPassword(password, stored) {
+  if (stored.startsWith('$2a$') || stored.startsWith('$2b$')) {
+    return bcrypt.compareSync(password, stored);
+  }
+  // Fallback a PBKDF2 antiguo para conservar usuarios semilla
   const parts = stored.split(':');
   if (parts.length !== 2) return false;
   const [salt, hash] = parts;
@@ -20,7 +27,7 @@ router.post('/', (req, res) => {
       return res.status(400).json({ error: 'Email y contraseña requeridos' });
     }
 
-    const user = get('SELECT id, email, name, password_hash, role, agency_id, office_id FROM users WHERE email = @email', { email });
+    const user = get('SELECT id, email, name, password_hash, role, agency_id, office_id FROM users WHERE email = @email AND active = 1', { email });
     if (!user) {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
@@ -34,7 +41,8 @@ router.post('/', (req, res) => {
       return res.status(404).json({ error: 'Agencia no encontrada' });
     }
 
-    const token = process.env.API_TOKEN || 'demo-token-dev';
+    // Firmar token JWT real conteniendo el userId
+    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
 
     res.json({
       token,

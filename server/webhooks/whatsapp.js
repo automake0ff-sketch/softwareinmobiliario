@@ -252,12 +252,41 @@ async function handleIncomingMessage(message, metadata, contacts) {
       existingLead = get('SELECT * FROM leads WHERE id = @id', { id: leadId });
     }
 
-    const convId = uuidv4();
-    const messages = [{ role: 'lead', content: text, timestamp: new Date().toISOString() }];
+    const messageId = uuidv4();
+    const newMessage = { role: 'lead', content: text, timestamp: new Date().toISOString(), message_id: message.id };
+
+    let existingConv = get(
+      'SELECT id, messages FROM conversations WHERE lead_id = @lead_id AND channel = \'whatsapp\' ORDER BY created_at DESC LIMIT 1',
+      { lead_id: leadId }
+    );
+
+    if (existingConv) {
+      const msgs = JSON.parse(existingConv.messages || '[]');
+      msgs.push(newMessage);
+      run(
+        `UPDATE conversations SET messages = @messages WHERE id = @id`,
+        { messages: JSON.stringify(msgs), id: existingConv.id }
+      );
+    } else {
+      existingConv = { id: uuidv4() };
+      run(
+        `INSERT INTO conversations (id, agency_id, lead_id, channel, messages, created_at)
+         VALUES (@id, @agency_id, @lead_id, @channel, @messages, datetime('now'))`,
+        { id: existingConv.id, agency_id: agency.id, lead_id: leadId, channel: 'whatsapp', messages: JSON.stringify([newMessage]) }
+      );
+    }
+
+    const mappedType = ({ text: 'text', interactive: 'text', audio: 'audio', image: 'image', document: 'document' })[msgType] || 'text';
     run(
-      `INSERT INTO conversations (id, agency_id, lead_id, channel, messages, created_at)
-       VALUES (@id, @agency_id, @lead_id, @channel, @messages, datetime('now'))`,
-      { id: convId, agency_id: agency.id, lead_id: leadId, channel: 'whatsapp', messages: JSON.stringify(messages) }
+      `INSERT INTO messages (id, conversation_id, author, content, message_type, created_at)
+       VALUES (@id, @conversation_id, @author, @content, @message_type, datetime('now'))`,
+      {
+        id: messageId,
+        conversation_id: existingConv.id,
+        author: 'lead',
+        content: text,
+        message_type: mappedType,
+      }
     );
 
     const activityType = existingLead ? 'whatsapp_message' : 'whatsapp_lead';
@@ -275,6 +304,17 @@ async function handleIncomingMessage(message, metadata, contacts) {
     );
 
     if (realtime) {
+      realtime.broadcast('message', {
+        conversation_id: existingConv.id,
+        message: {
+          id: messageId,
+          role: 'lead',
+          sender_type: 'lead',
+          content: text,
+          timestamp: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+        }
+      });
       realtime.broadcastActivity({
         type: activityType,
         leadId,
@@ -292,7 +332,7 @@ async function handleIncomingMessage(message, metadata, contacts) {
       messageType: msgType,
       mediaUrl,
       phoneNumber,
-      conversationId: convId,
+      conversationId: existingConv.id,
       agencyId: agency.id,
     });
 

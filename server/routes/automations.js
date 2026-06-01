@@ -417,12 +417,13 @@ router.post('/execute', async (req, res) => {
       // Log in automation_logs table if it exists (try/catch)
       try {
         run(
-          `INSERT INTO automation_logs (id, automation_id, lead_id, status, actions_executed, created_at)
-           VALUES (@id, @automation_id, @lead_id, @status, @actions_executed, datetime('now'))`,
+          `INSERT INTO automation_logs (id, automation_id, lead_id, agency_id, status, actions_executed, created_at)
+           VALUES (@id, @automation_id, @lead_id, @agency_id, @status, @actions_executed, datetime('now'))`,
           {
             id: uuidv4(),
             automation_id: auto.id,
             lead_id,
+            agency_id: agencyId,
             status: 'success',
             actions_executed: JSON.stringify(actionResults),
           }

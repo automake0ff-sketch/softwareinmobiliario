@@ -18,6 +18,9 @@ server
   })
   .resource('whatsapp://templates', 'Plantillas WhatsApp', 'Plantillas de mensaje disponibles', async () => {
     return [
+      { name: 'captador_contacto_inicial', description: 'El Captador: Contacto Inicial a Particular Vende', variables: ['nombre_propietario', 'barrio_zona'] },
+      { name: 'agendador_confirmacion_cita', description: 'El Agendador: Confirmación de Cita con Filtro Anti-Despistes', variables: ['nombre_cliente', 'nombre_inmobiliaria', 'direccion_inmueble', 'nombre_asesor', 'hora_cita'] },
+      { name: 'vendedor_seguimiento_post_visita', description: 'El Vendedor: Seguimiento Caliente Post-Visita', variables: ['nombre_cliente'] },
       { name: 'bienvenida', description: 'Mensaje de bienvenida inicial', variables: ['nombre'] },
       { name: 'recordatorio_visita', description: 'Recordatorio de visita 24h antes', variables: ['nombre', 'fecha', 'hora', 'direccion'] },
       { name: 'seguimiento_post_visita', description: 'Seguimiento después de una visita', variables: ['nombre'] },
@@ -60,6 +63,9 @@ server
     required: ['phone', 'template_name'],
   }, async (args, context) => {
     const templates = {
+      captador_contacto_inicial: `Hola {0}, buenas tardes. Verá, sigo de cerca el mercado inmobiliario en {1} y acabo de revisar el anuncio de su vivienda. Lo primero, enhorabuena por las fotos de la cocina, hacen que resalte mucho el espacio. Trabajo con compradores validados por banco que buscan activamente un perfil de vivienda idéntico al de su casa en esta misma zona. Para no hacerle perder el tiempo con visitas innecesarias, ¿le vendría bien una llamada corta de 3 minutos esta tarde para confirmar un par de detalles de la distribución? Un saludo.`,
+      agendador_confirmacion_cita: `Hola {0}, le escribo de {1} para confirmar nuestra visita de mañana a la vivienda de {2}. Nuestro asesor {3} ya tiene reservada la hora de {4} en exclusiva para atenderle y resolver sus dudas sobre la finca. Como hay dos familias más interesadas esperando turno para esa tarde, por favor responda a este mensaje con un 'SÍ' para asegurar que mantenemos la cita en pie. ¡Nos vemos mañana!`,
+      vendedor_seguimiento_post_visita: `Hola {0}, un placer haberle enseñado el piso hoy. Mientras volvía a la oficina pensaba en lo que me comentó de la luz del salón; es exactamente el espacio familiar que estaba buscando. El propietario me acaba de confirmar que va a valorar las propuestas que entren antes del viernes, ya que hay bastante interés tras las visitas de esta semana. Si de verdad se ve viviendo ahí, le sugiero que dejemos planteada una propuesta de reserva formal hoy mismo para adelantar posiciones. ¿Quiere que le envíe el documento digital para que le eche un vistazo?`,
       bienvenida: `¡Hola {0}! Soy el asistente virtual de la agencia. Estamos buscando las mejores propiedades para ti. ¿En qué puedo ayudarte?`,
       recordatorio_visita: `Hola {0}, te recordamos que mañana {1} a las {2} tienes tu visita en {3}. ¡Te esperamos!`,
       seguimiento_post_visita: `Hola {0}, esperamos que la visita te haya gustado. ¿Tienes alguna duda o te gustaría ver más propiedades?`,

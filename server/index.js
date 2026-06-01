@@ -150,6 +150,8 @@ async function start() {
   const agencyRouter = (await import('./routes/agency.js')).default;
   const conversationsRouter = (await import('./routes/conversations.js')).default;
   const appointmentsRouter = (await import('./routes/appointments.js')).default;
+  const agentByTypeRouter = (await import('./routes/agent-by-type.js')).default;
+  const aiAgentsRouter = (await import('./routes/ai-agents.js')).default;
   const { default: metaWebhook } = await import('./webhooks/meta.js');
   const { default: whatsappWebhook, waClient, MESSAGE_TEMPLATES } = await import('./webhooks/whatsapp.js');
 
@@ -172,6 +174,8 @@ async function start() {
   app.use('/api/templates', (await import('./routes/templates.js')).default);
   app.use('/api/admin', (await import('./routes/admin.js')).default);
   app.use('/api/leads', (await import('./routes/lead-preferences.js')).default);
+  app.use('/api/agents', agentByTypeRouter);
+  app.use('/api/ai-agents', aiAgentsRouter);
 
   // Run DB migrations for automations table
   await runMigration();
@@ -198,21 +202,16 @@ async function start() {
       else if (status === 'reserva') agentType = 'documentador';
       else if (status === 'cerrado') agentType = 'notificador';
 
-      const agentResponse = generateAgentResponse(agentType, lead, messageBody, history);
+      const { AgentOrchestrator } = await import('./services/agent-orchestrator.js');
+      const orchestrator = new AgentOrchestrator(agencyId);
+      
+      // Ejecución nativa del orquestador completo
+      const results = await orchestrator.runForLead(leadId, 'message_received', {
+        last_message: messageBody,
+      });
 
-      if (phoneNumber && agentResponse) {
-        try {
-          await waClient.sendText(phoneNumber, agentResponse);
-        } catch (e) {
-          console.error('[QUEUE] WhatsApp send error:', e.message);
-        }
-      }
-
-      history.push({ role: 'agent', content: agentResponse, timestamp: new Date().toISOString() });
-      run(
-        `UPDATE conversations SET messages = @messages WHERE id = @id`,
-        { messages: JSON.stringify(history), id: conversationId }
-      );
+      const agentResult = results[0] || {};
+      const agentResponse = agentResult.message || '';
 
       if (lead.status === 'nuevo') {
         run("UPDATE leads SET status = 'contactado', updated_at = datetime('now') WHERE id = @id", { id: leadId });
@@ -632,6 +631,42 @@ async function start() {
     const count = get('SELECT COUNT(*) as count FROM agencies');
     if (count && count.count > 0) {
       seedAutomationsForExistingAgencies();
+      
+      // Auto-seed de agentes para todas las agencias existentes (Corrección del error del front)
+      const agencies = all('SELECT id FROM agencies');
+      const DEFAULT_AGENTS = [
+        { type: 'captador',    name: 'Captador IA' },
+        { type: 'vendedor',    name: 'Vendedor IA' },
+        { type: 'coordinador', name: 'Coordinador IA' },
+        { type: 'copywriter',  name: 'Copywriter IA' },
+        { type: 'tasador',     name: 'Tasador IA' },
+        { type: 'analista',    name: 'Analista IA' },
+        { type: 'agendador',   name: 'Agendador IA' },
+        { type: 'nurturing',   name: 'Nurturing IA' },
+        { type: 'documentador',name: 'Documentador IA' },
+        { type: 'seo',         name: 'SEO IA' },
+        { type: 'financiero',  name: 'Financiero IA' },
+        { type: 'notificador', name: 'Notificador IA' },
+      ];
+      for (const agency of agencies) {
+        for (const da of DEFAULT_AGENTS) {
+          const exists = get('SELECT id FROM ai_agents WHERE agency_id = @aid AND type = @type', { aid: agency.id, type: da.type });
+          if (!exists) {
+            run(
+              `INSERT INTO ai_agents (id, agency_id, type, name, is_active, status, stats, created_at)
+               VALUES (@id, @agency_id, @type, @name, 1, 'active', @stats, datetime('now'))`,
+              {
+                id: uuidv4(),
+                agency_id: agency.id,
+                type: da.type,
+                name: da.name,
+                stats: JSON.stringify({ leads_today: 0, messages_today: 0, success_rate: null }),
+              }
+            );
+          }
+        }
+      }
+      console.log('[Seed] Agentes IA autosembrados y activos.');
     }
   } catch (e) {
     console.log('[Seed] Error in initial seeding:', e.message);
@@ -755,10 +790,12 @@ async function runMigration() {
       id TEXT PRIMARY KEY,
       automation_id TEXT REFERENCES automations(id) ON DELETE CASCADE,
       lead_id TEXT REFERENCES leads(id) ON DELETE SET NULL,
+      agency_id TEXT REFERENCES agencies(id) ON DELETE CASCADE,
       status TEXT NOT NULL DEFAULT 'success',
       actions_executed TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )` },
+    { type: 'column', table: 'automation_logs', column: 'agency_id', sql: `ALTER TABLE automation_logs ADD COLUMN agency_id TEXT REFERENCES agencies(id) ON DELETE CASCADE` },
     { type: 'column', table: 'activities', column: 'title', sql: `ALTER TABLE activities ADD COLUMN title TEXT` },
     { type: 'column', table: 'activities', column: 'agent_type', sql: `ALTER TABLE activities ADD COLUMN agent_type TEXT` },
     { type: 'column', table: 'leads', column: 'last_contact_at', sql: `ALTER TABLE leads ADD COLUMN last_contact_at TEXT` },

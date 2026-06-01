@@ -47,6 +47,17 @@ export async function callOpenRouter({
 
   if (!res.ok) {
     const err = await res.text()
+    if (res.status === 402 && !modelName.endsWith(':free')) {
+      console.warn(`[OpenRouter] Insufficient credits for model ${modelName}. Retrying with free fallback model (openrouter/free)...`)
+      return callOpenRouter({
+        messages,
+        model: 'openrouter/free',
+        temperature,
+        maxTokens,
+        responseFormat,
+        stream,
+      })
+    }
     throw new Error(`OpenRouter error ${res.status}: ${err}`)
   }
 
@@ -82,7 +93,19 @@ export async function* streamOpenRouter({
     }),
   })
 
-  if (!res.ok) throw new Error(`OpenRouter stream error ${res.status}`)
+  if (!res.ok) {
+    if (res.status === 402 && !modelName.endsWith(':free')) {
+      console.warn(`[OpenRouter] Insufficient credits for stream model ${modelName}. Retrying with free fallback model (openrouter/free)...`)
+      yield* streamOpenRouter({
+        messages,
+        model: 'openrouter/free',
+        temperature,
+        maxTokens,
+      })
+      return
+    }
+    throw new Error(`OpenRouter stream error ${res.status}`)
+  }
 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()

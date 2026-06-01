@@ -1,20 +1,22 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Building2, Plus, Search, Home, Bed, Bath, Maximize,
-  MapPin, X, Filter, Image as ImageIcon, Edit3, Trash2, ExternalLink,
-  Download, Users, Globe, AlertCircle, DollarSign, Calendar,
-  Loader2, FileText, Camera, Link as LinkIcon, Copy, Share2, Sparkles,
-  ChevronLeft, ChevronRight, MessageCircle, Mail, Phone, Star,
-  Eye, Target, Clock, Layers, CheckCircle2, ChevronDown, RefreshCw, Send,
-  ArrowRight, ShieldCheck, ThumbsUp, Lightbulb, FileSpreadsheet, Handshake
+  Activity, Bath, Bed, Bot, Building2, CalendarClock, CheckCircle2,
+  Copy, Download, ExternalLink, Eye, Filter, Home, Image as ImageIcon,
+  Mail, MapPin, Maximize, MessageCircle, Pencil, Plus, Search, Share2,
+  Sparkles, Star, Target, Trash2, Upload, Wand2, X,
+  Edit3, Users, Globe, AlertCircle, DollarSign, Calendar,
+  Loader2, FileText, Camera, Link as LinkIcon, ChevronLeft, ChevronRight,
+  Phone, Clock, Layers, ChevronDown, RefreshCw, Send, ArrowRight,
+  ShieldCheck, ThumbsUp, Lightbulb, FileSpreadsheet, Handshake
 } from 'lucide-react'
+import toast from 'react-hot-toast'
+import api from '../lib/api'
 import { useStore } from '../lib/store'
 import {
   formatCurrency, getPropertyTypeLabel, getOperationLabel,
   getInitials, formatDate, formatFullDate
 } from '../utils/formatters'
-import toast from 'react-hot-toast'
 
 const typeOptions = [
   { value: 'apartment', label: 'Apartamento' },
@@ -37,9 +39,66 @@ const tabs = [
   { id: 'idealista', label: 'Idealista' },
   { id: 'sale', label: 'Venta' },
   { id: 'rent', label: 'Alquiler' },
-  { id: 'disponible', label: 'Disponibles' },
+  { id: 'available', label: 'Disponibles' },
   { id: 'incomplete', label: 'Incompletas' },
 ]
+
+const detailTabs = [
+  { id: 'summary', label: 'Resumen', icon: Eye },
+  { id: 'images', label: 'Imagenes', icon: ImageIcon },
+  { id: 'interested', label: 'Interesados', icon: Star },
+  { id: 'compatible', label: 'Compatibles', icon: Target },
+  { id: 'activity', label: 'Actividad', icon: Activity },
+  { id: 'marketing', label: 'Marketing', icon: Share2 },
+  { id: 'ai', label: 'Mejora IA', icon: Sparkles },
+]
+
+const statusLabels = {
+  disponible: 'Disponible',
+  reservado: 'Reservada',
+  vendido: 'Vendida',
+  alquilado: 'Alquilada',
+  available: 'Disponible',
+  reserved: 'Reservada',
+  sold: 'Vendida',
+}
+
+const statusClasses = {
+  disponible: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200',
+  reservado: 'border-amber-400/30 bg-amber-400/10 text-amber-200',
+  vendido: 'border-rose-400/30 bg-rose-400/10 text-rose-200',
+  alquilado: 'border-blue-400/30 bg-blue-400/10 text-blue-200',
+}
+
+const portalClasses = {
+  manual: 'border-slate-400/30 bg-slate-400/10 text-slate-200',
+  idealista: 'border-fuchsia-400/30 bg-fuchsia-400/10 text-fuchsia-200',
+  fotocasa: 'border-orange-400/30 bg-orange-400/10 text-orange-200',
+  habitaclia: 'border-cyan-400/30 bg-cyan-400/10 text-cyan-200',
+  csv: 'border-lime-400/30 bg-lime-400/10 text-lime-200',
+  portal: 'border-indigo-400/30 bg-indigo-400/10 text-indigo-200',
+  ia: 'border-violet-400/30 bg-violet-400/10 text-violet-200',
+}
+
+const emptyForm = {
+  title: '',
+  description: '',
+  price: '',
+  operation_type: 'sale',
+  type: 'apartment',
+  city: '',
+  zone: '',
+  address: '',
+  bedrooms: '',
+  bathrooms: '',
+  surface: '',
+  floor: '',
+  has_elevator: false,
+  has_terrace: false,
+  has_garage: false,
+  images: '',
+  features: '',
+}
 
 const conditionLabels = {
   nuevo: 'Nuevo',
@@ -152,6 +211,41 @@ function getQualityColor(score) {
   if (score >= 80) return 'text-emerald-400 border-emerald-500/20 bg-emerald-500/10'
   if (score >= 50) return 'text-amber-400 border-amber-500/20 bg-amber-500/10'
   return 'text-rose-400 border-rose-500/20 bg-rose-500/10'
+}
+
+function safeJson(value, fallback = []) {
+  if (!value) return fallback
+  if (Array.isArray(value)) return value
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : fallback
+  } catch {
+    return String(value).split(/[\n,]/).map((x) => x.trim()).filter(Boolean)
+  }
+}
+
+function normalizeProperty(p) {
+  const images = safeJson(p.images)
+  const features = safeJson(p.features)
+  const source = p.source || p.external_source || 'manual'
+  const operation = p.operation_type || p.operation || 'sale'
+  const status = p.status || 'disponible'
+  const missing = [
+    !images.length && 'Sin fotos',
+    !p.description && 'Sin descripcion',
+    !p.price && 'Sin precio',
+    !p.surface && 'Sin superficie',
+  ].filter(Boolean)
+
+  return {
+    ...p,
+    images,
+    features,
+    source,
+    operation,
+    status,
+    missing,
+  }
 }
 
 export default function PropertiesPage() {
@@ -601,17 +695,42 @@ export default function PropertiesPage() {
     setSaving(true)
     try {
       const f = aiPreviewData.fields
+
+      // Normalize operation_type
+      let opType = 'sale';
+      if (f.operation_type) {
+        const op = String(f.operation_type).toLowerCase().trim();
+        if (op.includes('alquiler') || op.includes('rent')) {
+          opType = 'rent';
+        } else if (op.includes('venta') || op.includes('compra') || op.includes('sale')) {
+          opType = 'sale';
+        }
+      }
+
+      // Normalize surface to be a positive number greater than 0, or default to 80
+      let surfVal = null;
+      if (f.surface !== undefined && f.surface !== null) {
+        const parsedSurf = parseFloat(f.surface);
+        if (!isNaN(parsedSurf) && parsedSurf > 0) {
+          surfVal = parsedSurf;
+        } else {
+          surfVal = 80;
+        }
+      } else {
+        surfVal = 80;
+      }
+
       await createProperty({
         title: f.title,
         description: f.description,
         price: Number(f.price),
         type: f.type,
-        operation_type: f.operation_type || 'sale',
+        operation_type: opType,
         city: f.city,
         zone: f.zone || '',
         bedrooms: Number(f.bedrooms || 0),
         bathrooms: Number(f.bathrooms || 0),
-        surface: Number(f.surface || 0),
+        surface: surfVal,
         has_elevator: f.has_elevator ? 1 : 0,
         has_terrace: f.has_terrace ? 1 : 0,
         has_garage: f.has_garage ? 1 : 0,

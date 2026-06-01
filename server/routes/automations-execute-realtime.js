@@ -200,12 +200,13 @@ router.post('/execute-realtime', async (req, res) => {
 
       try {
         run(
-          `INSERT INTO automation_logs (id, automation_id, lead_id, status, actions_executed, created_at)
-           VALUES (@id, @automation_id, @lead_id, @status, @actions_executed, datetime('now'))`,
+          `INSERT INTO automation_logs (id, automation_id, lead_id, agency_id, status, actions_executed, created_at)
+           VALUES (@id, @automation_id, @lead_id, @agency_id, @status, @actions_executed, datetime('now'))`,
           {
             id: uuidv4(),
             automation_id,
             lead_id: lead_id || null,
+            agency_id: req.user.agency_id,
             status: allResults.every(r => r.ok) ? 'success' : 'partial',
             actions_executed: JSON.stringify(allResults),
           }

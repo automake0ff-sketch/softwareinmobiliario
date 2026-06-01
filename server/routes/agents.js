@@ -8,6 +8,8 @@ import { checkAgentAccessMiddleware, checkLimit } from '../services/plan-checker
 import { processIncomingLead } from '../agents/captador.js'
 import { realtime } from '../services/realtime.js'
 import { incrementAgentStats } from '../services/automation-engine.js'
+import { AgentOrchestrator } from '../services/agent-orchestrator.js'
+import { ActionExecutor } from '../services/action-executor.js'
 
 // Dynamic SQLite schema migrations for AI Agents
 try { run('ALTER TABLE ai_agents ADD COLUMN is_active INTEGER DEFAULT 1'); } catch (e) {}
@@ -51,7 +53,7 @@ router.get('/', (req, res) => {
         const id = uuidv4()
         run(
           `INSERT INTO ai_agents (id, agency_id, type, name, is_active, status, stats, created_at)
-           VALUES (@id, @agency_id, @type, @name, 1, 'inactive', @stats, @created_at)`,
+           VALUES (@id, @agency_id, @type, @name, 1, 'active', @stats, @created_at)`,
           {
             id,
             agency_id: req.user.agency_id,
@@ -312,7 +314,7 @@ router.patch('/:id/toggle', (req, res) => {
   }
 })
 
-// POST /api/agents/:id/execute - Execute agent with OpenRouter (legacy endpoint)
+// POST /api/agents/:id/execute - Execute agent with OpenRouter
 router.post('/:id/execute', checkAgentAccessMiddleware, async (req, res) => {
   try {
     const agent = get('SELECT * FROM ai_agents WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id })
@@ -320,105 +322,51 @@ router.post('/:id/execute', checkAgentAccessMiddleware, async (req, res) => {
 
     const { context, message, lead_id } = req.body
     const userMsg = message || context || 'Ejecuta tu función principal como agente inmobiliario.'
-    const systemPrompt = await getAgentSystemPrompt(agent.type)
 
-    const rawResponse = await callOpenRouter({
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMsg },
-      ],
-      model: 'smart',
-      temperature: 0.7,
-      maxTokens: 1500,
-    })
+    const agencyId = req.user.agency_id
+    const orchestrator = new AgentOrchestrator(agencyId)
 
-    const { message: agentMessage, data: agentData } = parseAgentReply(rawResponse)
-
-    // Apply agent actions to lead if lead_id exists
-    if (lead_id && agentData) {
-      const updates = { updated_at: new Date().toISOString() }
-      
-      if (agent.type === 'captador') {
-        if (agentData.score !== undefined) updates.ia_score = agentData.score
-        if (agentData.score_label) updates.ia_score_label = agentData.score_label
-        if (agentData.datos_captados) {
-          const d = agentData.datos_captados
-          if (d.operation_type) updates.operation_type = d.operation_type
-          if (d.budget_max) updates.budget_max = d.budget_max
-          if (d.zones?.length) updates.zones = JSON.stringify(d.zones)
-          if (d.urgency) updates.urgency = d.urgency
-        }
-        if (agentData.insights) updates.ia_insights = JSON.stringify(agentData.insights)
-        if (agentData.next_action) updates.ia_next_action = agentData.next_action
-      }
-
-      if (agent.type === 'vendedor' && agentData.score_change) {
-        const lead = get('SELECT ia_score FROM leads WHERE id = @id', { id: lead_id })
-        if (lead) {
-          const newScore = Math.max(0, Math.min(100, (lead.ia_score ?? 50) + Number(agentData.score_change)))
-          updates.ia_score = newScore
-          updates.ia_score_label = newScore > 75 ? 'caliente' : newScore > 40 ? 'templado' : 'frio'
-        }
-        if (agentData.stage_change) updates.pipeline_stage = agentData.stage_change
-      }
-
-      if (Object.keys(updates).length > 1) {
-        const setClauses = Object.keys(updates).map(k => `${k} = @${k}`).join(', ')
-        run(`UPDATE leads SET ${setClauses} WHERE id = @id`, { ...updates, id: lead_id })
-      }
+    let lead = null
+    if (lead_id) {
+      lead = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: lead_id, agency_id: agencyId })
     }
 
-    // Update metrics
-    const metrics = agent.metrics ? JSON.parse(agent.metrics) : {}
-    metrics.last_execution = new Date().toISOString()
-    metrics.executions = (metrics.executions || 0) + 1
-
-    run(
-      'UPDATE ai_agents SET last_action = datetime(\'now\'), metrics = @metrics WHERE id = @id',
-      { metrics: JSON.stringify(metrics), id: req.params.id }
-    )
-
-    // Increment agent stats
-    incrementAgentStats(agent.type, req.user.agency_id || agent.agency_id)
-
-    // Log activity
-    const activityId = uuidv4()
-    const activityDescription = `[${agent.type}] Ejecutado: "${userMsg.substring(0, 80)}..."`
-    run(
-      `INSERT INTO activities (id, agency_id, lead_id, agent_id, type, description, metadata, agent_type, created_at)
-       VALUES (@id, @agency_id, @lead_id, @agent_id, @type, @description, @metadata, @agent_type, datetime('now'))`,
-      {
-        id: activityId,
-        agency_id: req.user.agency_id || agent.agency_id,
-        lead_id: lead_id || null,
+    if (!lead) {
+      // Fallback simple si no hay lead
+      const systemPrompt = await getAgentSystemPrompt(agent.type)
+      const raw = await callOpenRouter({
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMsg },
+        ],
+        model: 'smart',
+        temperature: 0.7,
+        maxTokens: 1500,
+      })
+      const { message: msgText, data: msgData } = parseAgentReply(raw)
+      return res.json({
         agent_id: agent.id,
-        type: 'ia_action',
-        description: activityDescription,
-        metadata: JSON.stringify({ model: 'openai/gpt-4o', tokens: rawResponse.length, agentData }),
-        agent_type: agent.type,
-      }
-    )
-
-    if (realtime) {
-      realtime.broadcastActivity({
-        id: activityId,
-        agency_id: req.user.agency_id || agent.agency_id,
-        lead_id: lead_id || null,
-        agent_id: agent.id,
-        type: 'ia_action',
-        description: activityDescription,
-        agent_type: agent.type,
-        created_at: new Date().toISOString(),
+        agent_name: agent.name,
+        type: agent.type,
+        response: raw,
+        message: msgText,
+        data: msgData,
+        model: 'openai/gpt-4o'
       })
     }
+
+    const agencyData = await orchestrator.loadAgency()
+    const ctx = orchestrator.buildContext(lead, agencyData, 'manual', { last_message: userMsg })
+    const result = await orchestrator.runAgent(agent.type, ctx, lead)
 
     res.json({ 
       agent_id: agent.id, 
       agent_name: agent.name, 
       type: agent.type, 
-      response: rawResponse,
-      message: agentMessage,
-      data: agentData,
+      response: result.message,
+      message: result.message,
+      data: result.data,
+      actions: result.actionsExecuted,
       model: 'openai/gpt-4o' 
     })
   } catch (error) {
@@ -438,16 +386,33 @@ router.post('/:id/chat', async (req, res) => {
       return res.status(400).json({ error: 'message es requerido' })
     }
 
+    const agencyId = req.user.agency_id
+    const orchestrator = new AgentOrchestrator(agencyId)
+
     const systemPrompt = await getAgentSystemPrompt(agent.type)
 
     // Build context string
     let contextStr = ''
-    if (lead_context.name) contextStr += `\nLead: ${lead_context.name}`
-    if (lead_context.score !== undefined) contextStr += ` | Score: ${lead_context.score}/100`
-    if (lead_context.stage) contextStr += ` | Etapa: ${lead_context.stage}`
-    if (lead_context.zone) contextStr += ` | Zona: ${lead_context.zone}`
-    if (lead_context.budget) contextStr += ` | Presupuesto: ${lead_context.budget}€`
-    if (lead_context.summary) contextStr += `\nPerfil: ${lead_context.summary}`
+    let lead = null
+    if (lead_context.lead_id) {
+      lead = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: lead_context.lead_id, agency_id: agencyId })
+      if (lead) {
+        contextStr += `\nLead: ${lead.name}`
+        contextStr += ` | Score: ${lead.ia_score || 0}/100`
+        contextStr += ` | Etapa: ${lead.pipeline_stage || lead.status || ''}`
+        contextStr += ` | Zona: ${lead.zone || ''}`
+        contextStr += ` | Presupuesto: ${lead.budget_max || lead.budget || 0}€`
+        if (lead.ia_summary) contextStr += `\nPerfil: ${lead.ia_summary}`
+      }
+    } else {
+      if (lead_context.name) contextStr += `\nLead: ${lead_context.name}`
+      if (lead_context.score !== undefined) contextStr += ` | Score: ${lead_context.score}/100`
+      if (lead_context.stage) contextStr += ` | Etapa: ${lead_context.stage}`
+      if (lead_context.zone) contextStr += ` | Zona: ${lead_context.zone}`
+      if (lead_context.budget) contextStr += ` | Presupuesto: ${lead_context.budget}€`
+      if (lead_context.summary) contextStr += `\nPerfil: ${lead_context.summary}`
+    }
+
     if (lead_context.agency_name) contextStr += `\nAgencia: ${lead_context.agency_name}`
     if (lead_context.agency_city) contextStr += ` | Ciudad: ${lead_context.agency_city}`
 
@@ -461,46 +426,7 @@ router.post('/:id/chat', async (req, res) => {
       { role: 'user', content: message },
     ]
 
-    // Function to apply agent actions to lead
-    const applyLeadUpdates = async (rawResponse, leadId) => {
-      if (!leadId) return
-      const { data: agentData } = parseAgentReply(rawResponse)
-      if (!agentData) return
-
-      const updates = { updated_at: new Date().toISOString() }
-      
-      if (agent.type === 'captador') {
-        if (agentData.score !== undefined) updates.ia_score = agentData.score
-        if (agentData.score_label) updates.ia_score_label = agentData.score_label
-        if (agentData.datos_captados) {
-          const d = agentData.datos_captados
-          if (d.operation_type) updates.operation_type = d.operation_type
-          if (d.budget_max) updates.budget_max = d.budget_max
-          if (d.zones?.length) updates.zones = JSON.stringify(d.zones)
-          if (d.urgency) updates.urgency = d.urgency
-        }
-        if (agentData.insights) updates.ia_insights = JSON.stringify(agentData.insights)
-        if (agentData.next_action) updates.ia_next_action = agentData.next_action
-      }
-
-      if (agent.type === 'vendedor' && agentData.score_change) {
-        const lead = get('SELECT ia_score FROM leads WHERE id = @id', { id: leadId })
-        if (lead) {
-          const newScore = Math.max(0, Math.min(100, (lead.ia_score ?? 50) + Number(agentData.score_change)))
-          updates.ia_score = newScore
-          updates.ia_score_label = newScore > 75 ? 'caliente' : newScore > 40 ? 'templado' : 'frio'
-        }
-        if (agentData.stage_change) updates.pipeline_stage = agentData.stage_change
-      }
-
-      if (Object.keys(updates).length > 1) {
-        const setClauses = Object.keys(updates).map(k => `${k} = @${k}`).join(', ')
-        run(`UPDATE leads SET ${setClauses} WHERE id = @id`, { ...updates, id: leadId })
-      }
-    }
-
     if (stream) {
-      // SSE streaming response
       res.setHeader('Content-Type', 'text/event-stream')
       res.setHeader('Cache-Control', 'no-cache')
       res.setHeader('Connection', 'keep-alive')
@@ -519,49 +445,14 @@ router.post('/:id/chat', async (req, res) => {
         res.write('data: [DONE]\n\n')
         res.end()
 
-        // Apply lead updates and log activity async
-        await applyLeadUpdates(fullResponse, lead_context.lead_id)
-
-        // Update metrics
-        const metrics = agent.metrics ? JSON.parse(agent.metrics) : {}
-        metrics.last_execution = new Date().toISOString()
-        metrics.executions = (metrics.executions || 0) + 1
-        run(
-          'UPDATE ai_agents SET last_action = datetime(\'now\'), metrics = @metrics WHERE id = @id',
-          { metrics: JSON.stringify(metrics), id: req.params.id }
-        )
-
-        // Increment stats
-        incrementAgentStats(agent.type, req.user.agency_id || agent.agency_id)
-
-        const activityId = uuidv4()
-        const activityDescription = `[${agent.type}] Chat: "${message.substring(0, 80)}..."`
-        run(
-          `INSERT INTO activities (id, agency_id, lead_id, agent_id, type, description, metadata, agent_type, created_at)
-           VALUES (@id, @agency_id, @lead_id, @agent_id, @type, @description, @metadata, @agent_type, datetime('now'))`,
-          {
-            id: activityId,
-            agency_id: req.user.agency_id || agent.agency_id,
-            lead_id: lead_context.lead_id || null,
-            agent_id: agent.id,
-            type: 'ia_action',
-            description: activityDescription,
-            metadata: JSON.stringify({ tokens: fullResponse.length }),
-            agent_type: agent.type,
-          }
-        )
-
-        if (realtime) {
-          realtime.broadcastActivity({
-            id: activityId,
-            agency_id: req.user.agency_id || agent.agency_id,
-            lead_id: lead_context.lead_id || null,
-            agent_id: agent.id,
-            type: 'ia_action',
-            description: activityDescription,
-            agent_type: agent.type,
-            created_at: new Date().toISOString(),
-          })
+        // Ejecutar acciones de fondo
+        if (lead) {
+          const { message: agentMsg, data: agentData } = parseAgentReply(fullResponse)
+          const agencyData = await orchestrator.loadAgency()
+          const ctx = orchestrator.buildContext(lead, agencyData, 'manual', { last_message: message })
+          const executor = new ActionExecutor(agencyId)
+          await executor.executeFromAgentData(agent.type, lead.id, ctx, agentMsg || fullResponse, agentData)
+          await orchestrator.updateLeadFromAgentData(lead.id, agent.type, agentData || {})
         }
       } catch (err) {
         res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`)
@@ -577,50 +468,14 @@ router.post('/:id/chat', async (req, res) => {
 
       const { message: agentMessage, data: agentData } = parseAgentReply(rawResponse)
 
-      // Apply lead updates
-      await applyLeadUpdates(rawResponse, lead_context.lead_id)
-
-      // Update metrics
-      const metrics = agent.metrics ? JSON.parse(agent.metrics) : {}
-      metrics.last_execution = new Date().toISOString()
-      metrics.executions = (metrics.executions || 0) + 1
-      run(
-        'UPDATE ai_agents SET last_action = datetime(\'now\'), metrics = @metrics WHERE id = @id',
-        { metrics: JSON.stringify(metrics), id: req.params.id }
-      )
-
-      // Increment stats
-      incrementAgentStats(agent.type, req.user.agency_id || agent.agency_id)
-
-      // Log activity
-      const activityId = uuidv4()
-      const activityDescription = `[${agent.type}] Chat: "${message.substring(0, 80)}..."`
-      run(
-        `INSERT INTO activities (id, agency_id, lead_id, agent_id, type, description, metadata, agent_type, created_at)
-         VALUES (@id, @agency_id, @lead_id, @agent_id, @type, @description, @metadata, @agent_type, datetime('now'))`,
-        {
-          id: activityId,
-          agency_id: req.user.agency_id || agent.agency_id,
-          lead_id: lead_context.lead_id || null,
-          agent_id: agent.id,
-          type: 'ia_action',
-          description: activityDescription,
-          metadata: JSON.stringify({ model: agent.type === 'tasador' || agent.type === 'analista' ? 'anthropic/claude-opus-4-5' : 'openai/gpt-4o', tokens: rawResponse.length, agentData }),
-          agent_type: agent.type,
-        }
-      )
-
-      if (realtime) {
-        realtime.broadcastActivity({
-          id: activityId,
-          agency_id: req.user.agency_id || agent.agency_id,
-          lead_id: lead_context.lead_id || null,
-          agent_id: agent.id,
-          type: 'ia_action',
-          description: activityDescription,
-          agent_type: agent.type,
-          created_at: new Date().toISOString(),
-        })
+      let actionsExecuted = []
+      if (lead) {
+        const { message: agentMsg, data: agentData } = parseAgentReply(rawResponse)
+        const agencyData = await orchestrator.loadAgency()
+        const ctx = orchestrator.buildContext(lead, agencyData, 'manual', { last_message: message })
+        const executor = new ActionExecutor(agencyId)
+        actionsExecuted = await executor.executeFromAgentData(agent.type, lead.id, ctx, agentMsg || rawResponse, agentData)
+        await orchestrator.updateLeadFromAgentData(lead.id, agent.type, agentData || {})
       }
 
       res.json({
@@ -630,6 +485,7 @@ router.post('/:id/chat', async (req, res) => {
         response: rawResponse,
         message: agentMessage,
         data: agentData,
+        actions: actionsExecuted,
         timestamp: new Date().toISOString(),
       })
     }

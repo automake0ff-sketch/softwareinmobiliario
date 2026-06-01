@@ -20,16 +20,121 @@ function logActivity(agencyId, leadId, userId, type, description, metadata = nul
   );
 }
 
-function parseImages(val) {
-  if (!val) return null;
-  if (typeof val === 'object') return JSON.stringify(val);
-  return val;
+const FIELD_MAP = {
+  title: 'title',
+  description: 'description',
+  price: 'price',
+  type: 'type',
+  operation_type: 'operation_type',
+  operation: 'operation_type',
+  city: 'city',
+  zone: 'zone',
+  address: 'address',
+  province: 'province',
+  postal_code: 'postal_code',
+  bedrooms: 'bedrooms',
+  bathrooms: 'bathrooms',
+  surface: 'surface',
+  floor: 'floor',
+  has_elevator: 'has_elevator',
+  has_terrace: 'has_terrace',
+  has_garage: 'has_garage',
+  condition: 'condition',
+  features: 'features',
+  images: 'images',
+  status: 'status',
+  source: 'source',
+  external_source: 'external_source',
+  external_id: 'external_id',
+  external_url: 'external_url',
+  assigned_to: 'assigned_to',
+  quality_score: 'quality_score',
+};
+
+function normalizeStatus(status) {
+  const map = {
+    available: 'disponible',
+    reserved: 'reservado',
+    sold: 'vendido',
+    rented: 'alquilado',
+  };
+  return map[status] || status || 'disponible';
 }
 
-function parseFeatures(val) {
-  if (!val) return null;
-  if (typeof val === 'object') return JSON.stringify(val);
-  return val;
+function normalizeOperation(operation) {
+  const value = String(operation || 'sale').toLowerCase();
+  if (['rent', 'rental', 'alquiler'].includes(value)) return 'rent';
+  return 'sale';
+}
+
+function normalizePortal(url) {
+  const value = String(url || '').toLowerCase();
+  if (value.includes('idealista')) return 'idealista';
+  if (value.includes('fotocasa')) return 'fotocasa';
+  if (value.includes('habitaclia')) return 'habitaclia';
+  if (value.includes('pisos.com')) return 'pisos.com';
+  return 'portal';
+}
+
+function parseImages(images) {
+  if (!images) return null;
+  if (Array.isArray(images)) return JSON.stringify(images.filter(Boolean));
+  if (typeof images === 'string') {
+    const list = images.split(/[\n,]/).map(s => s.trim()).filter(Boolean);
+    return JSON.stringify(list.length ? list : [images]);
+  }
+  return JSON.stringify(images);
+}
+
+function parseFeatures(features) {
+  if (!features) return null;
+  if (Array.isArray(features)) return JSON.stringify(features.filter(Boolean));
+  if (typeof features === 'string') {
+    return JSON.stringify(features.split(',').map(s => s.trim()).filter(Boolean));
+  }
+  return JSON.stringify(features);
+}
+
+function qualityScore(data) {
+  const checks = [
+    data.title,
+    Number(data.price) > 0,
+    data.description,
+    data.city || data.zone || data.address,
+    Number(data.surface) > 0,
+    parseImages(data.images),
+  ];
+  return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+}
+
+function normalizeProperty(body, req, defaults = {}) {
+  const data = { ...defaults };
+  for (const [input, column] of Object.entries(FIELD_MAP)) {
+    if (body[input] !== undefined) data[column] = body[input];
+  }
+
+  if (data.status) data.status = normalizeStatus(data.status);
+  if (data.operation_type) data.operation_type = normalizeOperation(data.operation_type);
+  if (data.external_url) {
+    if (!data.external_source) data.external_source = normalizePortal(data.external_url);
+    if (!data.source) data.source = data.external_source;
+  }
+
+  if (data.images !== undefined) data.images = parseImages(data.images);
+  if (data.features !== undefined) data.features = parseFeatures(data.features);
+
+  if (data.has_elevator !== undefined) data.has_elevator = data.has_elevator ? 1 : 0;
+  if (data.has_terrace !== undefined) data.has_terrace = data.has_terrace ? 1 : 0;
+  if (data.has_garage !== undefined) data.has_garage = data.has_garage ? 1 : 0;
+
+  if (data.price !== undefined) data.price = Number(data.price) || 0;
+  if (data.bedrooms !== undefined) data.bedrooms = Number(data.bedrooms) || 0;
+  if (data.bathrooms !== undefined) data.bathrooms = Number(data.bathrooms) || 0;
+  if (data.surface !== undefined) data.surface = Number(data.surface) || 0;
+
+  data.quality_score = qualityScore(data);
+
+  return data;
 }
 
 function toBool(v) {
@@ -1361,7 +1466,7 @@ router.post('/create-ai', async (req, res) => {
     const { description: snippet } = req.body;
     if (!snippet) return res.status(400).json({ error: 'Se requiere una descripción o snippet.' });
 
-    const systemPrompt = `Eres un asistente de IA experto en redacción de anuncios inmobiliarios premium. Analiza el fragmento de texto proveído por el usuario y genera un anuncio inmobiliario perfectamente estructurado. Debes devolver la información en formato JSON puro con los campos: "fields" (contiene "title", "description", "price", "type", "operation_type", "city", "zone", "bedrooms", "bathrooms", "surface", "has_elevator", "has_terrace", "has_garage", "features" [array]) y "marketing" (contiene "whatsapp", "email_subject", "email_body", "social_post", "google_ads", "title_alternative", "summary", "seo_meta", "puntos_fuertes" [array], "sugerencias" [array], "publico_objetivo"). Responde en español.`;
+    const systemPrompt = `Eres un asistente de IA experto en redacción de anuncios inmobiliarios premium. Analiza el fragmento de texto proveído por el usuario y genera un anuncio inmobiliario perfectamente estructurado. Debes devolver la información en formato JSON puro con los campos: "fields" (contiene "title", "description", "price", "type", "operation_type" [debe ser estrictamente 'sale' o 'rent'], "city", "zone", "bedrooms", "bathrooms", "surface" [debe ser un número mayor que 0, por defecto 80 si no se menciona], "has_elevator", "has_terrace", "has_garage", "features" [array]) y "marketing" (contiene "whatsapp", "email_subject", "email_body", "social_post", "google_ads", "title_alternative", "summary", "seo_meta", "puntos_fuertes" [array], "sugerencias" [array], "publico_objetivo"). Responde en español.`;
 
     const result = await callAIWithFallback({
       systemPrompt,

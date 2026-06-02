@@ -62,9 +62,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/login" element={<LoginPage />} />
 
-    <Route path="/register" element={<RegisterPage />>
-      <BotonPago usuario={usuario} />
-    </Route>
+    <Route path="/register" element={<RegisterPage />} />
           <Route path="/appointment/:token" element={<PublicAppointmentPage />} />
           <Route element={<Layout />}>
             <Route path="/dashboard" element={<DashboardPage />} />

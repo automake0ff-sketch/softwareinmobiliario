@@ -56,7 +56,7 @@ export default function RegisterPage() {
   const handleRegisterBackendOnly = async () => {
     setLoading(true)
     try {
-      const res = await fetch("/api/auth/register", {
+      const res = await fetch("/api/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

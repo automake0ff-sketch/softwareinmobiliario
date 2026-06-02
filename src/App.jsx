@@ -1,4 +1,5 @@
 import { Suspense, lazy } from 'react'
+import ProtectedRoute from './components/ProtectedRoute'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import Layout from './components/Layout/Layout'
@@ -64,7 +65,8 @@ export default function App() {
 
     <Route path="/register" element={<RegisterPage />} />
           <Route path="/appointment/:token" element={<PublicAppointmentPage />} />
-          <Route element={<Layout />}>
+          <Route element={<ProtectedRoute />}>
+            <Route element={<Layout />}>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/pipeline" element={<PipelinePage />} />
             <Route path="/leads" element={<LeadsPage />} />
@@ -80,6 +82,7 @@ export default function App() {
             <Route path="/pricing" element={<PricingPage />} />
             <Route path="/admin" element={<AdminPage />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Route>
           </Route>
           <Route path="/onboarding" element={<OnboardingPage />} />
         </Routes>

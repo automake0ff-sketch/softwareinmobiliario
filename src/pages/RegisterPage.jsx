@@ -257,7 +257,7 @@ export default function RegisterPage() {
           )}
 
               <div className="mt-6">
-                <BotonPago usuario={{user || { id: 'temp', email: 'temp@example.com' }}} />
+                <BotonPago usuario={user || { id: 'temp', email: 'temp@example.com' }}/>
               </div>
             
               <div className="grid gap-3">

@@ -5,6 +5,7 @@ import {
   Users, Shield, Infinity, ChevronDown, CreditCard, Banknote, Sparkles
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import api from '../lib/api'
 import { useStore } from '../lib/store'
 import PaymentModal from '../components/billing/PaymentModal'
 
@@ -292,9 +293,42 @@ export default function PricingPage() {
                 </div>
 
                 <button
-                  onClick={() => {
+                  onClick={async () => {
+                    const method = selectedMethods[plan.id] || 'stripe'
+                    if ((plan.id === 'starter' || plan.id === 'profesional' || plan.id === 'agencia') && method === 'stripe') {
+                      const loadingToast = toast.loading('Redirigiendo a la pasarela de pago...');
+                      try {
+                        let priceId = undefined;
+                        if (plan.id === 'starter') {
+                          priceId = annual ? 'prod_Uctbd3Oi0s2mTC' : 'prod_UctaoRafq1MJZG';
+                        } else if (plan.id === 'profesional') {
+                          priceId = annual ? 'prod_UcteWnLHX8snBU' : 'prod_UctdWhXHbUJLPp';
+                        } else if (plan.id === 'agencia') {
+                          priceId = annual ? 'prod_UctfjVe4ShrZ3i' : 'prod_UcteXdaqDAyJQq';
+                        }
+                        const data = await api.post('/billing/create-checkout', {
+                          planId: plan.id,
+                          interval: annual ? 'year' : 'month',
+                          paymentMethod: 'stripe',
+                          priceId,
+                        });
+                        toast.dismiss(loadingToast);
+                        if (data.url) {
+                          window.location.href = data.url;
+                          return;
+                        } else if (data.mock) {
+                          toast.success('¡Suscripción demo activada con éxito!');
+                          fetchSubscription();
+                          return;
+                        }
+                      } catch (err) {
+                        toast.dismiss(loadingToast);
+                        toast.error(err.message || 'Error al procesar la suscripción.');
+                        return;
+                      }
+                    }
                     setModalPlan(plan)
-                    setModalMethod(selectedMethods[plan.id] || 'stripe')
+                    setModalMethod(method)
                   }}
                   disabled={userPlan === plan.id && (planStatus === 'active' || planStatus === 'trialing')}
                   className={`w-full py-3 rounded-xl text-sm font-medium transition-all mb-6 flex items-center justify-center gap-2 ${

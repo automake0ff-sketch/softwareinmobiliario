@@ -289,6 +289,14 @@ export const useStore = create(
         if (result.created && result.created.length > 0) {
           set((s) => ({ properties: [...result.created, ...s.properties] }))
         }
+        if (result.updated && result.updated.length > 0) {
+          set((s) => ({
+            properties: s.properties.map(p => {
+              const match = result.updated.find(u => u.id === p.id)
+              return match ? { ...p, ...match } : p
+            })
+          }))
+        }
         return result
       },
 

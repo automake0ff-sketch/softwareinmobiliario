@@ -10,3 +10,5 @@ server-test.err
 server-test.log
 vite-err.log
 vite-stdout.log
+
+.vercel

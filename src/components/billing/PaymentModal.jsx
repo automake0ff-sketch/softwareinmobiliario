@@ -69,10 +69,26 @@ export default function PaymentModal({ plan, interval, open, onClose, onSuccess,
   const handleSubmit = async () => {
     setStep('processing')
     try {
+      const isStarterMensualStripe = plan?.id === 'starter' && interval === 'month' && method === 'stripe'
+      const isStarterAnualStripe = plan?.id === 'starter' && interval === 'year' && method === 'stripe'
+      const isProfesionalMensualStripe = plan?.id === 'profesional' && interval === 'month' && method === 'stripe'
+      const isProfesionalAnualStripe = plan?.id === 'profesional' && interval === 'year' && method === 'stripe'
+      const isAgenciaMensualStripe = plan?.id === 'agencia' && interval === 'month' && method === 'stripe'
+      const isAgenciaAnualStripe = plan?.id === 'agencia' && interval === 'year' && method === 'stripe'
+
+      let priceId = undefined
+      if (isStarterMensualStripe) priceId = 'prod_UctaoRafq1MJZG'
+      else if (isStarterAnualStripe) priceId = 'prod_Uctbd3Oi0s2mTC'
+      else if (isProfesionalMensualStripe) priceId = 'prod_UctdWhXHbUJLPp'
+      else if (isProfesionalAnualStripe) priceId = 'prod_UcteWnLHX8snBU'
+      else if (isAgenciaMensualStripe) priceId = 'prod_UcteXdaqDAyJQq'
+      else if (isAgenciaAnualStripe) priceId = 'prod_UctfjVe4ShrZ3i'
+
       const data = await api.post('/billing/create-checkout', {
         planId: plan?.id,
         interval,
         paymentMethod: method,
+        priceId,
       })
 
       if (data.url) {

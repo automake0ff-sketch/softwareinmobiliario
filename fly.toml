@@ -1,22 +1,28 @@
-app = "crm-inmobiliario"
-primary_region = "mad"
+# fly.toml app configuration file generated for crm-inmobiliario on 2026-06-01T14:31:46+02:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'crm-inmobiliario'
+primary_region = 'cdg'
 
 [build]
 
+[env]
+  APP_URL = 'https://crm-inmobiliario.fly.dev'
+  NODE_ENV = 'production'
+  PORT = '3002'
+  VITE_API_URL = '/api'
+
 [http_service]
-  internal_port = 3002
+  internal_port = 80
   force_https = true
-  auto_stop_machines = "stop"
+  auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
 
 [[vm]]
-  memory = "512mb"
-  cpu_kind = "shared"
+  memory = '512mb'
+  cpu_kind = 'shared'
   cpus = 1
-
-[env]
-  PORT = "3002"
-  VITE_API_URL = "/api"
-  APP_URL = "https://crm-inmobiliario.fly.dev"
-  NODE_ENV = "production"
+  memory_mb = 512

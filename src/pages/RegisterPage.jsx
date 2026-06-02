@@ -1,4 +1,5 @@
-import { useState } from 'react'
+
+import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import toast from 'react-hot-toast'
@@ -9,6 +10,41 @@ import {
 import api from '../lib/api'
 import { useStore } from '../lib/store'
 
+const BotonPago = ({ usuario }) => {
+  const manejarPago = async () => {
+    try {
+      const respuesta = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          idUsuarioActual: usuario.id,
+          emailUsuarioActual: usuario.email
+        }),
+      });
+
+      const datos = await respuesta.json();
+
+      if (datos.url) {
+        window.location.href = datos.url;
+      } else {
+        alert('Hubo un problema al generar el enlace de pago.');
+      }
+    } catch (error) {
+      console.error('Error en el proceso de redirección:', error);
+    }
+  };
+
+  return (
+    <button 
+      onClick={manejarPago}
+      className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition"
+    >
+      Activar mi Suscripción en PropIA
+    </button>
+  );
+};
 const PLANS = [
   {
     id: 'starter',
@@ -220,22 +256,10 @@ export default function RegisterPage() {
             </motion.div>
           )}
 
-          {step === 3 && (
-            <motion.div
-              key="step3"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-4"
-            >
-              <div className="text-center mb-2">
-                <div className="w-12 h-12 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mx-auto mb-2">
-                  <CreditCard size={24} />
-                </div>
-                <h2 className="text-lg font-bold text-[#F1F5F9]">Elige tu plan</h2>
-                <p className="text-sm text-[#64748B]">14 días de prueba gratis. Cancela cuando quieras.</p>
+              <div className="mt-6">
+                <BotonPago usuario={{user || { id: 'temp', email: 'temp@example.com' }}} />
               </div>
-
+            
               <div className="grid gap-3">
                 {PLANS.map(p => (
                   <div
@@ -291,6 +315,10 @@ export default function RegisterPage() {
                   <><Shield size={16} /> Crear cuenta — Prueba 14 días gratis</>
                 )}
               </button>
+
+              <div className="mt-6">
+                <BotonPago usuario={{ id: form.email, email: form.email }} />
+              </div>
 
               <p className="text-center text-xs text-[#64748B]">
                 Al registrarte aceptas nuestros términos y condiciones

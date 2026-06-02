@@ -142,7 +142,7 @@ export class BillingService {
     }
   }
 
-  async createCheckoutSession(agency, planId, interval, paymentMethod) {
+  async createCheckoutSession(agency, planId, interval, paymentMethod, priceId) {
     interval = interval || 'month';
     paymentMethod = paymentMethod || 'stripe';
     const plan = PLANS[planId];
@@ -192,20 +192,34 @@ export class BillingService {
     }
 
     try {
+      const params = new URLSearchParams({
+        customer: agency.stripeCustomerId || '',
+        success_url: `${this.config.appUrl || 'http://localhost:5173'}/pricing?success=true`,
+        cancel_url: `${this.config.appUrl || 'http://localhost:5173'}/pricing?canceled=true`,
+        mode: 'subscription',
+      });
+      params.append('metadata[agency_id]', agency.id || '');
+      params.append('metadata[plan_id]', planId || '');
+      params.append('metadata[interval]', interval || '');
+
+      if (priceId) {
+        params.append('line_items[0][price]', priceId);
+        params.append('line_items[0][quantity]', '1');
+      } else {
+        params.append('line_items[0][price_data][currency]', 'eur');
+        params.append('line_items[0][price_data][product_data][name]', `${plan.name} (${interval === 'year' ? 'Anual' : 'Mensual'})`);
+        params.append('line_items[0][price_data][unit_amount]', amountCents.toString());
+        params.append('line_items[0][price_data][recurring][interval]', 'month');
+        params.append('line_items[0][quantity]', '1');
+      }
+
       const resp = await fetch('https://api.stripe.com/v1/checkout/sessions', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.config.secretKey}`,
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: new URLSearchParams({
-          customer: agency.stripeCustomerId || '',
-          success_url: `${this.config.appUrl || 'http://localhost:5173'}/pricing?success=true`,
-          cancel_url: `${this.config.appUrl || 'http://localhost:5173'}/pricing?canceled=true`,
-          line_items: JSON.stringify([{ price_data: { currency: 'eur', product_data: { name: `${plan.name} (${interval === 'year' ? 'Anual' : 'Mensual'})` }, unit_amount: amountCents, recurring: { interval: 'month' } }, quantity: 1 }]),
-          mode: 'subscription',
-          metadata: { agency_id: agency.id, plan_id: planId, interval },
-        }),
+        body: params,
       });
       const data = await resp.json();
       return { ...data, paymentMethod };

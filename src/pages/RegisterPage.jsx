@@ -64,7 +64,13 @@ export default function RegisterPage() {
           telefono: form.phone, apiWhatsapp: form.apiWhatsapp, apiCorreo: form.apiCorreo,
         }),
       });
-      const registroDatos = await res.json();
+      const text = await res.text();
+      console.log('STATUS:', res.status);
+      console.log('RESPONSE:', text);
+      let registroDatos = {};
+      try {
+        registroDatos = JSON.parse(text);
+      } catch (e) {}
       if (!res.ok) throw new Error(registroDatos.error || "Error al registrar.");
       
       setCreatedUser({ id: registroDatos.idInmobiliaria, email: registroDatos.emailInmobiliaria });

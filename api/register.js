@@ -8,7 +8,7 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export async function POST(req: Request) {
+export async function POST(req) {
   try {
     // 1. Extraemos los campos que provienen de tu formulario por pasos (Datos personales, Agencia, APIs...)
     const {
@@ -84,7 +84,7 @@ export async function POST(req: Request) {
       { status: 201 }
     );
 
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error crítico en el endpoint de registro:', error);
     return NextResponse.json(
       { error: 'Ocurrió un error inesperado al procesar el registro.' },

@@ -5,6 +5,7 @@ import toast from 'react-hot-toast'
 import { UserPlus, Building2, CreditCard, ArrowRight, ArrowLeft, Check } from 'lucide-react'
 import api from '../lib/api'
 import { useStore } from '../lib/store'
+import { supabase } from '../supabaseClient'
 
 const BotonPago = ({ usuario, idPrecio, cargando }) => {
   const manejarPago = async () => {
@@ -56,26 +57,36 @@ export default function RegisterPage() {
   const handleRegisterBackendOnly = async () => {
     setLoading(true)
     try {
-      const res = await fetch("/api/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: form.email, password: form.password, nombreAgencia: form.agencyName,
-          telefono: form.phone, apiWhatsapp: form.apiWhatsapp, apiCorreo: form.apiCorreo,
-        }),
-      });
-      const text = await res.text();
-      console.log('STATUS:', res.status);
-      console.log('RESPONSE:', text);
-      let registroDatos = {};
-      try {
-        registroDatos = JSON.parse(text);
-      } catch (e) {}
-      if (!res.ok) throw new Error(registroDatos.error || "Error al registrar.");
-      
-      setCreatedUser({ id: registroDatos.idInmobiliaria, email: registroDatos.emailInmobiliaria });
-      toast.success('¡Agencia guardada! Elige tu plan.');
-      setStep(3);
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: form.email,
+        password: form.password,
+      })
+
+      if (authError) throw authError
+
+      if (authData?.user) {
+        const { error: tablaError } = await supabase
+          .from('inmosaas')
+          .insert([
+            {
+              user_id: authData.user.id,
+              nombre_completo: form.name,
+              email: form.email,
+              telefono: form.phone,
+              nombre_agencia: form.agencyName,
+              ciudad: form.agencyCity,
+              telefono_corporativo: form.agencyPhone,
+              api_whatsapp: form.apiWhatsapp,
+              api_correo: form.apiCorreo,
+            }
+          ])
+
+        if (tablaError) throw tablaError
+      }
+
+      setCreatedUser({ id: authData.user.id, email: form.email })
+      toast.success('¡Agencia guardada! Elige tu plan.')
+      setStep(3)
     } catch (err) {
       toast.error(err.message || 'Error al crear la cuenta')
     } finally {

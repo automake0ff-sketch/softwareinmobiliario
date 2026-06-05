@@ -85,6 +85,33 @@ export default function App() {
           .single()
 
         if (userData) {
+          // Si el usuario no tiene una agencia en Supabase (ej: registro de Google por primera vez)
+          if (!userData.agency_id) {
+            const slug = 'agencia-' + authUser.id.substring(0, 8);
+            const { error: rpcError } = await supabase.rpc('register_agency', {
+              p_agency_name: 'Mi Inmobiliaria',
+              p_agency_city: 'Madrid',
+              p_agency_slug: slug,
+              p_plan: 'starter'
+            });
+
+            if (!rpcError) {
+              const { data: updatedUserData } = await supabase
+                .from('users')
+                .select('*, agencies(*)')
+                .eq('id', authUser.id)
+                .single();
+              
+              if (updatedUserData) {
+                setUser(updatedUserData);
+                setAgency(updatedUserData.agencies || null);
+                return;
+              }
+            } else {
+              console.error('Error al auto-crear agencia en Supabase:', rpcError);
+            }
+          }
+
           setUser(userData)
           setAgency(userData.agencies || null)
         }

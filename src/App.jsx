@@ -88,27 +88,49 @@ export default function App() {
           // Si el usuario no tiene una agencia en Supabase (ej: registro de Google por primera vez)
           if (!userData.agency_id) {
             const slug = 'agencia-' + authUser.id.substring(0, 8);
-            const { error: rpcError } = await supabase.rpc('register_agency', {
-              p_agency_name: 'Mi Inmobiliaria',
-              p_agency_city: 'Madrid',
-              p_agency_slug: slug,
-              p_plan: 'starter'
-            });
+            
+            // 1. Insertar la agencia directamente
+            const { data: agencyData, error: agencyError } = await supabase
+              .from('agencies')
+              .insert([
+                {
+                  name: 'Mi Inmobiliaria',
+                  slug: slug,
+                  plan: 'starter',
+                  plan_status: 'active'
+                }
+              ])
+              .select()
+              .single();
 
-            if (!rpcError) {
-              const { data: updatedUserData } = await supabase
+            if (!agencyError && agencyData) {
+              // 2. Asociar la agencia al usuario
+              const { error: userError } = await supabase
                 .from('users')
-                .select('*, agencies(*)')
-                .eq('id', authUser.id)
-                .single();
-              
-              if (updatedUserData) {
-                setUser(updatedUserData);
-                setAgency(updatedUserData.agencies || null);
-                return;
+                .update({
+                  agency_id: agencyData.id,
+                  role: 'admin'
+                })
+                .eq('id', authUser.id);
+
+              if (!userError) {
+                // 3. Volver a cargar el perfil
+                const { data: updatedUserData } = await supabase
+                  .from('users')
+                  .select('*, agencies(*)')
+                  .eq('id', authUser.id)
+                  .single();
+                
+                if (updatedUserData) {
+                  setUser(updatedUserData);
+                  setAgency(updatedUserData.agencies || null);
+                  return;
+                }
+              } else {
+                console.error('Error al asociar agencia al usuario:', userError);
               }
             } else {
-              console.error('Error al auto-crear agencia en Supabase:', rpcError);
+              console.error('Error al crear la agencia en Supabase:', agencyError);
             }
           }
 

@@ -9,9 +9,10 @@ export default function ProtectedRoute() {
     return <Navigate to="/register" replace />;
   }
 
-  // 2. 💳 CONTROL DE MONETIZACIÓN: Si existe la agencia pero el estado no es activo, al plan
-  // Ajusta 'agency.estado' o 'agency.plan' según cómo lo llames en tu base de datos
-  if (!agency || agency.estado !== 'activo') {
+  const status = agency?.plan_status || agency?.estado;
+  const isPaidOrTrial = status === 'active' || status === 'activo' || status === 'trialing';
+
+  if (!agency || !isPaidOrTrial) {
     return <Navigate to="/register" replace />; 
     // O a tu ruta de precios específica si la tienes separada
   }

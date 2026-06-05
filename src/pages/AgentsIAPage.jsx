@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import api from '../lib/api'
+import { useStore } from '../lib/store'
 import { usePlan } from '../hooks/usePlan'
 import { PLANS } from '../lib/billing/plans'
 import { Link } from 'react-router-dom'
@@ -114,6 +115,7 @@ const CHAT_PLACEHOLDERS = {
 }
 
 export default function AgentsIAPage() {
+  const { user } = useStore()
   const [showInactive, setShowInactive] = useState(false)
   const [agents, setAgents] = useState(AGENTS_DATA.map(a => ({ ...a, active: false, metrics: { leads: 0, conversations: 0, successRate: null }, lastAction: null, lastActionAt: null })))
   const [activities, setActivities] = useState([])
@@ -161,7 +163,7 @@ export default function AgentsIAPage() {
     }).catch(() => {})
   }, [])
 
-  useEffect(() => { loadAgents() }, [loadAgents])
+  useEffect(() => { loadAgents() }, [loadAgents, user?.id])
 
   // Auto-refresh agents every 60s (Fix 6)
   useEffect(() => {
@@ -201,18 +203,12 @@ export default function AgentsIAPage() {
         if (res.length > 0) setSelectedLeadId(res[0].id)
       }
     }).catch(() => {})
-  }, [])
+  }, [user?.id])
 
   // WebSocket Live Subscription (Fix 3)
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const base = import.meta.env.VITE_API_URL || ''
-    let wsUrl = ''
-    if (base.startsWith('http')) {
-      wsUrl = base.replace(/^http/, 'ws')
-    } else {
-      wsUrl = `${protocol}//${window.location.hostname}:3002`
-    }
+    const wsUrl = `${protocol}//${window.location.host}/ws`
 
     let socket
     let reconnectTimeout

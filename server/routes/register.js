@@ -91,26 +91,16 @@ router.post('/', validateBody(registerSchema), (req, res) => {
       { type: 'captador', name: 'Captador IA' },
       { type: 'vendedor', name: 'Vendedor IA' },
       { type: 'coordinador', name: 'Coordinador IA' },
+      { type: 'copywriter', name: 'Copywriter IA' },
+      { type: 'tasador', name: 'Tasador IA' },
+      { type: 'analista', name: 'Analista IA' },
+      { type: 'agendador', name: 'Agendador IA' },
+      { type: 'nurturing', name: 'Nurturing IA' },
+      { type: 'documentador', name: 'Documentador IA' },
+      { type: 'seo', name: 'SEO IA' },
+      { type: 'financiero', name: 'Financiero IA' },
+      { type: 'notificador', name: 'Notificador IA' }
     ];
-
-    if (plan === 'profesional' || plan === 'agencia') {
-      defaultAgents.push(
-        { type: 'copywriter', name: 'Copywriter IA' },
-        { type: 'tasador', name: 'Tasador IA' },
-        { type: 'analista', name: 'Analista IA' },
-        { type: 'agendador', name: 'Agendador IA' },
-        { type: 'nurturing', name: 'Nurturing IA' }
-      );
-    }
-
-    if (plan === 'agencia') {
-      defaultAgents.push(
-        { type: 'documentador', name: 'Documentador IA' },
-        { type: 'seo', name: 'SEO IA' },
-        { type: 'financiero', name: 'Financiero IA' },
-        { type: 'notificador', name: 'Notificador IA' }
-      );
-    }
 
     for (const agent of defaultAgents) {
       run(

@@ -5,7 +5,7 @@ import toast from 'react-hot-toast'
 import { UserPlus, Building2, CreditCard, ArrowRight, ArrowLeft, Check } from 'lucide-react'
 import api from '../lib/api'
 import { useStore } from '../lib/store'
-import { supabase } from '../supabaseClient'
+import { supabase } from '../lib/supabaseClient'
 
 const BotonPago = ({ usuario, idPrecio, cargando }) => {
   const manejarPago = async () => {
@@ -49,14 +49,16 @@ export default function RegisterPage() {
   })
   const [loading, setLoading] = useState(false)
   const [createdUser, setCreatedUser] = useState(null)
+  const { setUser, setAgency } = useStore()
 
   const updateField = (field, value) => setForm(prev => ({ ...prev, [field]: value }))
   const canProceedStep1 = form.name && form.email && form.password && form.phone
   const canProceedStep2 = form.agencyName && form.agencyCity && form.agencyPhone
 
-  const handleRegisterBackendOnly = async () => {
+  const handleRegistroSubmit = async () => {
     setLoading(true)
     try {
+      // 1. Registrar en Supabase
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: form.email,
         password: form.password,
@@ -73,7 +75,7 @@ export default function RegisterPage() {
               nombre_completo: form.name,
               email: form.email,
               telefono: form.phone,
-              nombre_agencia: form.agencyName,
+              nombre_empresa: form.agencyName,
               ciudad: form.agencyCity,
               telefono_corporativo: form.agencyPhone,
               api_whatsapp: form.apiWhatsapp,
@@ -84,7 +86,47 @@ export default function RegisterPage() {
         if (tablaError) throw tablaError
       }
 
-      setCreatedUser({ id: authData.user.id, email: form.email })
+      // 2. Registrar en la base de datos local SQLite (servidor Express)
+      let planBackend = 'starter';
+      if (form.plan === 'price_profesional_id_de_stripe') planBackend = 'profesional';
+      else if (form.plan === 'price_agencia_id_de_stripe') planBackend = 'agencia';
+
+      const regRes = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: form.email,
+          password: form.password,
+          name: form.name,
+          phone: form.phone,
+          agencyName: form.agencyName,
+          agencyCity: form.agencyCity,
+          agencyPhone: form.agencyPhone,
+          agencyEmail: form.email,
+          plan: planBackend,
+        })
+      });
+
+      if (!regRes.ok) {
+        const errData = await regRes.json();
+        throw new Error(errData.error || 'Error en el registro local');
+      }
+
+      // 3. Autologin en el backend para inicializar la sesión local
+      const loginRes = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: form.email, password: form.password })
+      });
+
+      if (loginRes.ok) {
+        const loginData = await loginRes.json();
+        setUser(loginData.user);
+        setAgency(loginData.agency);
+        api.setAuth(loginData.token, loginData.user.id, loginData.user.role, loginData.user.agency_id, loginData.user.office_id);
+      }
+
+      setCreatedUser({ id: authData?.user?.id || 'temp', email: form.email })
       toast.success('¡Agencia guardada! Elige tu plan.')
       setStep(3)
     } catch (err) {
@@ -127,7 +169,7 @@ export default function RegisterPage() {
               <input value={form.agencyPhone} onChange={e => updateField('agencyPhone', e.target.value)} className="w-full p-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl" placeholder="Teléfono corporativo" />
               <div className="flex gap-3">
                 <button onClick={() => setStep(1)} className="w-1/3 py-3 bg-[#1E1E2E] rounded-xl">Atrás</button>
-                <button onClick={() => canProceedStep2 && handleRegisterBackendOnly()} disabled={!canProceedStep2 || loading} className="w-2/3 py-3 bg-indigo-600 rounded-xl disabled:opacity-40">{loading ? 'Guardando...' : 'Configurar APIs'}</button>
+                <button onClick={() => canProceedStep2 && handleRegistroSubmit()} disabled={!canProceedStep2 || loading} className="w-2/3 py-3 bg-indigo-600 rounded-xl disabled:opacity-40">{loading ? 'Guardando...' : 'Configurar APIs'}</button>
               </div>
             </motion.div>
           )}

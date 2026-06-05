@@ -50,13 +50,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const base = import.meta.env.VITE_API_URL || '';
-    let wsUrl = '';
-    if (base.startsWith('http')) {
-      wsUrl = base.replace(/^http/, 'ws');
-    } else {
-      wsUrl = `${protocol}//${window.location.hostname}:3002`;
-    }
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
 
     let socket;
     let reconnectTimeout;

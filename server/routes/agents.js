@@ -46,10 +46,13 @@ router.get('/', (req, res) => {
     sql += ' ORDER BY created_at ASC'
     let agents = all(sql, params)
 
-    // Auto-seed default agents if none exist for this agency
-    if (!agents || agents.length === 0) {
-      const now = new Date().toISOString()
-      for (const da of DEFAULT_AGENTS) {
+    // Ensure all default agents exist for this agency (dynamic autoseed)
+    const existingTypes = new Set((agents || []).map(a => a.type))
+    let seededNew = false
+    const now = new Date().toISOString()
+    
+    for (const da of DEFAULT_AGENTS) {
+      if (!existingTypes.has(da.type)) {
         const id = uuidv4()
         run(
           `INSERT INTO ai_agents (id, agency_id, type, name, is_active, status, stats, created_at)
@@ -63,9 +66,13 @@ router.get('/', (req, res) => {
             created_at: now,
           }
         )
+        seededNew = true
       }
+    }
+    
+    if (seededNew) {
       agents = all(sql, params)
-      console.log(`[Agents] Seeded ${DEFAULT_AGENTS.length} agents for agency ${req.user.agency_id}`)
+      console.log(`[Agents] Seeded missing agents for agency ${req.user.agency_id}`)
     }
 
     const today = new Date()

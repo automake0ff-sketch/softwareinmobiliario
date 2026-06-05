@@ -542,6 +542,44 @@ async function start() {
     }
   });
 
+  app.post('/api/checkout', async (req, res) => {
+    try {
+      const { idUsuarioActual, emailUsuarioActual, idPrecio } = req.body;
+
+      if (!idUsuarioActual || !emailUsuarioActual) {
+        return res.status(400).json({ error: 'Falta el ID o el Email del usuario actual.' });
+      }
+
+      if (!process.env.STRIPE_SECRET_KEY) {
+        // Dev mock session url
+        return res.json({ url: `${process.env.APP_URL || 'http://localhost:5173'}/dashboard?success=true` });
+      }
+
+      const { default: Stripe } = await import('stripe');
+      const stripeInstance = new Stripe(process.env.STRIPE_SECRET_KEY);
+      
+      const session = await stripeInstance.checkout.sessions.create({
+        payment_method_types: ['card'],
+        mode: 'subscription',
+        client_reference_id: String(idUsuarioActual),
+        customer_email: emailUsuarioActual,
+        line_items: [
+          {
+            price: idPrecio || process.env.STRIPE_PRICE_ID,
+            quantity: 1,
+          },
+        ],
+        success_url: `${process.env.APP_URL || 'http://localhost:5173'}/dashboard?success=true`,
+        cancel_url: `${process.env.APP_URL || 'http://localhost:5173'}/pricing?canceled=true`,
+      });
+
+      res.json({ url: session.url });
+    } catch (error) {
+      console.error('Error al crear sesión de Stripe:', error);
+      res.status(500).json({ error: 'Error interno al procesar el pago' });
+    }
+  });
+
   app.post('/api/billing/cancel', auth, (req, res) => {
     stripe.cancelSubscription(req.user.agency_id).then(r => res.json(r));
   });

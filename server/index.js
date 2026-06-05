@@ -62,7 +62,7 @@ const API_TOKEN = process.env.API_TOKEN || 'demo-token-dev';
 // Configuración de CORS restringido a dominios permitidos
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
-  : ['http://localhost:5173', 'http://localhost:3002'];
+  : ['http://localhost:5173', 'http://localhost:3002', '*'];
 
 app.use(cors({
   origin: (origin, callback) => {

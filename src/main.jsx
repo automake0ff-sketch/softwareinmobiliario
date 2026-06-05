@@ -7,6 +7,20 @@ import api from './lib/api'
 import ErrorBoundary from './components/ErrorBoundary'
 import './index.css'
 
+// Interceptor global de fetch para redirigir llamadas locales /api al backend de producción en Vercel
+const originalFetch = window.fetch;
+window.fetch = function (input, init) {
+  if (typeof input === 'string' && input.startsWith('/api')) {
+    const apiBase = import.meta.env.VITE_API_URL || '/api';
+    if (apiBase !== '/api') {
+      const normalizedBase = apiBase.endsWith('/') ? apiBase.slice(0, -1) : apiBase;
+      const targetUrl = input.replace(/^\/api/, normalizedBase);
+      return originalFetch(targetUrl, init);
+    }
+  }
+  return originalFetch(input, init);
+};
+
 let storedUser = null
 try {
   const STORE_KEY = 'crm-inmobiliario-store'

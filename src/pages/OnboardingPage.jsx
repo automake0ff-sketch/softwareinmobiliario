@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   MessageCircle, Mail, Home, Users2, Rocket,
@@ -432,10 +433,10 @@ export default function OnboardingPage() {
               <div className="text-xs text-[#94A3B8]">Agentes IA</div>
             </div>
           </div>
-          <a href="/dashboard"
+          <Link to="/dashboard"
             className="inline-flex items-center gap-2 px-8 py-3.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl hover:from-indigo-600 hover:to-purple-600 transition-all text-sm font-medium shadow-lg shadow-indigo-500/20">
             <Zap size={16} /> Ir al Dashboard
-          </a>
+          </Link>
         </motion.div>
       </div>
     )

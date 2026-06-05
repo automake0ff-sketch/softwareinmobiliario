@@ -11,6 +11,8 @@ function syncAuth(user) {
       user.agency_id,
       user.office_id
     )
+  } else {
+    api.setAuth(null)
   }
 }
 
@@ -508,3 +510,14 @@ export const useStore = create(
     }
   )
 )
+
+// Sincronizar headers de la API automáticamente ante cualquier cambio del usuario en el store (incluyendo la rehidratación)
+useStore.subscribe((state) => {
+  syncAuth(state.user)
+})
+
+// Ejecutar sincronización inicial para el estado ya cargado
+if (typeof window !== 'undefined') {
+  const initialUser = useStore.getState().user
+  if (initialUser) syncAuth(initialUser)
+}

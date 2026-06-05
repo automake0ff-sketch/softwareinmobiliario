@@ -22,7 +22,7 @@ export function useSupabaseAuth() {
       setSession(session)
       if (session?.user) {
         loadUserProfile(session.user)
-      } else {
+      } else if (_event === 'SIGNED_OUT') {
         setUser(null)
         setAgency(null)
       }

@@ -70,7 +70,7 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         loadUserProfile(session.user)
-      } else {
+      } else if (_event === 'SIGNED_OUT') {
         setUser(null)
         setAgency(null)
       }

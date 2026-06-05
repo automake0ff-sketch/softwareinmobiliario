@@ -386,12 +386,18 @@ var API = {
         temperature: 0.7
       })
     }).then(function (res) {
-      if (!res.ok) {
-        return res.json().then(function (d) {
-          throw new Error(d.error || 'HTTP ' + res.status);
-        });
-      }
-      return res.json();
+      return res.text().then(function (text) {
+        var data = {};
+        if (text) {
+          try {
+            data = JSON.parse(text);
+          } catch (e) {}
+        }
+        if (!res.ok) {
+          throw new Error(data.error || 'HTTP ' + res.status);
+        }
+        return data;
+      });
     }).then(function (d) {
       return d.response || '(respuesta vacía)';
     });

@@ -48,7 +48,15 @@ class ApiClient {
       const res = await fetch(fullUrl, options)
 
       if (!res.ok) {
-        const errorBody = await res.json().catch(() => ({}))
+        let errorBody = {}
+        try {
+          const text = await res.text()
+          if (text) {
+            errorBody = JSON.parse(text)
+          }
+        } catch (e) {
+          // Silently ignore parse error
+        }
         const message = errorBody.error || errorBody.message || `Error ${res.status}`
         const err = new Error(message)
         err.status = res.status
@@ -58,7 +66,13 @@ class ApiClient {
 
       if (res.status === 204) return null
 
-      return await res.json()
+      const text = await res.text()
+      if (!text) return null
+      try {
+        return JSON.parse(text)
+      } catch (e) {
+        return text
+      }
     } catch (err) {
       if (err.status) {
         if (err.status === 401) {

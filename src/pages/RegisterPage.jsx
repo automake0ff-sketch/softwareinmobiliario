@@ -108,8 +108,12 @@ export default function RegisterPage() {
       });
 
       if (!regRes.ok) {
-        const errData = await regRes.json();
-        throw new Error(errData.error || 'Error en el registro local');
+        let errorMsg = 'Error en el registro local';
+        try {
+          const errData = await regRes.json();
+          errorMsg = errData.error || errorMsg;
+        } catch (e) {}
+        throw new Error(errorMsg);
       }
 
       // 3. Autologin en el backend para inicializar la sesión local
@@ -120,10 +124,16 @@ export default function RegisterPage() {
       });
 
       if (loginRes.ok) {
-        const loginData = await loginRes.json();
-        setUser(loginData.user);
-        setAgency(loginData.agency);
-        api.setAuth(loginData.token, loginData.user.id, loginData.user.role, loginData.user.agency_id, loginData.user.office_id);
+        let loginData = null;
+        try {
+          loginData = await loginRes.json();
+        } catch (e) {}
+        
+        if (loginData) {
+          setUser(loginData.user);
+          setAgency(loginData.agency);
+          api.setAuth(loginData.token, loginData.user.id, loginData.user.role, loginData.user.agency_id, loginData.user.office_id);
+        }
       }
 
       setCreatedUser({ id: authData?.user?.id || 'temp', email: form.email })

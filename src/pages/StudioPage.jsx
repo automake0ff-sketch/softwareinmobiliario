@@ -70,8 +70,16 @@ async function callAI(systemPrompt, userMessage, maxTokens = 800) {
       userMessage,
     }),
   })
-  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e?.error || `Error ${res.status}`) }
-  const data = await res.json()
+  const text = await res.text()
+  let data = {}
+  if (text) {
+    try {
+      data = JSON.parse(text)
+    } catch (e) {}
+  }
+  if (!res.ok) {
+    throw new Error(data.error || `Error ${res.status}`)
+  }
   return data.response || ''
 }
 
@@ -443,11 +451,16 @@ export default function StudioPage() {
           temperature: 0.7
         }),
       })
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        throw new Error(e?.error || `Error ${res.status}`);
+      const text = await res.text()
+      let data = {}
+      if (text) {
+        try {
+          data = JSON.parse(text)
+        } catch (e) {}
       }
-      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || `Error ${res.status}`)
+      }
       const reply = data.response || 'No pude procesar tu mensaje.'
       setChatMessages(prev => prev.filter(m => m.role !== 'typing').concat({ role: 'assistant', content: reply }))
       if (!leadCaptured && /(quiero|me interesa|busco|precio)/i.test(userMsg) && /\d{9,}/.test(userMsg)) {

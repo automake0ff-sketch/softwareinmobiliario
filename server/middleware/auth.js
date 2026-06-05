@@ -1,4 +1,4 @@
-import { get } from '../db/db.js';
+import { get, run } from '../db/db.js';
 import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'crm-inmobiliario-secret-dev-key-2026';
@@ -31,7 +31,30 @@ export function auth(req, res, next) {
     if (!userId) {
       return res.status(401).json({ error: 'Se requiere x-auth-user para autenticación de desarrollo legacy.' });
     }
-    const user = get('SELECT id, role, agency_id, office_id FROM users WHERE id = @id AND active = 1', { id: userId });
+    
+    let user = get('SELECT id, role, agency_id, office_id FROM users WHERE id = @id AND active = 1', { id: userId });
+    if (!user) {
+      try {
+        // Auto-crear la agencia en SQLite con el mismo ID del usuario para compatibilidad
+        run(
+          `INSERT OR IGNORE INTO agencies (id, name, slug, plan, plan_status, onboarding_completed, onboarding_step)
+           VALUES (@id, @name, @slug, 'starter', 'active', 0, 0)`,
+          { id: userId, name: 'Mi Inmobiliaria', slug: 'inmo-' + userId.substring(0, 8) }
+        );
+        
+        // Auto-crear el usuario en SQLite
+        run(
+          `INSERT OR IGNORE INTO users (id, email, name, password_hash, role, agency_id, active)
+           VALUES (@id, @email, @name, 'oauth-user-pass-hash', 'admin', @agency_id, 1)`,
+          { id: userId, email: req.headers['x-auth-email'] || 'oauth-' + userId.substring(0, 8) + '@inmotech.es', name: 'Asesor Google', agency_id: userId }
+        );
+
+        user = get('SELECT id, role, agency_id, office_id FROM users WHERE id = @id AND active = 1', { id: userId });
+      } catch (e) {
+        console.error('[AUTH AUTO-PROVISION] Error:', e.message);
+      }
+    }
+
     if (!user) {
       return res.status(401).json({ error: 'Usuario no encontrado o inactivo.' });
     }

@@ -1,8 +1,10 @@
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, useEffect } from 'react'
 import ProtectedRoute from './components/ProtectedRoute'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import Layout from './components/Layout/Layout'
+import { supabase } from './lib/supabaseClient'
+import { useStore } from './lib/store'
 
 // Lazy loaded page components to optimize bundle size
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
@@ -56,6 +58,44 @@ const PageLoader = () => (
 )
 
 export default function App() {
+  const { setUser, setAgency } = useStore()
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        loadUserProfile(session.user)
+      }
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        loadUserProfile(session.user)
+      } else {
+        setUser(null)
+        setAgency(null)
+      }
+    })
+
+    async function loadUserProfile(authUser) {
+      try {
+        const { data: userData } = await supabase
+          .from('users')
+          .select('*, agencies(*)')
+          .eq('id', authUser.id)
+          .single()
+
+        if (userData) {
+          setUser(userData)
+          setAgency(userData.agencies || null)
+        }
+      } catch (err) {
+        console.error('Error al cargar perfil de usuario en App:', err)
+      }
+    }
+
+    return () => subscription.unsubscribe()
+  }, [setUser, setAgency])
+
   return (
     <AnimatePresence mode="wait">
       <Suspense fallback={<PageLoader />}>

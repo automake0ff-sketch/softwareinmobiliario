@@ -61,9 +61,10 @@ export default function OnboardingPage() {
     }
   }
 
-  const saveConfig = async () => {
+  const handleLaunch = async () => {
     setSaving(true)
     try {
+      // 1. Guardar la configuración de WhatsApp y Email
       await api.patch('/agency/config', {
         whatsapp_number: whatsapp.phone,
         whatsapp_token: whatsapp.wa_token,
@@ -75,16 +76,52 @@ export default function OnboardingPage() {
         onboarding_completed: 1,
       })
       toast.success('Configuración guardada')
+
+      // 2. Guardar las propiedades creadas
+      for (const prop of properties) {
+        if (prop.title && prop.title.trim()) {
+          try {
+            const priceClean = Number(String(prop.price || '0').replace(/[^0-9]/g, '')) || 0
+            await api.post('/properties', {
+              title: prop.title,
+              type: prop.type || 'piso',
+              city: prop.zone || 'Pendiente',
+              zone: prop.zone || '',
+              price: priceClean,
+              status: 'disponible',
+              description: `Propiedad de tipo ${prop.type} ubicada en ${prop.zone || 'desconocida'}.`
+            })
+          } catch (propErr) {
+            console.error('Error al guardar propiedad en onboarding:', propErr)
+          }
+        }
+      }
+
+      // 3. Activar/Desactivar agentes según selección del onboarding
+      try {
+        const dbAgents = await api.get('/agents')
+        if (Array.isArray(dbAgents)) {
+          for (const agent of agents) {
+            const dbAgent = dbAgents.find(a => a.type === agent.type)
+            if (dbAgent) {
+              const dbActive = dbAgent.is_active === 1 || dbAgent.status === 'active'
+              if (dbActive !== agent.active) {
+                await api.patch(`/agents/${dbAgent.id}/toggle`, { is_active: agent.active })
+              }
+            }
+          }
+        }
+      } catch (agentErr) {
+        console.error('Error al configurar agentes en onboarding:', agentErr)
+      }
+
+      setLaunched(true)
     } catch (err) {
       console.error('Error saving config:', err)
+      toast.error('Error al guardar la configuración')
     } finally {
       setSaving(false)
     }
-  }
-
-  const handleLaunch = async () => {
-    await saveConfig()
-    setLaunched(true)
   }
 
   const nextStep = () => {

@@ -8,13 +8,14 @@ class ApiClient {
     this.authHeaders = {}
   }
 
-  setAuth(token, userId, role, agencyId, officeId) {
+  setAuth(token, userId, role, agencyId, officeId, email) {
     this.authHeaders = {}
     if (token) this.authHeaders['x-auth-token'] = token
     if (userId) this.authHeaders['x-auth-user'] = userId
     if (role) this.authHeaders['x-auth-role'] = role
     if (agencyId) this.authHeaders['x-auth-agency'] = agencyId
     if (officeId) this.authHeaders['x-auth-office'] = officeId
+    if (email) this.authHeaders['x-auth-email'] = email
   }
 
   async request(method, url, data, params) {

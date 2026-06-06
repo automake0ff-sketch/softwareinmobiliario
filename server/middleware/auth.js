@@ -1,5 +1,6 @@
 import { get, run } from '../db/db.js';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'crm-inmobiliario-secret-dev-key-2026';
 const API_TOKEN = process.env.API_TOKEN || 'demo-token-dev';
@@ -33,20 +34,70 @@ export function auth(req, res, next) {
     }
     
     let user = get('SELECT id, role, agency_id, office_id FROM users WHERE id = @id AND active = 1', { id: userId });
+    
+    if (!user) {
+      const emailHeader = req.headers['x-auth-email'];
+      if (emailHeader) {
+        user = get('SELECT id, role, agency_id, office_id FROM users WHERE email = @email AND active = 1', { email: emailHeader });
+        if (user) {
+          try {
+            const oldUserId = user.id;
+            const oldAgencyId = user.agency_id;
+            const newAgencyId = req.headers['x-auth-agency'] || oldAgencyId || userId;
+            
+            run('UPDATE users SET id = @newUserId, agency_id = @newAgencyId WHERE id = @oldUserId', {
+              newUserId: userId,
+              newAgencyId,
+              oldUserId
+            });
+
+            if (oldAgencyId && oldAgencyId !== newAgencyId) {
+              run('UPDATE agencies SET id = @newAgencyId WHERE id = @oldAgencyId', {
+                newAgencyId,
+                oldAgencyId
+              });
+            }
+
+            user = get('SELECT id, role, agency_id, office_id FROM users WHERE id = @id AND active = 1', { id: userId });
+          } catch (err) {
+            console.error('[AUTH LINK OAUTH] Error linking user by email:', err.message);
+          }
+        }
+      }
+    }
+
     if (!user) {
       try {
-        // Auto-crear la agencia en SQLite con el mismo ID del usuario para compatibilidad
+        const agencyId = req.headers['x-auth-agency'] || userId;
+        const userEmail = req.headers['x-auth-email'] || 'oauth-' + userId.substring(0, 8) + '@inmotech.es';
+        const agencySlug = 'inmo-' + agencyId.substring(0, 8);
+
         run(
           `INSERT OR IGNORE INTO agencies (id, name, slug, plan, plan_status, onboarding_completed, onboarding_step)
            VALUES (@id, @name, @slug, 'starter', 'active', 0, 0)`,
-          { id: userId, name: 'Mi Inmobiliaria', slug: 'inmo-' + userId.substring(0, 8) }
+          { id: agencyId, name: 'Mi Inmobiliaria', slug: agencySlug }
         );
         
-        // Auto-crear el usuario en SQLite
         run(
           `INSERT OR IGNORE INTO users (id, email, name, password_hash, role, agency_id, active)
            VALUES (@id, @email, @name, 'oauth-user-pass-hash', 'admin', @agency_id, 1)`,
-          { id: userId, email: req.headers['x-auth-email'] || 'oauth-' + userId.substring(0, 8) + '@inmotech.es', name: 'Asesor Google', agency_id: userId }
+          { id: userId, email: userEmail, name: 'Asesor Google', agency_id: agencyId }
+        );
+
+        run(
+          `INSERT OR IGNORE INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, created_at)
+           VALUES (@id, @agency_id, 'starter', 'active', 'monthly', datetime('now'))`,
+          { id: crypto.randomUUID(), agency_id: agencyId }
+        );
+
+        run(
+          `INSERT OR IGNORE INTO usage_counters (id, agency_id, period_start, created_at)
+           VALUES (@id, @agency_id, @period_start, datetime('now'))`,
+          {
+            id: crypto.randomUUID(),
+            agency_id: agencyId,
+            period_start: new Date().toISOString().slice(0, 7) + '-01'
+          }
         );
 
         user = get('SELECT id, role, agency_id, office_id FROM users WHERE id = @id AND active = 1', { id: userId });

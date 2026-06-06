@@ -9,7 +9,8 @@ function syncAuth(user) {
       user.id,
       user.role || 'manager',
       user.agency_id,
-      user.office_id
+      user.office_id,
+      user.email
     )
   } else {
     api.setAuth(null)

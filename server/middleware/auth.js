@@ -45,12 +45,9 @@ export function auth(req, res, next) {
             const oldAgencyId = user.agency_id;
             const newAgencyId = req.headers['x-auth-agency'] || oldAgencyId || userId;
             
-            run('UPDATE users SET id = @newUserId, agency_id = @newAgencyId WHERE id = @oldUserId', {
-              newUserId: userId,
-              newAgencyId,
-              oldUserId
-            });
+            run('PRAGMA foreign_keys = OFF;');
 
+            // 1. Actualizar la agencia si existía
             if (oldAgencyId && oldAgencyId !== newAgencyId) {
               run('UPDATE agencies SET id = @newAgencyId WHERE id = @oldAgencyId', {
                 newAgencyId,
@@ -58,9 +55,46 @@ export function auth(req, res, next) {
               });
             }
 
+            // 2. Actualizar el usuario
+            run('UPDATE users SET id = @newUserId, agency_id = @newAgencyId WHERE id = @oldUserId', {
+              newUserId: userId,
+              newAgencyId,
+              oldUserId
+            });
+
+            // 3. Actualizar todas las tablas que referencian al usuario o la agencia
+            run('UPDATE properties SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
+            run('UPDATE leads SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
+            run('UPDATE leads SET assigned_to = @newUserId WHERE assigned_to = @oldUserId', { newUserId, oldUserId });
+            run('UPDATE ai_agents SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
+            run('UPDATE subscriptions SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
+            run('UPDATE usage_counters SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
+            run('UPDATE activities SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
+            run('UPDATE activities SET user_id = @newUserId WHERE user_id = @oldUserId', { newUserId, oldUserId });
+            run('UPDATE conversations SET agent_id = @newUserId WHERE agent_id = @oldUserId', { newUserId, oldUserId });
+            run('UPDATE appointments SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
+            run('UPDATE appointments SET assigned_user_id = @newUserId WHERE assigned_user_id = @oldUserId', { newUserId, oldUserId });
+            run('UPDATE tasks SET assigned_to = @newUserId WHERE assigned_to = @oldUserId', { newUserId, oldUserId });
+            run('UPDATE notifications SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
+            run('UPDATE notifications SET user_id = @newUserId WHERE user_id = @oldUserId', { newUserId, oldUserId });
+            run('UPDATE property_leads SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
+            run('UPDATE property_marketing_assets SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
+            run('UPDATE payment_history SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
+            run('UPDATE reports SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
+            run('UPDATE tags SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
+            run('UPDATE offices SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
+            run('UPDATE property_embeddings SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
+            run('UPDATE successful_conversation_embeddings SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
+            run('UPDATE knowledge_base_embeddings SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
+            run('UPDATE communication_logs SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
+            run('UPDATE lead_automations SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
+
+            run('PRAGMA foreign_keys = ON;');
+
             user = get('SELECT id, role, agency_id, office_id FROM users WHERE id = @id AND active = 1', { id: userId });
           } catch (err) {
             console.error('[AUTH LINK OAUTH] Error linking user by email:', err.message);
+            try { run('PRAGMA foreign_keys = ON;'); } catch (_) {}
           }
         }
       }

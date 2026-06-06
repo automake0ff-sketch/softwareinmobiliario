@@ -71,6 +71,10 @@ export default function App() {
       if (session?.user) {
         loadUserProfile(session.user)
       } else if (_event === 'SIGNED_OUT') {
+        // Evitar que el estado inicial deslogueado de Supabase limpie la sesión local
+        if (useStore.getState().user) {
+          return
+        }
         setUser(null)
         setAgency(null)
       }

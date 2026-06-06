@@ -147,6 +147,12 @@ export const useStore = create(
       setUser: (user) => {
         syncAuth(user)
         set({ user })
+        if (!user) {
+          // Asegurar de que también cerramos sesión en Supabase si se limpia el usuario
+          import('./supabaseClient').then(({ supabase }) => {
+            supabase.auth.signOut().catch(() => {})
+          }).catch(() => {})
+        }
       },
       setAgency: (agency) => set({ agency }),
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),

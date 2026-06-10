@@ -1,12 +1,12 @@
+import { clerkMiddleware } from '@clerk/nextjs/server'
 import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { getAuth } from '@clerk/nextjs/server'
 
 // Rutas que no requieren autenticación
 const publicRoutes = ['/login', '/register', '/pricing', '/api/auth/callback']
 
-export async function middleware(req: NextRequest) {
+export default clerkMiddleware(async (auth, req) => {
   const res = NextResponse.next()
   const { pathname } = req.nextUrl
 
@@ -15,7 +15,7 @@ export async function middleware(req: NextRequest) {
   if (isStaticFile) return res
 
   // 2. Verificar autenticación con Clerk (Next.js/Onboarding)
-  const { userId } = getAuth(req)
+  const { userId } = await auth()
   
   // 3. Verificar autenticación con Supabase (Dashboard/Vite)
   const supabase = createMiddlewareClient({ req, res })
@@ -37,10 +37,11 @@ export async function middleware(req: NextRequest) {
   }
 
   return res
-}
+})
 
 export const config = {
   matcher: [
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
+

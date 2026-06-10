@@ -171,6 +171,9 @@ async function start() {
   app.use('/api/destinations', (await import('./routes/destinations.js')).default);
   app.use('/api/auth/register', authLimiter, (await import('./routes/register.js')).default);
   app.use('/api/login', authLimiter, (await import('./routes/login.js')).default);
+  // Endpoint para sincronizar sesión social y obtener JWT propio
+  const authSyncRouter = require('./routes/auth-sync');
+  app.use('/api/auth', authSyncRouter);
   app.use('/api/templates', (await import('./routes/templates.js')).default);
   app.use('/api/admin', (await import('./routes/admin.js')).default);
   app.use('/api/leads', (await import('./routes/lead-preferences.js')).default);

@@ -7,6 +7,7 @@ import { UsageBanner } from '../billing/UsageBanner'
 import clsx from 'clsx'
 import { supabase } from '../../lib/supabase'
 import api from '../../lib/api'
+
 export default function Layout() {
   const { sidebarOpen, setUser, setAgency } = useStore()
 
@@ -43,7 +44,6 @@ export default function Layout() {
     });
     return () => subscription.unsubscribe();
   }, [setUser, setAgency]);
-
 
   return (
     <div className="min-h-screen bg-[#0A0A0F]">

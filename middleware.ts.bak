@@ -30,7 +30,9 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(loginUrl)
   }
 
-  if (session && isPublicRoute) {
+    if (session && !pathname.startsWith('/onboarding') && isPublicRoute) {
+      return NextResponse.redirect(new URL('/dashboard', req.url))
+    }
     return NextResponse.redirect(new URL('/dashboard', req.url))
   }
 

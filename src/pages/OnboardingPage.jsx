@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -10,6 +10,7 @@ import {
 import toast from 'react-hot-toast'
 import api from '../lib/api'
 import { useStore } from '../lib/store'
+import { supabase } from '../lib/supabaseClient'
 
 const steps = [
   { id: 1, label: 'WhatsApp', icon: MessageCircle },
@@ -38,6 +39,8 @@ const propertyTemplate = { title: '', type: 'piso', zone: '', price: '' }
 export default function OnboardingPage() {
   const [currentStep, setCurrentStep] = useState(1)
 
+  const [nombreEmpresa, setNombreEmpresa] = useState('')
+  const [ciudad, setCiudad] = useState('')
   const [whatsapp, setWhatsapp] = useState({ phone: '', wa_token: '', wa_phone_id: '', connected: false })
   const [email, setEmail] = useState({ provider: 'sendgrid', api_key: '', from_email: '', from_name: '', connected: false })
   const [properties, setProperties] = useState([{ ...propertyTemplate }])
@@ -47,13 +50,35 @@ export default function OnboardingPage() {
   const [launched, setLaunched] = useState(false)
   const [saving, setSaving] = useState(false)
 
+  useEffect(() => {
+    async function checkExistingData() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          const { data } = await supabase
+            .from('inmosaas')
+            .select('nombre_empresa, ciudad')
+            .eq('user_id', user.id)
+            .maybeSingle()
+          if (data) {
+            if (data.nombre_empresa) setNombreEmpresa(data.nombre_empresa)
+            if (data.ciudad) setCiudad(data.ciudad)
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching existing data from inmosaas:', err)
+      }
+    }
+    checkExistingData()
+  }, [])
+
   const totalSteps = steps.length
   const progress = (currentStep / totalSteps) * 100
 
   const canSkip = currentStep !== 3
   const canProceed = () => {
     switch (currentStep) {
-      case 1: return whatsapp.connected || whatsapp.phone.length >= 9
+      case 1: return nombreEmpresa.trim() !== '' && ciudad.trim() !== '' && (whatsapp.connected || whatsapp.phone.length >= 9)
       case 2: return email.connected || email.api_key.length > 0 || true
       case 3: return properties.some(p => p.title.trim())
       case 4: return agents.some(a => a.active)
@@ -64,6 +89,25 @@ export default function OnboardingPage() {
   const handleLaunch = async () => {
     setSaving(true)
     try {
+      // 0. Guardar en Supabase (inmosaas)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { error: upsertError } = await supabase
+          .from('inmosaas')
+          .upsert({
+            user_id: user.id,
+            nombre_empresa: nombreEmpresa,
+            ciudad: ciudad,
+            email: user.email,
+            nombre_completo: user.user_metadata?.full_name || user.email?.split('@')[0] || '',
+          }, { onConflict: 'user_id' })
+
+        if (upsertError) {
+          console.error('Error doing upsert in inmosaas:', upsertError)
+          throw new Error('Error al guardar datos de la empresa en la base de datos.')
+        }
+      }
+
       // 1. Guardar la configuración de WhatsApp y Email
       await api.patch('/agency/config', {
         whatsapp_number: whatsapp.phone,
@@ -217,11 +261,30 @@ export default function OnboardingPage() {
         return (
           <div className="space-y-5">
             <div className="text-center mb-4">
-              <div className="w-16 h-16 rounded-2xl bg-green-500/10 text-green-400 flex items-center justify-center mx-auto mb-3">
-                <MessageCircle size={28} />
+              <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mx-auto mb-3">
+                <Sparkles size={28} />
               </div>
-              <h2 className="text-xl font-bold text-[#F1F5F9]">Conectar WhatsApp</h2>
-              <p className="text-sm text-[#94A3B8] mt-1">Introduce tu token de WhatsApp Business API</p>
+              <h2 className="text-xl font-bold text-[#F1F5F9]">Configuración de tu Agencia</h2>
+              <p className="text-sm text-[#94A3B8] mt-1">Completa los datos de tu inmobiliaria y conecta WhatsApp</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-[#94A3B8] mb-1.5">Nombre de la Empresa *</label>
+                <input value={nombreEmpresa} onChange={e => setNombreEmpresa(e.target.value)}
+                  placeholder="Ej. InmoSaaS Propiedades" required
+                  className="w-full px-4 py-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-indigo-500/50" />
+              </div>
+              <div>
+                <label className="block text-sm text-[#94A3B8] mb-1.5">Ciudad Principal *</label>
+                <input value={ciudad} onChange={e => setCiudad(e.target.value)}
+                  placeholder="Ej. Madrid o Barcelona" required
+                  className="w-full px-4 py-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-indigo-500/50" />
+              </div>
+            </div>
+
+            <div className="border-t border-[#1E1E2E] my-4 pt-4">
+              <h3 className="text-sm font-semibold text-[#F1F5F9] mb-3">Conectar WhatsApp Business API</h3>
             </div>
 
             <div>

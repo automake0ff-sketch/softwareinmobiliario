@@ -18,8 +18,8 @@ function Paso1Custom() {
     if (!isLoaded) return;
     signUp.authenticateWithRedirect({
       strategy: 'oauth_google',
-      redirectUrl: '#', // Se queda en la misma ruta para que el useEffect detecte el login
-      redirectUrlComplete: '#',
+      redirectUrl: '/onboarding',
+      redirectUrlComplete: '/onboarding',
     });
   };
 

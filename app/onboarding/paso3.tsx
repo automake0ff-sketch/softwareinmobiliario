@@ -28,12 +28,26 @@ export default function OnboardingPaso3() {
         smtpPass,
       });
 
-      if (resultado.success) {
-        // Redirige al usuario directamente al panel principal de tu SaaS inmobiliario
-        router.push('/dashboard');
-      } else {
-        setErrorMsg(resultado.error || 'Ocurrió un error al guardar los datos.');
-      }
+          if (resultado.success) {
+            const authData = {
+              state: {
+                user: {
+                  id: resultado.user.id,
+                  email: resultado.user.email,
+                  name: resultado.user.name,
+                  role: 'admin',
+                  agency_id: resultado.user.agency_id,
+                  token: resultado.token
+                },
+                agency: resultado.agency
+              },
+              version: 0
+            };
+            localStorage.setItem('crm-inmobiliario-store', JSON.stringify(authData));
+            router.push('/dashboard');
+          } else {
+            setErrorMsg(resultado.error || 'Ocurrió un error al guardar los datos.');
+          }
     });
   };
 

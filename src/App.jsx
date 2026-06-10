@@ -25,6 +25,7 @@ const RegisterPage = lazy(() => import('./pages/RegisterPage'))
 const TemplatesPage = lazy(() => import('./pages/TemplatesPage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const PublicAppointmentPage = lazy(() => import('./pages/PublicAppointmentPage'))
+const LandingPage = lazy(() => import('./pages/LandingPage'))
 
 // Premium self-contained loading fallback
 const PageLoader = () => (
@@ -153,7 +154,7 @@ export default function App() {
     <AnimatePresence mode="wait">
       <Suspense fallback={<PageLoader />}>
         <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
 
     <Route path="/register" element={<RegisterPage />} />

@@ -1,7 +1,6 @@
-"use client";
-
-import { useState } from "react";
-import Link from "next/link";
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
+import { useStore } from '../lib/store'
 import {
   ChevronDown,
   Check,
@@ -9,104 +8,113 @@ import {
   Target,
   Briefcase,
   Brain,
+  MessageSquare,
   Sparkles,
+  Zap,
+  Building,
+  Crown,
+  Users,
+  Clock,
+  Shield,
+  Activity,
   Play
-} from "lucide-react";
+} from 'lucide-react'
 
 export default function LandingPage() {
-  const [billingPeriod, setBillingPeriod] = useState("monthly"); // "monthly" | "yearly"
-  const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const user = useStore(state => state.user)
+  const [billingPeriod, setBillingPeriod] = useState('monthly') // 'monthly' | 'yearly'
+  const [openFaq, setOpenFaq] = useState(null)
 
-  const toggleFaq = (index: number) => {
-    setOpenFaq(openFaq === index ? null : index);
-  };
+  const toggleFaq = (index) => {
+    setOpenFaq(openFaq === index ? null : index)
+  }
 
   const plans = [
     {
-      id: "starter",
-      name: "Starter",
-      price: billingPeriod === "monthly" ? "79€" : "790€",
-      period: billingPeriod === "monthly" ? "/mes" : "/año",
-      desc: "Para agentes y pequeñas agencias",
+      id: 'starter',
+      name: 'Starter',
+      price: billingPeriod === 'monthly' ? '79€' : '790€',
+      period: billingPeriod === 'monthly' ? '/mes' : '/año',
+      desc: 'Para agentes y pequeñas agencias',
       features: [
-        "1 oficina activa",
-        "Hasta 5 usuarios humanos",
-        "500 leads nuevos al mes",
-        "3 Agentes IA activos",
-        "10 automatizaciones activas",
-        "Canal de WhatsApp Business",
-        "CRM + Pipeline Kanban",
-        "Soporte estándar"
+        '1 oficina activa',
+        'Hasta 5 usuarios humanos',
+        '500 leads nuevos al mes',
+        '3 Agentes IA activos',
+        '10 automatizaciones activas',
+        'Canal de WhatsApp Business',
+        'CRM + Pipeline Kanban',
+        'Soporte estándar'
       ],
-      cta: "Empezar ahora",
+      cta: 'Empezar ahora',
       popular: false
     },
     {
-      id: "profesional",
-      name: "Profesional",
-      price: billingPeriod === "monthly" ? "199€" : "1990€",
-      period: billingPeriod === "monthly" ? "/mes" : "/año",
-      desc: "Para agencias en crecimiento",
+      id: 'profesional',
+      name: 'Profesional',
+      price: billingPeriod === 'monthly' ? '199€' : '1990€',
+      period: billingPeriod === 'monthly' ? '/mes' : '/año',
+      desc: 'Para agencias en crecimiento',
       features: [
-        "3 oficinas activas",
-        "Hasta 15 usuarios humanos",
-        "2.000 leads nuevos al mes",
-        "8 Agentes IA activos",
-        "Automatizaciones ilimitadas",
-        "WhatsApp + Meta Ads",
-        "Analytics avanzado",
-        "Soporte prioritario"
+        '3 oficinas activas',
+        'Hasta 15 usuarios humanos',
+        '2.000 leads nuevos al mes',
+        '8 Agentes IA activos',
+        'Automatizaciones ilimitadas',
+        'WhatsApp + Meta Ads',
+        'Analytics avanzado',
+        'Soporte prioritario'
       ],
-      cta: "Empezar ahora",
+      cta: 'Empezar ahora',
       popular: true
     },
     {
-      id: "agencia",
-      name: "Agencia",
-      price: billingPeriod === "monthly" ? "499€" : "4990€",
-      period: billingPeriod === "monthly" ? "/mes" : "/año",
-      desc: "Para agencias consolidadas",
+      id: 'agencia',
+      name: 'Agencia',
+      price: billingPeriod === 'monthly' ? '499€' : '4990€',
+      period: billingPeriod === 'monthly' ? '/mes' : '/año',
+      desc: 'Para agencias consolidadas',
       features: [
-        "Oficinas ilimitadas",
-        "Usuarios ilimitados",
-        "Leads ilimitados",
-        "12 Agentes IA activos",
-        "Automatizaciones ilimitadas",
-        "WhatsApp + Meta Ads + Idealista",
-        "White-label completo",
-        "Soporte dedicado 24/7"
+        'Oficinas ilimitadas',
+        'Usuarios ilimitados',
+        'Leads ilimitados',
+        '12 Agentes IA activos',
+        'Automatizaciones ilimitadas',
+        'WhatsApp + Meta Ads + Idealista',
+        'White-label completo',
+        'Soporte dedicado 24/7'
       ],
-      cta: "Empezar ahora",
+      cta: 'Empezar ahora',
       popular: false
     }
-  ];
+  ]
 
   const faqs = [
     {
-      q: "¿Necesito saber programar?",
-      a: "No, todo se configura desde el panel sin código. Hemos diseñado la plataforma para que cualquier profesional inmobiliario pueda configurar sus agentes y flujos en cuestión de minutos."
+      q: '¿Necesito saber programar?',
+      a: 'No, todo se configura desde el panel sin código. Hemos diseñado la plataforma para que cualquier profesional inmobiliario pueda configurar sus agentes y flujos en cuestión de minutos.'
     },
     {
-      q: "¿Funciona con cualquier inmobiliaria?",
-      a: "Sí, cada agencia tiene su propio espacio privado. La IA se adapta a la cartera de inmuebles, tono de voz y zona de operaciones de tu inmobiliaria."
+      q: '¿Funciona con cualquier inmobiliaria?',
+      a: 'Sí, cada agencia tiene su propio espacio privado. La IA se adapta a la cartera de inmuebles, tono de voz y zona de operaciones de tu inmobiliaria.'
     },
     {
-      q: "¿Qué pasa con mis datos?",
-      a: "Solo tú los ves. Cada agencia tiene sus datos completamente aislados de forma segura mediante políticas Row-Level Security en nuestra base de datos."
+      q: '¿Qué pasa con mis datos?',
+      a: 'Solo tú los ves. Cada agencia tiene sus datos completamente aislados de forma segura mediante políticas Row-Level Security en nuestra base de datos.'
     },
     {
-      q: "¿Puedo cancelar cuando quiera?",
-      a: "Sí, sin permanencia ni penalización. Si decides cancelar, tu suscripción continuará activa hasta el final del período de facturación actual."
+      q: '¿Puedo cancelar cuando quiera?',
+      a: 'Sí, sin permanencia ni penalización. Si decides cancelar, tu suscripción continuará activa hasta el final del período de facturación actual.'
     },
     {
-      q: "¿El WhatsApp es el mío?",
-      a: "Sí, conectas tu propio número de WhatsApp Business a través de nuestra integración oficial con la API de Meta."
+      q: '¿El WhatsApp es el mío?',
+      a: 'Sí, conectas tu propio número de WhatsApp Business a través de nuestra integración oficial con la API de Meta.'
     },
     {
-      q: "¿En cuánto tiempo está funcionando?",
-      a: "En menos de 10 minutos tras el registro. Puedes activar tu cuenta, cargar tus primeras propiedades y poner en marcha el Captador IA de inmediato."
+      q: '¿En cuánto tiempo está funcionando?',
+      a: 'En menos de 10 minutos tras el registro. Puedes activar tu cuenta, cargar tus primeras propiedades y poner en marcha el Captador IA de inmediato.'
     }
-  ];
+  ]
 
   return (
     <div className="min-h-screen bg-[#080811] text-[#F1F5F9] font-sans selection:bg-indigo-500/30 selection:text-indigo-200 overflow-x-hidden">
@@ -129,18 +137,37 @@ export default function LandingPage() {
           </div>
 
           <div className="flex items-center gap-4 sm:gap-6">
-            <Link
-              href="/login"
-              className="text-sm font-medium text-gray-300 hover:text-white transition-colors"
-            >
-              Iniciar sesión
-            </Link>
-            <Link
-              href="/register"
-              className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-4 py-2 sm:px-5 sm:py-2.5 rounded-lg text-sm font-semibold hover:from-indigo-600 hover:to-purple-700 transition-all shadow-md shadow-indigo-500/10 hover:shadow-indigo-500/20"
-            >
-              Empezar gratis
-            </Link>
+            {user ? (
+              <>
+                <Link
+                  to="/dashboard"
+                  className="text-sm font-medium text-gray-300 hover:text-white transition-colors"
+                >
+                  Dashboard
+                </Link>
+                <Link
+                  to="/dashboard"
+                  className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-5 py-2 rounded-lg text-sm font-semibold hover:from-indigo-600 hover:to-purple-700 transition-all shadow-md shadow-indigo-500/10 hover:shadow-indigo-500/20"
+                >
+                  Ir al dashboard
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link
+                  to="/login"
+                  className="text-sm font-medium text-gray-300 hover:text-white transition-colors"
+                >
+                  Iniciar sesión
+                </Link>
+                <Link
+                  to="/register"
+                  className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-4 py-2 sm:px-5 sm:py-2.5 rounded-lg text-sm font-semibold hover:from-indigo-600 hover:to-purple-700 transition-all shadow-md shadow-indigo-500/10 hover:shadow-indigo-500/20"
+                >
+                  Empezar gratis
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </nav>
@@ -149,13 +176,13 @@ export default function LandingPage() {
       <section className="relative z-10 pt-16 pb-24 sm:pt-24 sm:pb-32 px-4 sm:px-6 lg:px-8">
         <div className="max-w-5xl mx-auto text-center">
           {/* Badge */}
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 mb-6 sm:mb-8">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 mb-6 sm:mb-8 animate-pulse-soft">
             <Sparkles size={12} className="text-indigo-400" />
             <span>El Futuro del Sector Inmobiliario con Inteligencia Artificial</span>
           </div>
 
           <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-white mb-6 leading-[1.15]">
-            Tu agencia inmobiliaria con{" "}
+            Tu agencia inmobiliaria con{' '}
             <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-300 bg-clip-text text-transparent">
               IA trabajando 24/7
             </span>
@@ -166,12 +193,22 @@ export default function LandingPage() {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">
-            <Link
-              href="/register"
-              className="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl text-base hover:from-indigo-600 hover:to-purple-700 transition-all shadow-xl shadow-indigo-500/25 flex items-center justify-center gap-2 hover:scale-[1.02]"
-            >
-              Empezar 14 días gratis →
-            </Link>
+            {user ? (
+              <Link
+                to="/dashboard"
+                className="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl text-base hover:from-indigo-600 hover:to-purple-700 transition-all shadow-xl shadow-indigo-500/25 flex items-center justify-center gap-2 hover:scale-[1.02]"
+              >
+                Ir al dashboard
+                <ArrowRight size={18} />
+              </Link>
+            ) : (
+              <Link
+                to="/register"
+                className="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl text-base hover:from-indigo-600 hover:to-purple-700 transition-all shadow-xl shadow-indigo-500/25 flex items-center justify-center gap-2 hover:scale-[1.02]"
+              >
+                Empezar 14 días gratis →
+              </Link>
+            )}
             <a
               href="#demo"
               className="w-full sm:w-auto px-8 py-4 bg-[#13131A] text-gray-300 font-semibold rounded-xl text-base border border-[#1E1E2E] hover:border-indigo-500/50 hover:bg-[#1E1E2E] transition-all flex items-center justify-center gap-2"
@@ -201,7 +238,7 @@ export default function LandingPage() {
               <div className="grid grid-cols-12 gap-4 h-full">
                 {/* Sidebar Mockup */}
                 <div className="col-span-3 hidden sm:flex flex-col gap-3 border-r border-[#1E1E2E]/60 pr-4 h-full">
-                  <div className="h-8 rounded bg-[#131322] w-2/3 animate-pulse" />
+                  <div className="h-8 rounded bg-[#131322] animate-pulse-soft w-2/3" />
                   <div className="h-6 rounded bg-indigo-500/10 border border-indigo-500/20 w-full" />
                   <div className="h-6 rounded bg-[#131322] w-5/6" />
                   <div className="h-6 rounded bg-[#131322] w-4/5" />
@@ -428,26 +465,26 @@ export default function LandingPage() {
 
             {/* Toggle Mensual/Anual */}
             <div className="flex items-center justify-center gap-3 mt-8">
-              <span className={`text-sm font-semibold ${billingPeriod === "monthly" ? "text-white" : "text-gray-500"}`}>
+              <span className={`text-sm font-semibold ${billingPeriod === 'monthly' ? 'text-white' : 'text-gray-500'}`}>
                 Mensual
               </span>
               <button
                 type="button"
-                onClick={() => setBillingPeriod(billingPeriod === "monthly" ? "yearly" : "monthly")}
+                onClick={() => setBillingPeriod(billingPeriod === 'monthly' ? 'yearly' : 'monthly')}
                 className={`relative w-14 h-7 rounded-full transition-colors flex items-center ${
-                  billingPeriod === "yearly" ? "bg-indigo-500" : "bg-[#1A1A24]"
+                  billingPeriod === 'yearly' ? 'bg-indigo-500' : 'bg-[#1A1A24]'
                 }`}
               >
                 <div
                   className={`w-6 h-6 rounded-full bg-white transition-transform ${
-                    billingPeriod === "yearly" ? "translate-x-7.5" : "translate-x-0.5"
+                    billingPeriod === 'yearly' ? 'translate-x-7.5' : 'translate-x-0.5'
                   }`}
                   style={{
-                    transform: billingPeriod === "yearly" ? "translateX(29px)" : "translateX(2px)"
+                    transform: billingPeriod === 'yearly' ? 'translateX(29px)' : 'translateX(2px)'
                   }}
                 />
               </button>
-              <span className={`text-sm font-semibold ${billingPeriod === "yearly" ? "text-white" : "text-gray-500"}`}>
+              <span className={`text-sm font-semibold ${billingPeriod === 'yearly' ? 'text-white' : 'text-gray-500'}`}>
                 Anual
               </span>
               <span className="ml-2.5 px-2.5 py-0.5 bg-emerald-500/15 text-emerald-300 text-[10px] font-bold rounded-full border border-emerald-500/20 uppercase tracking-wider">
@@ -464,8 +501,8 @@ export default function LandingPage() {
                   key={plan.id}
                   className={`relative bg-[#13131A] border rounded-2xl p-6 sm:p-8 flex flex-col transition-all duration-300 ${
                     isPopular
-                      ? "border-indigo-500 shadow-xl shadow-indigo-500/5 md:scale-[1.03]"
-                      : "border-[#1E1E2E] hover:border-gray-800"
+                      ? 'border-indigo-500 shadow-xl shadow-indigo-500/5 md:scale-[1.03]'
+                      : 'border-[#1E1E2E] hover:border-gray-800'
                   }`}
                 >
                   {isPopular && (
@@ -496,11 +533,11 @@ export default function LandingPage() {
                   </div>
 
                   <Link
-                    href={`/register?plan=${plan.id}`}
+                    to={`/register?plan=${plan.id}`}
                     className={`w-full py-3 px-4 rounded-xl text-center text-sm font-bold transition-all ${
                       isPopular
-                        ? "bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:from-indigo-600 hover:to-purple-700 shadow-md shadow-indigo-500/10"
-                        : "bg-[#1E1E2E] text-gray-300 hover:bg-[#2A2A3E]"
+                        ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:from-indigo-600 hover:to-purple-700 shadow-md shadow-indigo-500/10'
+                        : 'bg-[#1E1E2E] text-gray-300 hover:bg-[#2A2A3E]'
                     }`}
                   >
                     {plan.cta}
@@ -540,12 +577,12 @@ export default function LandingPage() {
                     <span className="text-sm sm:text-base">{faq.q}</span>
                     <ChevronDown
                       size={18}
-                      className={`text-gray-500 transition-transform ${isOpen ? "rotate-180 text-indigo-400" : ""}`}
+                      className={`text-gray-500 transition-transform ${isOpen ? 'rotate-180 text-indigo-400' : ''}`}
                     />
                   </button>
                   <div
                     className={`transition-all duration-200 overflow-hidden ${
-                      isOpen ? "max-h-[300px] border-t border-[#1E1E2E]/30 bg-[#151522]/20" : "max-h-0"
+                      isOpen ? 'max-h-[300px] border-t border-[#1E1E2E]/30 bg-[#151522]/20' : 'max-h-0'
                     }`}
                   >
                     <p className="p-6 text-xs sm:text-sm text-gray-400 leading-relaxed">
@@ -569,12 +606,22 @@ export default function LandingPage() {
           </h2>
 
           <div className="flex flex-col items-center gap-4">
-            <Link
-              href="/register"
-              className="px-8 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl text-base hover:from-indigo-600 hover:to-purple-700 transition-all shadow-xl shadow-indigo-500/25 flex items-center gap-2"
-            >
-              Crear mi cuenta gratis →
-            </Link>
+            {user ? (
+              <Link
+                to="/dashboard"
+                className="px-8 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl text-base hover:from-indigo-600 hover:to-purple-700 transition-all shadow-xl shadow-indigo-500/25 flex items-center gap-2"
+              >
+                Acceder al panel de control
+                <ArrowRight size={18} />
+              </Link>
+            ) : (
+              <Link
+                to="/register"
+                className="px-8 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl text-base hover:from-indigo-600 hover:to-purple-700 transition-all shadow-xl shadow-indigo-500/25 flex items-center gap-2"
+              >
+                Crear mi cuenta gratis →
+              </Link>
+            )}
             <p className="text-xs text-gray-500 mt-2">
               14 días de prueba · Sin tarjeta de crédito
             </p>
@@ -595,13 +642,19 @@ export default function LandingPage() {
           </div>
 
           <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2.5 text-sm text-gray-400">
-            <Link href="/" className="hover:text-white transition-colors">Inicio</Link>
-            <Link href="/pricing" className="hover:text-white transition-colors">Precios</Link>
-            <Link href="/login" className="hover:text-white transition-colors">Iniciar sesión</Link>
-            <Link href="/register" className="hover:text-white transition-colors">Registrarse</Link>
+            <Link to="/" className="hover:text-white transition-colors">Inicio</Link>
+            <Link to="/pricing" className="hover:text-white transition-colors">Precios</Link>
+            {user ? (
+              <Link to="/dashboard" className="hover:text-white transition-colors">Dashboard</Link>
+            ) : (
+              <>
+                <Link to="/login" className="hover:text-white transition-colors">Iniciar sesión</Link>
+                <Link to="/register" className="hover:text-white transition-colors">Registrarse</Link>
+              </>
+            )}
             <span className="w-1.5 h-1.5 rounded-full bg-gray-700 hidden md:inline-block" />
-            <Link href="/privacy-policy" className="hover:text-white transition-colors">Política de privacidad</Link>
-            <Link href="/terms-of-service" className="hover:text-white transition-colors">Términos de servicio</Link>
+            <Link to="/privacy-policy" className="hover:text-white transition-colors">Política de privacidad</Link>
+            <Link to="/terms-of-service" className="hover:text-white transition-colors">Términos de servicio</Link>
           </div>
 
           <div className="text-xs text-gray-600">
@@ -610,5 +663,5 @@ export default function LandingPage() {
         </div>
       </footer>
     </div>
-  );
+  )
 }

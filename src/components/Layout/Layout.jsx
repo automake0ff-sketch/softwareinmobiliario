@@ -1,8 +1,15 @@
-import { Outlet, useEffect } from 'react-router-dom'
+import { Outlet } from 'react-router-dom'
+import { useEffect } from 'react'
 import { useStore } from '../../lib/store'
 import Sidebar from './Sidebar'
 import Topbar from './Topbar'
 import { UsageBanner } from '../billing/UsageBanner'
+import clsx from 'clsx'
+import { supabase } from '../../lib/supabase'
+import api from '../../lib/api'
+export default function Layout() {
+  const { sidebarOpen, setUser, setAgency } = useStore()
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
@@ -35,10 +42,8 @@ import { UsageBanner } from '../billing/UsageBanner'
       }
     });
     return () => subscription.unsubscribe();
-  }, []);
+  }, [setUser, setAgency]);
 
-export default function Layout() {
-  const { sidebarOpen } = useStore()
 
   return (
     <div className="min-h-screen bg-[#0A0A0F]">

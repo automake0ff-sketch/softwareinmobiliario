@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, Outlet } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 
-export function ProtectedRoute({ children }) {
-  const [status, setStatus] = useState('loading') // 'loading' | 'auth' | 'no-auth' | 'no-profile'
+// Used as layout wrapper: <Route element={<ProtectedRoute />}>
+export default function ProtectedRoute() {
+  const [status, setStatus] = useState('loading')
 
   useEffect(() => {
     let mounted = true
@@ -15,11 +16,13 @@ export function ProtectedRoute({ children }) {
           if (mounted) setStatus('no-auth')
           return
         }
+        // Check if agency profile is complete
         const { data: profile } = await supabase
           .from('inmosaas')
           .select('nombre_empresa')
           .eq('user_id', session.user.id)
           .maybeSingle()
+
         if (!profile || !profile.nombre_empresa || profile.nombre_empresa.trim() === '') {
           if (mounted) setStatus('no-profile')
         } else {
@@ -54,8 +57,10 @@ export function ProtectedRoute({ children }) {
         minHeight: '100vh', background: '#080811'
       }}>
         <div style={{
-          width: 40, height: 40, border: '3px solid #6366f1',
-          borderTopColor: 'transparent', borderRadius: '50%',
+          width: 40, height: 40,
+          border: '3px solid rgba(99,102,241,0.3)',
+          borderTopColor: '#6366f1',
+          borderRadius: '50%',
           animation: 'spin 0.8s linear infinite'
         }} />
         <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
@@ -65,9 +70,12 @@ export function ProtectedRoute({ children }) {
 
   if (status === 'no-auth') return <Navigate to="/login" replace />
   if (status === 'no-profile') return <Navigate to="/onboarding" replace />
-  return children
+
+  // Outlet renders the nested child routes
+  return <Outlet />
 }
 
+// Named export for public routes (redirect to dashboard if already logged in)
 export function PublicRoute({ children }) {
   const [status, setStatus] = useState('loading')
 

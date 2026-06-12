@@ -154,31 +154,33 @@ export default function App() {
     <AnimatePresence mode="wait">
       <Suspense fallback={<PageLoader />}>
         <Routes>
+          {/* Public routes */}
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
-
-    <Route path="/register" element={<RegisterPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/onboarding" element={<OnboardingPage />} />
           <Route path="/appointment/:token" element={<PublicAppointmentPage />} />
+
+          {/* Protected routes - require auth + completed onboarding */}
           <Route element={<ProtectedRoute />}>
             <Route element={<Layout />}>
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/pipeline" element={<PipelinePage />} />
-            <Route path="/leads" element={<LeadsPage />} />
-            <Route path="/leads/:id" element={<LeadDetailPage />} />
-            <Route path="/properties" element={<PropertiesPage />} />
-            <Route path="/conversations" element={<ConversationsPage />} />
-            <Route path="/automations" element={<AutomationsPage />} />
-            <Route path="/automations/templates" element={<TemplatesPage />} />
-            <Route path="/agents" element={<AgentsIAPage />} />
-            <Route path="/analytics" element={<AnalyticsPage />} />
-            <Route path="/team" element={<TeamPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/pricing" element={<PricingPage />} />
-            <Route path="/admin" element={<AdminPage />} />
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/pipeline" element={<PipelinePage />} />
+              <Route path="/leads" element={<LeadsPage />} />
+              <Route path="/leads/:id" element={<LeadDetailPage />} />
+              <Route path="/properties" element={<PropertiesPage />} />
+              <Route path="/conversations" element={<ConversationsPage />} />
+              <Route path="/automations" element={<AutomationsPage />} />
+              <Route path="/automations/templates" element={<TemplatesPage />} />
+              <Route path="/agents" element={<AgentsIAPage />} />
+              <Route path="/analytics" element={<AnalyticsPage />} />
+              <Route path="/team" element={<TeamPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/pricing" element={<PricingPage />} />
+              <Route path="/admin" element={<AdminPage />} />
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Route>
           </Route>
-          <Route path="/onboarding" element={<OnboardingPage />} />
         </Routes>
       </Suspense>
     </AnimatePresence>

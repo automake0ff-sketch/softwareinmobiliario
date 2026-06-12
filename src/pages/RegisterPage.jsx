@@ -35,9 +35,9 @@ const BotonPago = ({ usuario, idPrecio, cargando }) => {
 };
 
 const PLANS = [
-  { id: 'price_starter_id_de_stripe', name: 'Starter', price: 79 },
-  { id: 'price_profesional_id_de_stripe', name: 'Profesional', price: 199 },
-  { id: 'price_agencia_id_de_stripe', name: 'Agencia', price: 499 }
+  { id: import.meta.env.VITE_STRIPE_PRICE_STARTER || 'starter', name: 'Starter', price: 79 },
+  { id: import.meta.env.VITE_STRIPE_PRICE_PROFESIONAL || 'profesional', name: 'Profesional', price: 199 },
+  { id: import.meta.env.VITE_STRIPE_PRICE_AGENCIA || 'agencia', name: 'Agencia', price: 499 }
 ];
 
 export default function RegisterPage() {
@@ -45,7 +45,7 @@ export default function RegisterPage() {
   const [form, setForm] = useState({
     name: '', email: '', password: '', phone: '',
     agencyName: '', agencyCity: '', agencyPhone: '', agencyEmail: '',
-    plan: 'price_starter_id_de_stripe', apiWhatsapp: '', apiCorreo: ''
+    plan: import.meta.env.VITE_STRIPE_PRICE_STARTER || 'starter', apiWhatsapp: '', apiCorreo: ''
   })
   const [loading, setLoading] = useState(false)
   const [createdUser, setCreatedUser] = useState(null)
@@ -60,7 +60,7 @@ export default function RegisterPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.origin + '/dashboard',
+          redirectTo: window.location.origin + '/onboarding',
         },
       })
       if (error) throw error
@@ -78,7 +78,14 @@ export default function RegisterPage() {
         password: form.password,
       })
 
-      if (authError) throw authError
+      if (authError) {
+        if (authError.message?.includes('already registered') || authError.message?.includes('already been registered') || authError.message?.includes('User already registered')) {
+          toast.error('Este email ya está registrado. ¿Quieres iniciar sesión?')
+          navigate('/login')
+          return
+        }
+        throw authError
+      }
 
       if (authData?.user) {
         const { error: tablaError } = await supabase
@@ -102,8 +109,8 @@ export default function RegisterPage() {
 
       // 2. Registrar en la base de datos local SQLite (servidor Express)
       let planBackend = 'starter';
-      if (form.plan === 'price_profesional_id_de_stripe') planBackend = 'profesional';
-      else if (form.plan === 'price_agencia_id_de_stripe') planBackend = 'agencia';
+      if (form.plan?.includes('profesional') || form.plan === import.meta.env.VITE_STRIPE_PRICE_PROFESIONAL) planBackend = 'profesional';
+      else if (form.plan?.includes('agencia') || form.plan === import.meta.env.VITE_STRIPE_PRICE_AGENCIA) planBackend = 'agencia';
 
       const regRes = await fetch('/api/auth/register', {
         method: 'POST',

@@ -89,80 +89,36 @@ export default function OnboardingPage() {
   const handleLaunch = async () => {
     setSaving(true)
     try {
-      // 0. Guardar en Supabase (inmosaas)
       const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        const { error: upsertError } = await supabase
-          .from('inmosaas')
-          .upsert({
-            user_id: user.id,
-            nombre_empresa: nombreEmpresa,
-            ciudad: ciudad,
-            email: user.email,
-            nombre_completo: user.user_metadata?.full_name || user.email?.split('@')[0] || '',
-          }, { onConflict: 'user_id' })
+      if (!user) throw new Error('Sin sesión activa')
 
-        if (upsertError) {
-          console.error('Error doing upsert in inmosaas:', upsertError)
-          throw new Error('Error al guardar datos de la empresa en la base de datos.')
-        }
-      }
+      // Guardar TODO directamente en Supabase (sin Express)
+      const { error: upsertError } = await supabase
+        .from('inmosaas')
+        .upsert({
+          user_id: user.id,
+          nombre_empresa: nombreEmpresa,
+          ciudad: ciudad,
+          email: user.email,
+          nombre_completo: user.user_metadata?.full_name || user.email?.split('@')[0] || '',
+          whatsapp_number: whatsapp.phone || null,
+          whatsapp_token: whatsapp.wa_token || null,
+          whatsapp_phone_id: whatsapp.wa_phone_id || null,
+          sendgrid_api_key: email.api_key || null,
+          sendgrid_from_email: email.from_email || null,
+          sendgrid_from_name: email.from_name || null,
+          onboarding_step: 4,
+          onboarding_completed: 1,
+          actualizado_en: new Date().toISOString(),
+        }, { onConflict: 'user_id' })
 
-      // 1. Guardar la configuración de WhatsApp y Email
-      await api.patch('/agency/config', {
-        whatsapp_number: whatsapp.phone,
-        whatsapp_token: whatsapp.wa_token,
-        whatsapp_phone_id: whatsapp.wa_phone_id,
-        sendgrid_api_key: email.api_key,
-        sendgrid_from_email: email.from_email,
-        sendgrid_from_name: email.from_name || undefined,
-        onboarding_step: 4,
-        onboarding_completed: 1,
-      })
+      if (upsertError) throw new Error('Error al guardar configuración: ' + upsertError.message)
       toast.success('Configuración guardada')
-
-      // 2. Guardar las propiedades creadas
-      for (const prop of properties) {
-        if (prop.title && prop.title.trim()) {
-          try {
-            const priceClean = Number(String(prop.price || '0').replace(/[^0-9]/g, '')) || 0
-            await api.post('/properties', {
-              title: prop.title,
-              type: prop.type || 'piso',
-              city: prop.zone || 'Pendiente',
-              zone: prop.zone || '',
-              price: priceClean,
-              status: 'disponible',
-              description: `Propiedad de tipo ${prop.type} ubicada en ${prop.zone || 'desconocida'}.`
-            })
-          } catch (propErr) {
-            console.error('Error al guardar propiedad en onboarding:', propErr)
-          }
-        }
-      }
-
-      // 3. Activar/Desactivar agentes según selección del onboarding
-      try {
-        const dbAgents = await api.get('/agents')
-        if (Array.isArray(dbAgents)) {
-          for (const agent of agents) {
-            const dbAgent = dbAgents.find(a => a.type === agent.type)
-            if (dbAgent) {
-              const dbActive = dbAgent.is_active === 1 || dbAgent.status === 'active'
-              if (dbActive !== agent.active) {
-                await api.patch(`/agents/${dbAgent.id}/toggle`, { is_active: agent.active })
-              }
-            }
-          }
-        }
-      } catch (agentErr) {
-        console.error('Error al configurar agentes en onboarding:', agentErr)
-      }
 
       setLaunched(true)
     } catch (err) {
       console.error('Error saving config:', err)
-      toast.error('Error al guardar la configuración')
+      toast.error(err.message || 'Error al guardar la configuración')
     } finally {
       setSaving(false)
     }

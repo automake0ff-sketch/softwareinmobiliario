@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   MessageCircle, Mail, Home, Users2, Rocket,
@@ -37,6 +37,7 @@ const stepVariants = {
 const propertyTemplate = { title: '', type: 'piso', zone: '', price: '' }
 
 export default function OnboardingPage() {
+  const navigate = useNavigate()
   const [currentStep, setCurrentStep] = useState(1)
 
   const [nombreEmpresa, setNombreEmpresa] = useState('')
@@ -86,21 +87,19 @@ export default function OnboardingPage() {
     }
   }
 
-  const handleLaunch = async () => {
+  // FIX: Nuevo método para completar el onboarding y actualizar inmosaas
+  const handleOnboardingComplete = async () => {
     setSaving(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Sin sesión activa')
 
-      // Guardar TODO directamente en Supabase (sin Express)
-      const { error: upsertError } = await supabase
+      // ✅ IMPORTANTE: Actualizar inmosaas con los datos completados
+      const { error: updateError } = await supabase
         .from('inmosaas')
-        .upsert({
-          user_id: user.id,
+        .update({
           nombre_empresa: nombreEmpresa,
           ciudad: ciudad,
-          email: user.email,
-          nombre_completo: user.user_metadata?.full_name || user.email?.split('@')[0] || '',
           whatsapp_number: whatsapp.phone || null,
           whatsapp_token: whatsapp.wa_token || null,
           whatsapp_phone_id: whatsapp.wa_phone_id || null,
@@ -110,12 +109,18 @@ export default function OnboardingPage() {
           onboarding_step: 4,
           onboarding_completed: 1,
           actualizado_en: new Date().toISOString(),
-        }, { onConflict: 'user_id' })
+        })
+        .eq('user_id', user.id)
 
-      if (upsertError) throw new Error('Error al guardar configuración: ' + upsertError.message)
-      toast.success('Configuración guardada')
-
+      if (updateError) throw new Error('Error al guardar configuración: ' + updateError.message)
+      
+      toast.success('¡Configuración guardada! Accediendo al dashboard...')
       setLaunched(true)
+      
+      // Esperar un momento para que Supabase sincronice
+      setTimeout(() => {
+        navigate('/dashboard')
+      }, 1000)
     } catch (err) {
       console.error('Error saving config:', err)
       toast.error(err.message || 'Error al guardar la configuración')
@@ -126,7 +131,7 @@ export default function OnboardingPage() {
 
   const nextStep = () => {
     if (currentStep < totalSteps) setCurrentStep(prev => prev + 1)
-    else handleLaunch()
+    else handleOnboardingComplete()
   }
 
   const prevStep = () => {
@@ -387,7 +392,7 @@ export default function OnboardingPage() {
             </div>
 
             <button onClick={addProperty}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#0A0A0F] border border-dashed border-[#1E1E2E] rounded-xl text-[#94A3B8] hover:border-indigo-500/50 hover:text-indigo-400 transition-all text-sm">
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#0A0A0F] border border-dashed border-[#1E1E2E] rounded-xl text-[#94A3B8] hover:border-indigo-500/50 hover:text-[#F1F5F9] transition-colors">
               <Upload size={16} /> Añadir otra propiedad
             </button>
           </div>
@@ -490,7 +495,7 @@ export default function OnboardingPage() {
             </div>
           </div>
           <Link to="/dashboard"
-            className="inline-flex items-center gap-2 px-8 py-3.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl hover:from-indigo-600 hover:to-purple-600 transition-all text-sm font-medium shadow-lg shadow-indigo-500/20">
+            className="inline-flex items-center gap-2 px-8 py-3.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl hover:from-indigo-600 hover:to-purple-600 transition-all text-sm font-medium">
             <Zap size={16} /> Ir al Dashboard
           </Link>
         </motion.div>
@@ -551,8 +556,8 @@ export default function OnboardingPage() {
                   Siguiente <ArrowRight size={16} />
                 </button>
               ) : (
-                <button onClick={handleLaunch} disabled={saving}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl hover:from-indigo-600 hover:to-purple-700 disabled:opacity-40 transition-all text-sm font-medium">
+                <button onClick={handleOnboardingComplete} disabled={saving}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl hover:from-indigo-600 hover:to-purple-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all text-sm font-medium">
                   {saving ? (
                     <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   ) : (

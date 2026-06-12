@@ -28,7 +28,7 @@ const BotonPago = ({ usuario, idPrecio, cargando }) => {
   };
 
   return (
-    <button onClick={manejarPago} disabled={cargando} className="w-full flex items-center justify-center gap-2 py-3 bg-green-600 hover:bg-green-500 text-white rounded-xl transition-all text-sm font-medium shadow-lg disabled:opacity-50">
+    <button onClick={manejarPago} disabled={cargando} className="w-full flex items-center justify-center gap-2 py-3 bg-green-600 hover:bg-green-500 text-white rounded-xl transition-all text-sm font-medium disabled:opacity-50">
       {cargando ? 'Procesando...' : 'Proceder al Pago Seguro'} <CreditCard size={16} />
     </button>
   );
@@ -41,6 +41,7 @@ const PLANS = [
 ];
 
 export default function RegisterPage() {
+  const navigate = useNavigate()
   const [step, setStep] = useState(1)
   const [form, setForm] = useState({
     name: '', email: '', password: '', phone: '',
@@ -88,6 +89,7 @@ export default function RegisterPage() {
       }
 
       if (authData?.user) {
+        // FIX: Insertar inmosaas CON datos iniciales (nombre_empresa, ciudad)
         const { error: tablaError } = await supabase
           .from('inmosaas')
           .insert([
@@ -99,8 +101,8 @@ export default function RegisterPage() {
               nombre_empresa: form.agencyName,
               ciudad: form.agencyCity,
               telefono_corporativo: form.agencyPhone,
-              api_whatsapp: form.apiWhatsapp,
-              api_correo: form.apiCorreo,
+              api_whatsapp: form.apiWhatsapp || null,
+              api_correo: form.apiCorreo || null,
             }
           ])
 
@@ -214,23 +216,23 @@ export default function RegisterPage() {
 
           {step === 2 && (
             <motion.div key="step2" className="space-y-4">
-              <input value={form.agencyName} onChange={e => updateField('agencyName', e.target.value)} className="w-full p-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl" placeholder="Nombre de la Empresa" />
+              <input value={form.agencyName} onChange={e => updateField('agencyName', e.target.value)} className="w-full p-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl" placeholder="Nombre de la agencia" />
               <input value={form.agencyCity} onChange={e => updateField('agencyCity', e.target.value)} className="w-full p-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl" placeholder="Ciudad" />
-              <input value={form.agencyPhone} onChange={e => updateField('agencyPhone', e.target.value)} className="w-full p-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl" placeholder="Teléfono corporativo" />
+              <input value={form.agencyPhone} onChange={e => updateField('agencyPhone', e.target.value)} className="w-full p-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl" placeholder="Teléfono de la agencia" />
               <div className="flex gap-3">
                 <button onClick={() => setStep(1)} className="w-1/3 py-3 bg-[#1E1E2E] rounded-xl">Atrás</button>
-                <button onClick={() => canProceedStep2 && handleRegistroSubmit()} disabled={!canProceedStep2 || loading} className="w-2/3 py-3 bg-indigo-600 rounded-xl disabled:opacity-40">{loading ? 'Guardando...' : 'Configurar APIs'}</button>
+                <button onClick={() => canProceedStep2 && handleRegistroSubmit()} disabled={!canProceedStep2 || loading} className="w-2/3 py-3 bg-indigo-600 rounded-xl disabled:opacity-40">{loading ? 'Guardando...' : 'Siguiente'}</button>
               </div>
             </motion.div>
           )}
 
           {step === 3 && (
             <motion.div key="step3" className="space-y-4">
-              <input value={form.apiWhatsapp} onChange={e => updateField('apiWhatsapp', e.target.value)} className="w-full p-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl" placeholder="Token API WhatsApp (Opcional)" />
-              <input value={form.apiCorreo} onChange={e => updateField('apiCorreo', e.target.value)} className="w-full p-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl" placeholder="Token API Correo (Opcional)" />
+              <input value={form.apiWhatsapp} onChange={e => updateField('apiWhatsapp', e.target.value)} className="w-full p-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl" placeholder="Token WhatsApp (opcional)" />
+              <input value={form.apiCorreo} onChange={e => updateField('apiCorreo', e.target.value)} className="w-full p-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl" placeholder="Token API Email (opcional)" />
               <div className="grid grid-cols-3 gap-2 p-2 bg-[#0A0A0F] rounded-xl">
                 {PLANS.map(p => (
-                  <button key={p.id} type="button" onClick={() => updateField('plan', p.id)} className={`p-2 rounded-lg border text-xs flex flex-col items-center ${form.plan === p.id ? 'border-indigo-500 text-indigo-400' : 'border-[#1E1E2E] text-gray-500'}`}>                    
+                  <button key={p.id} type="button" onClick={() => updateField('plan', p.id)} className={`p-2 rounded-lg border text-xs flex flex-col items-center ${form.plan === p.id ? 'border-indigo-500 bg-indigo-500/10' : 'border-[#1E1E2E]'}`}>
                     <span>{p.name}</span><strong>${p.price}</strong>
                   </button>
                 ))}

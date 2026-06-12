@@ -40,11 +40,16 @@ export default function LoginPage() {
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password })
       if (authError) throw authError
       
-      const { data: profile } = await supabase
+      // FIX: Cargar perfil completo desde inmosaas
+      const { data: profile, error: profileError } = await supabase
         .from('inmosaas')
-        .select('nombre_empresa, ciudad, nombre_completo')
+        .select('*')
         .eq('user_id', authData.user.id)
         .maybeSingle()
+
+      if (profileError) {
+        console.warn('No profile found:', profileError)
+      }
 
       setUser({
         id: authData.user.id,
@@ -53,11 +58,13 @@ export default function LoginPage() {
         role: 'admin',
         agency_id: authData.user.id,
       })
+
       setAgency({
         id: authData.user.id,
         name: profile?.nombre_empresa || 'Mi Agencia',
         city: profile?.ciudad || '',
       })
+
       toast.success('¡Bienvenido de nuevo!')
       navigate('/dashboard')
     } catch (err) {

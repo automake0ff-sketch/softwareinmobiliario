@@ -16,17 +16,25 @@ export default function ProtectedRoute() {
           if (mounted) setStatus('no-auth')
           return
         }
-        // Check if agency profile is complete
-        const { data: profile } = await supabase
+        // FIX: Verificar que existe perfil en inmosaas (no solo nombre_empresa)
+        const { data: profile, error } = await supabase
           .from('inmosaas')
-          .select('nombre_empresa')
+          .select('id, nombre_empresa')
           .eq('user_id', session.user.id)
           .maybeSingle()
 
-        if (!profile || !profile.nombre_empresa || profile.nombre_empresa.trim() === '') {
-          if (mounted) setStatus('no-profile')
-        } else {
+        if (error) {
+          console.error('Error fetching profile:', error)
+          if (mounted) setStatus('no-auth')
+          return
+        }
+
+        // Si existe registro en inmosaas, permitir acceso
+        if (profile?.id) {
           if (mounted) setStatus('auth')
+        } else {
+          // Si no existe registro, enviar a onboarding
+          if (mounted) setStatus('no-profile')
         }
       } catch (err) {
         console.error('Auth check error:', err)
@@ -36,13 +44,15 @@ export default function ProtectedRoute() {
 
     check()
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
-        if (mounted) setStatus('no-auth')
-      } else {
-        check()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (!session) {
+          if (mounted) setStatus('no-auth')
+        } else {
+          check()
+        }
       }
-    })
+    )
 
     return () => {
       mounted = false

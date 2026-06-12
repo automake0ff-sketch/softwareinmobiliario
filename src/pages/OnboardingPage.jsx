@@ -38,6 +38,7 @@ const propertyTemplate = { title: '', type: 'piso', zone: '', price: '' }
 
 export default function OnboardingPage() {
   const navigate = useNavigate()
+  const { setUser, setAgency } = useStore()
   const [currentStep, setCurrentStep] = useState(1)
 
   const [nombreEmpresa, setNombreEmpresa] = useState('')
@@ -87,14 +88,14 @@ export default function OnboardingPage() {
     }
   }
 
-  // FIX: Nuevo método para completar el onboarding y actualizar inmosaas
+  // FIX: Mejorado - Ahora espera a que Supabase confirme la actualización
   const handleOnboardingComplete = async () => {
     setSaving(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Sin sesión activa')
 
-      // ✅ IMPORTANTE: Actualizar inmosaas con los datos completados
+      // ✅ Actualizar inmosaas con los datos completados
       const { error: updateError } = await supabase
         .from('inmosaas')
         .update({
@@ -114,13 +115,29 @@ export default function OnboardingPage() {
 
       if (updateError) throw new Error('Error al guardar configuración: ' + updateError.message)
       
+      // ✅ Actualizar el store local ANTES de navegar
+      setUser({
+        id: user.id,
+        email: user.email,
+        name: user.user_metadata?.full_name || user.email?.split('@')[0],
+        role: 'admin',
+        agency_id: user.id,
+      })
+
+      setAgency({
+        id: user.id,
+        name: nombreEmpresa,
+        city: ciudad,
+      })
+      
       toast.success('¡Configuración guardada! Accediendo al dashboard...')
       setLaunched(true)
       
-      // Esperar un momento para que Supabase sincronice
+      // Esperar a que la BD se sincronice, pero sin timeout para evitar race conditions
+      // La redirección ocurrirá inmediatamente porque el store ya está actualizado
       setTimeout(() => {
-        navigate('/dashboard')
-      }, 1000)
+        navigate('/dashboard', { replace: true })
+      }, 500)
     } catch (err) {
       console.error('Error saving config:', err)
       toast.error(err.message || 'Error al guardar la configuración')

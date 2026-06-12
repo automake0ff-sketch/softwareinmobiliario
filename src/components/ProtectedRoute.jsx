@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Navigate, Outlet } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
+import { useStore } from '../lib/store'
 
 // Used as layout wrapper: <Route element={<ProtectedRoute />}>
 export default function ProtectedRoute() {
   const [status, setStatus] = useState('loading')
+  const { user: storeUser } = useStore()
 
   useEffect(() => {
     let mounted = true
@@ -16,7 +18,14 @@ export default function ProtectedRoute() {
           if (mounted) setStatus('no-auth')
           return
         }
-        // FIX: Verificar que existe perfil en inmosaas (no solo nombre_empresa)
+
+        // FIX: Primero verifica el store (que ya fue actualizado en OnboardingPage)
+        if (storeUser?.id === session.user.id) {
+          if (mounted) setStatus('auth')
+          return
+        }
+
+        // Si no está en el store, verifica la BD
         const { data: profile, error } = await supabase
           .from('inmosaas')
           .select('id, nombre_empresa')
@@ -58,7 +67,7 @@ export default function ProtectedRoute() {
       mounted = false
       subscription.unsubscribe()
     }
-  }, [])
+  }, [storeUser])
 
   if (status === 'loading') {
     return (

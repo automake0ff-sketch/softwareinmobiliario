@@ -1,6 +1,7 @@
-const express = require('express');
-const router = express.Router();
-const { createClient } = require('@supabase/supabase-js');
+import { Router } from 'express';
+import { createClient } from '@supabase/supabase-js';
+
+const router = Router();
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 // Middleware to extract user ID from Clerk session header (simplified for this example)
@@ -45,4 +46,4 @@ router.post('/step2', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

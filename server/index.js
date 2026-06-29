@@ -172,7 +172,7 @@ async function start() {
   app.use('/api/auth/register', authLimiter, (await import('./routes/register.js')).default);
   app.use('/api/login', authLimiter, (await import('./routes/login.js')).default);
   // Endpoint para sincronizar sesión social y obtener JWT propio
-  const authSyncRouter = require('./routes/auth-sync');
+  const authSyncRouter = (await import('./routes/auth-sync.js')).default;
   app.use('/api/auth', authSyncRouter);
   app.use('/api/templates', (await import('./routes/templates.js')).default);
   app.use('/api/admin', (await import('./routes/admin.js')).default);
@@ -628,25 +628,22 @@ async function start() {
     res.json(result);
   });
 
-  app.get('/api/health', (req, res) => {
-    const queueStats = defaultQueue.getStats();
-    res.json({
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      queue: queueStats,
-      websocketClients: realtime.getConnectedClients(),
-      services: {
-        realtime: true,
-        queue: true,
-        calendar: !!process.env.GOOGLE_CLIENT_ID,
-        email: !!(process.env.SENDGRID_API_KEY || process.env.SMTP_HOST),
-        twilio: !!(process.env.TWILIO_ACCOUNT_SID),
-        stripe: !!process.env.STRIPE_SECRET_KEY,
-        paypal: !!(process.env.PAYPAL_CLIENT_ID),
-        whatsapp: !!(process.env.META_ACCESS_TOKEN && process.env.META_PHONE_NUMBER_ID),
-      },
-    });
+  app.get('/api/health', async (req, res) => {
+    try {
+      const { get } = await import('./db/db.js');
+      await get('SELECT 1 as ok');
+      res.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        db: 'connected'
+      });
+    } catch (err) {
+      res.status(503).json({
+        status: 'error',
+        db: 'disconnected',
+        error: err.message
+      });
+    }
   });
 
   app.get('/api/activities', (req, res) => {
@@ -1670,4 +1667,23 @@ async function initializeRAG() {
 start().catch(err => {
   console.error('Failed to start server:', err);
   process.exit(1);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err.message);
+  console.error(err.stack);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  process.exit(1);
+});
+
+process.on('SIGTERM', () => {
+  console.log('SIGTERM recibido, cerrando gracefully...');
+  server.close(() => {
+    console.log('Servidor cerrado');
+    process.exit(0);
+  });
 });

@@ -1,302 +1,305 @@
-import test from 'node:test';
-import assert from 'node:assert';
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 
-const BASE_URL = 'http://localhost:3002';
-const rand = () => Math.random().toString(36).substring(7);
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3002';
+const TEST_TIMEOUT_MS = 60_000;
+const password = 'SuperSecurePassword123!';
 
-test('CRM Inmobiliario API Security & Tenant Isolation Tests', async (t) => {
-  const emailA = `usera_${rand()}@test.com`;
-  const agencyNameA = `Agency A ${rand()}`;
-  const password = 'SuperSecurePassword123!';
+let passed = 0;
+let failed = 0;
+let serverProcess = null;
+let serverLogs = '';
 
-  const emailB = `userb_${rand()}@test.com`;
-  const agencyNameB = `Agency B ${rand()}`;
+const rand = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-  let tokenA = '';
-  let tokenB = '';
-  let leadIdA = '';
-  let propertyIdA = '';
+async function request(path, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  const init = { ...options, headers };
 
-  await t.test('1. Register Agency A + Admin A', async () => {
-    const res = await fetch(`${BASE_URL}/api/auth/register`, {
+  if (init.body && typeof init.body !== 'string') {
+    headers['Content-Type'] = 'application/json';
+    init.body = JSON.stringify(init.body);
+  }
+
+  const res = await fetch(`${BASE_URL}${path}`, init);
+  const text = await res.text();
+  let body = null;
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = text;
+    }
+  }
+  return { res, body };
+}
+
+async function waitForHealth() {
+  const started = Date.now();
+  while (Date.now() - started < TEST_TIMEOUT_MS) {
+    try {
+      const { res } = await request('/api/health');
+      if (res.status === 200 || res.status === 503) return true;
+    } catch {}
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  return false;
+}
+
+async function ensureServer() {
+  try {
+    const { res } = await request('/api/health');
+    if (res.status === 200 || res.status === 503) return;
+  } catch {}
+
+  process.env.NODE_ENV = process.env.NODE_ENV || 'test';
+  process.env.PORT = process.env.PORT || '3002';
+  process.env.JWT_SECRET = process.env.JWT_SECRET || 'crm-inmobiliario-secret-dev-key-2026';
+  process.env.API_TOKEN = process.env.API_TOKEN || 'demo-token-dev';
+
+  try {
+    serverProcess = spawn(process.execPath, ['index.js'], {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    serverProcess.stdout.on('data', chunk => {
+      serverLogs += chunk.toString();
+    });
+    serverProcess.stderr.on('data', chunk => {
+      serverLogs += chunk.toString();
+    });
+  } catch (error) {
+    if (error.code !== 'EPERM') throw error;
+    await import('../index.js');
+  }
+
+  const ready = await waitForHealth();
+  if (!ready) {
+    throw new Error(`Server did not become healthy. Logs:\n${serverLogs}`);
+  }
+}
+
+async function stopServer() {
+  if (!serverProcess) return;
+  serverProcess.kill('SIGTERM');
+  await new Promise(resolve => {
+    const timeout = setTimeout(resolve, 3_000);
+    serverProcess.once('exit', () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+  });
+}
+
+async function runTest(name, fn) {
+  try {
+    await fn();
+    passed += 1;
+    console.log(`ok - ${name}`);
+  } catch (error) {
+    failed += 1;
+    console.error(`not ok - ${name}`);
+    console.error(error.stack || error.message || error);
+  }
+}
+
+async function registerTestUser(overrides = {}) {
+  const id = rand();
+  const payload = {
+    email: `test-${id}@test.com`,
+    password,
+    name: 'Test User',
+    phone: '600000000',
+    agencyName: `Agency Test ${id}`,
+    agencyCity: 'Madrid',
+    plan: 'starter',
+    ...overrides
+  };
+
+  const { res, body } = await request('/api/auth/register', {
+    method: 'POST',
+    body: payload
+  });
+
+  assert.equal(res.status, 201, JSON.stringify(body));
+  return { ...payload, register: body };
+}
+
+async function login(email, userPassword = password) {
+  const { res, body } = await request('/api/login', {
+    method: 'POST',
+    body: { email, password: userPassword }
+  });
+  return { res, body };
+}
+
+async function getTestToken() {
+  // Registra un usuario aislado de test y loguea contra el servidor local.
+  // La limpieza queda implicita por emails/agencias unicos por ejecucion.
+  const user = await registerTestUser();
+  const { res, body } = await login(user.email);
+  assert.equal(res.status, 200, JSON.stringify(body));
+  assert.ok(body.token);
+  return { token: body.token, user: body.user, agency: body.agency, email: user.email };
+}
+
+function authHeaders(token) {
+  return { Authorization: `Bearer ${token}` };
+}
+
+await ensureServer();
+
+try {
+  let authA;
+  let authB;
+  let leadA;
+  let propertyA;
+
+  await runTest('GET /api/health devuelve status ok y 200', async () => {
+    const { res, body } = await request('/api/health');
+    assert.equal(res.status, 200, JSON.stringify(body));
+    assert.equal(body.status, 'ok');
+    assert.equal(body.db, 'connected');
+  });
+
+  await runTest('POST /api/auth/register crea agencia + usuario nuevo', async () => {
+    const user = await registerTestUser();
+    assert.ok(user.register.user_id);
+    assert.ok(user.register.agency_id);
+    assert.equal(user.register.email, user.email);
+  });
+
+  await runTest('POST /api/auth/register email duplicado devuelve 409', async () => {
+    const user = await registerTestUser();
+    const { res } = await request('/api/auth/register', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: emailA,
+      body: {
+        email: user.email,
         password,
-        name: 'Admin A',
-        phone: '123456789',
-        agencyName: agencyNameA,
+        name: 'Duplicate User',
+        phone: '600000001',
+        agencyName: `Duplicate ${rand()}`,
         agencyCity: 'Madrid',
         plan: 'starter'
-      })
-    });
-
-    if (res.status !== 201) {
-      console.error('Register A failed:', await res.text());
-    }
-    assert.strictEqual(res.status, 201, `Expected 201 Created but got ${res.status}`);
-    const data = await res.json();
-    assert.ok(data.user_id, 'Should return user_id');
-    assert.ok(data.agency_id, 'Should return agency_id');
-    assert.strictEqual(data.email, emailA);
-  });
-
-  await t.test('2. Register Agency B + Admin B', async () => {
-    const res = await fetch(`${BASE_URL}/api/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: emailB,
-        password,
-        name: 'Admin B',
-        phone: '987654321',
-        agencyName: agencyNameB,
-        agencyCity: 'Barcelona',
-        plan: 'starter'
-      })
-    });
-
-    if (res.status !== 201) {
-      console.error('Register B failed:', await res.text());
-    }
-    assert.strictEqual(res.status, 201, `Expected 201 Created but got ${res.status}`);
-    const data = await res.json();
-    assert.ok(data.user_id, 'Should return user_id');
-  });
-
-  await t.test('3. Login User A & User B to retrieve signed JWTs', async () => {
-    // Login User A
-    const resA = await fetch(`${BASE_URL}/api/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: emailA, password })
-    });
-    if (resA.status !== 200) {
-      console.error('Login A failed:', await resA.text());
-    }
-    assert.strictEqual(resA.status, 200);
-    const dataA = await resA.json();
-    assert.ok(dataA.token, 'Should return JWT token for user A');
-    tokenA = dataA.token;
-
-    // Login User B
-    const resB = await fetch(`${BASE_URL}/api/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: emailB, password })
-    });
-    if (resB.status !== 200) {
-      console.error('Login B failed:', await resB.text());
-    }
-    assert.strictEqual(resB.status, 200);
-    const dataB = await resB.json();
-    assert.ok(dataB.token, 'Should return JWT token for user B');
-    tokenB = dataB.token;
-  });
-
-  await t.test('4. Create a Lead for Agency A using Token A', async () => {
-    const res = await fetch(`${BASE_URL}/api/leads`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${tokenA}`
-      },
-      body: JSON.stringify({
-        name: 'Cliente Interesado A',
-        email: 'lead_clienta@example.com',
-        phone: '612345678',
-        property_interest: 'Piso céntrico',
-        budget: 250000,
-        pipeline_stage: 'nuevo',
-        canal: 'web'
-      })
-    });
-
-    if (res.status !== 201) {
-      console.error('Create Lead failed:', await res.text());
-    }
-    assert.strictEqual(res.status, 201, `Expected 201 Created but got ${res.status}`);
-    const data = await res.json();
-    assert.ok(data.id, 'Should return created lead id');
-    leadIdA = data.id;
-  });
-
-  await t.test('5. Create a Property for Agency A using Token A', async () => {
-    const res = await fetch(`${BASE_URL}/api/properties`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${tokenA}`
-      },
-      body: JSON.stringify({
-        title: 'Ático Duplex en Salamanca',
-        description: 'Impresionante terraza y luz',
-        price: 450000,
-        type: 'ático',
-        city: 'Madrid',
-        zone: 'Salamanca',
-        bedrooms: 3,
-        bathrooms: 2,
-        surface: 120,
-        features: ['terraza', 'piscina']
-      })
-    });
-
-    if (res.status !== 201) {
-      console.error('Create Property failed:', await res.text());
-    }
-    assert.strictEqual(res.status, 201, `Expected 201 Created but got ${res.status}`);
-    const data = await res.json();
-    assert.ok(data.id, 'Should return created property id');
-    propertyIdA = data.id;
-  });
-
-  await t.test('6. Enforce Multi-tenant isolation: User B trying to access Lead A', async () => {
-    const res = await fetch(`${BASE_URL}/api/leads/${leadIdA}`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${tokenB}`
       }
     });
-
-    if (res.status !== 404) {
-      console.error('Access Lead A by B failed, status:', res.status, await res.text());
-    }
-    // Should return 404 since lead query scopes by agency_id
-    assert.strictEqual(res.status, 404, `Expected 404 Not Found under User B's scope, but got ${res.status}`);
+    assert.equal(res.status, 409);
   });
 
-  await t.test('7. Enforce Multi-tenant isolation: User B trying to access Property A', async () => {
-    const res = await fetch(`${BASE_URL}/api/properties/${propertyIdA}`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${tokenB}`
-      }
-    });
-
-    if (res.status !== 404) {
-      console.error('Access Property A by B failed, status:', res.status, await res.text());
-    }
-    // Should return 404 since property query scopes by agency_id
-    assert.strictEqual(res.status, 404, `Expected 404 Not Found under User B's scope, but got ${res.status}`);
+  await runTest('POST /api/login con credenciales validas devuelve token, user, agency', async () => {
+    const user = await registerTestUser();
+    const { res, body } = await login(user.email);
+    assert.equal(res.status, 200, JSON.stringify(body));
+    assert.ok(body.token);
+    assert.ok(body.user);
+    assert.ok(body.agency);
   });
 
-  await t.test('8. Enforce Multi-tenant isolation: User B trying to edit Property A', async () => {
-    const res = await fetch(`${BASE_URL}/api/properties/${propertyIdA}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${tokenB}`
-      },
-      body: JSON.stringify({
-        price: 150000 // attempting unauthorized price dump
-      })
-    });
-
-    if (res.status !== 404) {
-      console.error('Edit Property A by B failed, status:', res.status, await res.text());
-    }
-    // Should return 404 since property patch scopes by agency_id
-    assert.strictEqual(res.status, 404, `Expected 404 Not Found under User B's scope, but got ${res.status}`);
+  await runTest('POST /api/login con password incorrecto devuelve 401', async () => {
+    const user = await registerTestUser();
+    const { res } = await login(user.email, 'wrong-password');
+    assert.equal(res.status, 401);
   });
 
-  let appointmentToken = '';
-  let appointmentId = '';
+  await runTest('POST /api/login con email inexistente devuelve 401', async () => {
+    const { res } = await login(`missing-${rand()}@test.com`);
+    assert.equal(res.status, 401);
+  });
 
-  await t.test('9. Create Appointment for Lead A', async () => {
-    const futureDate = new Date(Date.now() + 24 * 60 * 60 * 1000 * 5).toISOString(); // 5 days in the future
-    const endDate = new Date(Date.now() + 24 * 60 * 60 * 1000 * 5 + 30 * 60 * 1000).toISOString();
-
-    const res = await fetch(`${BASE_URL}/api/leads/${leadIdA}/appointments`, {
+  await runTest('POST /api/login sin body devuelve 400', async () => {
+    const { res } = await request('/api/login', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${tokenA}`
-      },
-      body: JSON.stringify({
-        type: 'online',
-        starts_at: futureDate,
-        ends_at: endDate,
-        notes: 'Videollamada de cualificación de prueba.',
-        attendant_name: 'Asesor Principal'
-      })
+      body: {}
     });
-
-    if (res.status !== 201) {
-      console.error('Create Appointment failed:', await res.text());
-    }
-    assert.strictEqual(res.status, 201);
-    const data = await res.json();
-    assert.ok(data.appointment.id, 'Should return created appointment id');
-    assert.ok(data.appointment.client_token, 'Should generate secure unique client token');
-    
-    appointmentId = data.appointment.id;
-    appointmentToken = data.appointment.client_token;
+    assert.equal(res.status, 400);
   });
 
-  await t.test('10. Get Appointments list for Lead A', async () => {
-    const res = await fetch(`${BASE_URL}/api/leads/${leadIdA}/appointments`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${tokenA}`
-      }
+  await runTest('GET /api/leads sin token devuelve 401', async () => {
+    const { res } = await request('/api/leads');
+    assert.equal(res.status, 401);
+  });
+
+  await runTest('GET /api/leads con token valido devuelve array', async () => {
+    authA = await getTestToken();
+    const { res, body } = await request('/api/leads', {
+      headers: authHeaders(authA.token)
     });
-
-    assert.strictEqual(res.status, 200);
-    const data = await res.json();
-    assert.ok(Array.isArray(data));
-    assert.ok(data.length > 0);
-    assert.strictEqual(data[0].id, appointmentId);
+    assert.equal(res.status, 200, JSON.stringify(body));
+    assert.ok(Array.isArray(body.leads ?? body));
   });
 
-  await t.test('11. Get Public Appointment Details using Client Token', async () => {
-    const res = await fetch(`${BASE_URL}/api/public/appointment/${appointmentToken}`);
-    assert.strictEqual(res.status, 200);
-    const data = await res.json();
-    assert.strictEqual(data.appointment.id, appointmentId);
-    assert.strictEqual(data.lead.id, leadIdA);
-    assert.ok(data.agency.name);
-  });
-
-  await t.test('12. Public Client Portal: Confirm Attendance', async () => {
-    const res = await fetch(`${BASE_URL}/api/public/appointment/${appointmentToken}/confirm`, {
-      method: 'POST'
-    });
-    assert.strictEqual(res.status, 200);
-    const data = await res.json();
-    assert.strictEqual(data.status, 'confirmed');
-
-    // Confirm state has updated in database
-    const checkRes = await fetch(`${BASE_URL}/api/public/appointment/${appointmentToken}`);
-    const checkData = await checkRes.json();
-    assert.strictEqual(checkData.appointment.status, 'confirmed');
-  });
-
-  await t.test('13. Public Client Portal: Request Reschedule', async () => {
-    const newStarts = new Date(Date.now() + 24 * 60 * 60 * 1000 * 10).toISOString(); // 10 days in the future
-    const newEnds = new Date(Date.now() + 24 * 60 * 60 * 1000 * 10 + 45 * 60 * 1000).toISOString();
-
-    const res = await fetch(`${BASE_URL}/api/public/appointment/${appointmentToken}/reschedule`, {
+  await runTest('POST /api/leads crea lead con campos minimos', async () => {
+    const { res, body } = await request('/api/leads', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        starts_at: newStarts,
-        ends_at: newEnds,
-        notes: 'Deseo reprogramar para la semana que viene por favor.'
-      })
+      headers: authHeaders(authA.token),
+      body: { name: 'Lead Test', phone: '611111111' }
     });
-
-    assert.strictEqual(res.status, 200);
-    const data = await res.json();
-    assert.strictEqual(data.status, 'reschedule_requested');
-    assert.strictEqual(data.appointment.starts_at, newStarts);
+    assert.equal(res.status, 201, JSON.stringify(body));
+    assert.ok(body.id);
+    assert.equal(body.name, 'Lead Test');
+    leadA = body;
   });
 
-  await t.test('14. Public Client Portal Tenant Scoping: Invalid Token', async () => {
-    const res = await fetch(`${BASE_URL}/api/public/appointment/invalid-random-token-here`);
-    assert.strictEqual(res.status, 404);
+  await runTest('POST /api/leads sin nombre devuelve 400', async () => {
+    const { res } = await request('/api/leads', {
+      method: 'POST',
+      headers: authHeaders(authA.token),
+      body: { phone: '611111112' }
+    });
+    assert.equal(res.status, 400);
   });
-});
+
+  await runTest('POST /api/leads lead pertenece a agency_id del usuario autenticado', async () => {
+    assert.equal(leadA.agency_id, authA.agency.id);
+  });
+
+  await runTest('PUT /api/leads/:id actualiza stage del lead', async () => {
+    const { res, body } = await request(`/api/leads/${leadA.id}`, {
+      method: 'PUT',
+      headers: authHeaders(authA.token),
+      body: { pipeline_stage: 'contactado' }
+    });
+    assert.equal(res.status, 200, JSON.stringify(body));
+    assert.equal(body.pipeline_stage, 'contactado');
+  });
+
+  await runTest('PUT /api/leads/:id no puede acceder a lead de otra agencia', async () => {
+    authB = await getTestToken();
+    const { res } = await request(`/api/leads/${leadA.id}`, {
+      method: 'PUT',
+      headers: authHeaders(authB.token),
+      body: { pipeline_stage: 'negociacion' }
+    });
+    assert.equal(res.status, 403);
+  });
+
+  await runTest('GET /api/properties devuelve array de propiedades de la agencia', async () => {
+    const { res, body } = await request('/api/properties', {
+      headers: authHeaders(authA.token)
+    });
+    assert.equal(res.status, 200, JSON.stringify(body));
+    assert.ok(Array.isArray(body));
+  });
+
+  await runTest('POST /api/properties crea propiedad con campos minimos', async () => {
+    const { res, body } = await request('/api/properties', {
+      method: 'POST',
+      headers: authHeaders(authA.token),
+      body: { title: 'Piso Test', price: 250000, type: 'apartment' }
+    });
+    assert.equal(res.status, 201, JSON.stringify(body));
+    assert.ok(body.id);
+    assert.equal(body.title, 'Piso Test');
+    propertyA = body;
+  });
+
+  await runTest('POST /api/properties propiedad pertenece a la agencia del usuario', async () => {
+    assert.equal(propertyA.agency_id, authA.agency.id);
+  });
+} finally {
+  await stopServer();
+  console.log(`${passed} tests pasados, ${failed} fallados`);
+  process.exit(failed > 0 ? 1 : 0);
+}

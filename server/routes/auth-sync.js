@@ -1,7 +1,8 @@
-const express = require('express');
-const router = express.Router();
-const jwt = require('jsonwebtoken');
-const db = require('../db/db.js'); // Assuming db utilities are exported here
+import { Router } from 'express';
+import jwt from 'jsonwebtoken';
+import { get } from '../db/db.js';
+
+const router = Router();
 
 // Endpoint para validar usuario de Clerk/Supabase y emitir JWT local
 router.post('/social-login-sync', async (req, res) => {
@@ -11,7 +12,7 @@ router.post('/social-login-sync', async (req, res) => {
   }
 
   // 1. Buscar usuario en SQLite por email o uid
-  const user = db.get('SELECT * FROM users WHERE email = @email OR supabase_uid = @uid', {
+  const user = get('SELECT * FROM users WHERE email = @email OR supabase_uid = @uid', {
     email: email || '',
     uid: supabase_uid || ''
   });
@@ -25,7 +26,7 @@ router.post('/social-login-sync', async (req, res) => {
   const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
 
   // 3. Obtener agencia del usuario
-  const agency = db.get('SELECT * FROM agencies WHERE id = @id', { id: user.agency_id });
+  const agency = get('SELECT * FROM agencies WHERE id = @id', { id: user.agency_id });
 
   // 4. Responder con datos y token
   res.json({
@@ -34,4 +35,4 @@ router.post('/social-login-sync', async (req, res) => {
   });
 });
 
-module.exports = router;
+export default router;

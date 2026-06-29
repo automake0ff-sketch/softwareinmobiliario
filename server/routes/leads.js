@@ -323,6 +323,49 @@ router.patch('/:id', validateBody(leadSchema.partial()), (req, res) => {
   }
 });
 
+// PUT /api/leads/:id - Update lead details with explicit cross-agency guard
+router.put('/:id', validateBody(leadSchema.partial()), (req, res) => {
+  try {
+    const existing = get('SELECT * FROM leads WHERE id = @id', { id: req.params.id });
+    if (!existing) return res.status(404).json({ error: 'Lead no encontrado.' });
+    if (existing.agency_id !== req.user.agency_id) return res.status(403).json({ error: 'No autorizado para modificar este lead.' });
+
+    const allowed = ['name', 'phone', 'email', 'budget', 'zone', 'property_interest', 'source', 'status', 'pipeline_stage', 'office_id', 'assigned_to', 'ia_score', 'ia_insights', 'ia_insight', 'ia_summary', 'urgency', 'operation_type', 'budget_max', 'zones', 'property_type'];
+    const updates = [];
+    const params = { id: req.params.id };
+
+    for (const field of allowed) {
+      if (req.body[field] !== undefined) {
+        let value = req.body[field];
+        if ((field === 'zones' || field === 'ia_insights') && typeof value === 'object') {
+          value = JSON.stringify(value);
+        }
+        updates.push(field + ' = @' + field);
+        params[field] = value;
+      }
+    }
+
+    if (req.body.pipeline_stage && !req.body.status) {
+      const isStageValid = ['nuevo','contactado','interesado','visita_agendada','negociacion','reserva','cerrado'].includes(req.body.pipeline_stage);
+      if (isStageValid) {
+        updates.push('status = @status_sync');
+        params.status_sync = req.body.pipeline_stage;
+      }
+    }
+
+    if (updates.length === 0) return res.status(400).json({ error: 'No hay campos para actualizar.' });
+
+    updates.push("updated_at = datetime('now')");
+    run('UPDATE leads SET ' + updates.join(', ') + ' WHERE id = @id', params);
+
+    const lead = get('SELECT * FROM leads WHERE id = @id', { id: req.params.id });
+    res.json(lead);
+  } catch (error) {
+    console.error('Error updating lead:', error);
+    res.status(500).json({ error: 'Error al actualizar lead.' });
+  }
+});
+
 // DELETE /api/leads/:id - Archive lead (soft delete by setting pipeline_stage to 'archivo')
 router.delete('/:id', (req, res) => {
   try {

@@ -9,13 +9,13 @@ export async function indexKnowledgeEntry({ agencyId, title, content, category }
   const existing = get('SELECT id FROM knowledge_base_embeddings WHERE agency_id = @aid AND title = @title', { aid: agencyId, title });
   if (existing) {
     run(
-      `UPDATE knowledge_base_embeddings SET content = @content, category = @category, embedding = @embedding, created_at = datetime('now') WHERE id = @id`,
+      `UPDATE knowledge_base_embeddings SET content = @content, category = @category, embedding = @embedding, created_at = NOW() WHERE id = @id`,
       { content, category, embedding: JSON.stringify(embedding), id: existing.id }
     );
   } else {
     run(
       `INSERT INTO knowledge_base_embeddings (id, agency_id, title, content, category, embedding, created_at)
-       VALUES (@id, @aid, @title, @content, @category, @embedding, datetime('now'))`,
+       VALUES (@id, @aid, @title, @content, @category, @embedding, NOW())`,
       {
         id: uuidv4(),
         aid: agencyId,

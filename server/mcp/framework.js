@@ -68,7 +68,7 @@ export function getMatchReasons(lead, property) {
 function logActivity(agencyId, leadId, userId, type, description, metadata) {
   run(
     `INSERT INTO activities (id, agency_id, lead_id, user_id, type, description, metadata, created_at)
-     VALUES (@id, @aid, @lid, @uid, @type, @desc, @meta, datetime('now'))`,
+     VALUES (@id, @aid, @lid, @uid, @type, @desc, @meta, NOW())`,
     {
       id: uuidv4(), aid: agencyId, lid: leadId, uid: userId || null,
       type, desc: description, meta: metadata ? JSON.stringify(metadata) : null,

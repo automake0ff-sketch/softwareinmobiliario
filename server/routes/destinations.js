@@ -97,7 +97,7 @@ router.post('/', (req, res) => {
     const id = uuidv4()
     run(
       `INSERT INTO agency_destinations (id, agency_id, type, name, credentials, is_active, created_at)
-       VALUES (@id, @agency_id, @type, @name, @credentials, 1, datetime('now'))`,
+       VALUES (@id, @agency_id, @type, @name, @credentials, 1, NOW())`,
       { id, agency_id: agencyId, type, name, credentials: JSON.stringify(credentials || {}) }
     )
 
@@ -173,7 +173,7 @@ router.post('/:id/test', async (req, res) => {
     })
 
     const testOk = result.ok ? 1 : 0
-    run(`UPDATE agency_destinations SET last_tested_at = datetime('now'), last_test_ok = @test_ok WHERE id = @id`,
+    run(`UPDATE agency_destinations SET last_tested_at = NOW(), last_test_ok = @test_ok WHERE id = @id`,
       { test_ok: testOk, id: req.params.id })
 
     res.json({ ok: result.ok, detail: result.detail })

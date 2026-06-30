@@ -11,9 +11,9 @@ import { incrementAgentStats } from '../services/automation-engine.js'
 import { AgentOrchestrator } from '../services/agent-orchestrator.js'
 import { ActionExecutor } from '../services/action-executor.js'
 
-// Dynamic SQLite schema migrations for AI Agents
-try { run('ALTER TABLE ai_agents ADD COLUMN is_active INTEGER DEFAULT 1'); } catch (e) {}
-try { run('ALTER TABLE ai_agents ADD COLUMN stats TEXT DEFAULT \'{"leads_today":0,"messages_today":0,"success_rate":100}\''); } catch (e) {}
+// Dynamic schema migrations for AI Agents
+try { await run('ALTER TABLE ai_agents ADD COLUMN IF NOT EXISTS is_active INTEGER DEFAULT 1'); } catch (e) {}
+try { await run('ALTER TABLE ai_agents ADD COLUMN IF NOT EXISTS stats TEXT DEFAULT \'{"leads_today":0,"messages_today":0,"success_rate":100}\''); } catch (e) {}
 
 const router = Router()
 router.use(auth)
@@ -219,7 +219,7 @@ router.post('/:id/toggle', (req, res) => {
     const description = `El estado del agente ${agent.name} cambió a ${newStatus === 'active' ? 'activo' : 'inactivo'}.`
     run(
       `INSERT INTO activities (id, agency_id, type, title, description, agent_type, created_at)
-       VALUES (@id, @agency_id, 'ia_action', @title, @description, @agent_type, datetime('now'))`,
+       VALUES (@id, @agency_id, 'ia_action', @title, @description, @agent_type, NOW())`,
       {
         id: actId,
         agency_id: req.user.agency_id,
@@ -287,7 +287,7 @@ router.patch('/:id/toggle', (req, res) => {
     const description = `El estado del agente ${agent.name} cambió a ${newStatus === 'active' ? 'activo' : 'inactivo'}.`
     run(
       `INSERT INTO activities (id, agency_id, type, title, description, agent_type, created_at)
-       VALUES (@id, @agency_id, 'ia_action', @title, @description, @agent_type, datetime('now'))`,
+       VALUES (@id, @agency_id, 'ia_action', @title, @description, @agent_type, NOW())`,
       {
         id: actId,
         agency_id: req.user.agency_id,
@@ -576,7 +576,7 @@ router.post('/captador', async (req, res) => {
       // Log activity
       run(
         `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
-         VALUES (@id, @agency_id, @lead_id, 'ia_action', @description, @metadata, datetime('now'))`,
+         VALUES (@id, @agency_id, @lead_id, 'ia_action', @description, @metadata, NOW())`,
         {
           id: uuidv4(),
           agency_id: aid,

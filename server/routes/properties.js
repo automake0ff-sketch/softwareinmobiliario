@@ -136,7 +136,7 @@ function insertProperty(data) {
       @city, @zone, @address, @province, @postal_code, @bedrooms, @bathrooms, @surface,
       @floor, @has_elevator, @has_terrace, @has_garage, @condition, @features, @images,
       @status, @source, @external_source, @external_id, @external_url, @imported_at,
-      @assigned_to, @quality_score, datetime('now'), datetime('now')
+      @assigned_to, @quality_score, NOW(), NOW()
     )`,
     { id, ...data }
   );
@@ -153,7 +153,7 @@ function updateProperty(id, agencyId, data) {
   }
 
   const updates = fields.map(field => `${field} = @${field}`);
-  updates.push("updated_at = datetime('now')");
+  updates.push("updated_at = NOW()");
   run(
     `UPDATE properties SET ${updates.join(', ')} WHERE id = @id AND agency_id = @agency_id`,
     { ...data, id, agency_id: agencyId }
@@ -164,7 +164,7 @@ function updateProperty(id, agencyId, data) {
 function logActivity(req, property, type, description, metadata = {}) {
   run(
     `INSERT INTO activities (id, agency_id, user_id, type, title, description, metadata, created_at)
-     VALUES (@id, @agency_id, @user_id, @type, @title, @description, @metadata, datetime('now'))`,
+     VALUES (@id, @agency_id, @user_id, @type, @title, @description, @metadata, NOW())`,
     {
       id: uuidv4(),
       agency_id: req.user.agency_id,
@@ -775,7 +775,7 @@ router.patch('/:id', (req, res) => {
       .filter(field => data[field] !== undefined)
       .map(field => `${field} = @${field}`);
 
-    updates.push("updated_at = datetime('now')");
+    updates.push("updated_at = NOW()");
     run(`UPDATE properties SET ${updates.join(', ')} WHERE id = @id AND agency_id = @agency_id`, { ...data, id: req.params.id, agency_id: req.user.agency_id });
     const property = get('SELECT * FROM properties WHERE id = @id', { id: req.params.id });
     logActivity(req, property, 'property_updated', `Propiedad actualizada: ${property.title}`);
@@ -791,7 +791,7 @@ router.patch('/:id/status', (req, res) => {
     const status = normalizeStatus(req.body.status);
     const existing = get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!existing) return res.status(404).json({ error: 'Propiedad no encontrada.' });
-    run("UPDATE properties SET status = @status, updated_at = datetime('now') WHERE id = @id", { id: req.params.id, status });
+    run("UPDATE properties SET status = @status, updated_at = NOW() WHERE id = @id", { id: req.params.id, status });
     const property = get('SELECT * FROM properties WHERE id = @id', { id: req.params.id });
     logActivity(req, property, 'property_status_changed', `Estado cambiado a ${status}`);
     res.json(property);

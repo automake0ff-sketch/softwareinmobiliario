@@ -4,7 +4,7 @@ import { all, get, run } from '../db/db.js';
 function logActivity(agencyId, leadId, userId, type, description, metadata = null) {
   run(
     `INSERT INTO activities (id, agency_id, lead_id, user_id, type, description, metadata, created_at)
-     VALUES (@id, @agency_id, @lead_id, @user_id, @type, @description, @metadata, datetime('now'))`,
+     VALUES (@id, @agency_id, @lead_id, @user_id, @type, @description, @metadata, NOW())`,
     {
       id: uuidv4(), agency_id: agencyId, lead_id: leadId, user_id: userId,
       type, description, metadata: metadata ? JSON.stringify(metadata) : null,
@@ -46,7 +46,7 @@ export async function executeTool(toolName, toolInput, context) {
 
         run(
           `INSERT INTO leads (id, agency_id, name, phone, email, budget, zone, property_interest, source, ia_score, ia_insight, ia_summary, created_at, updated_at)
-           VALUES (@id, @aid, @name, @phone, @email, @budget, @zone, @pi, @source, @score, @insight, @summary, datetime('now'), datetime('now'))`,
+           VALUES (@id, @aid, @name, @phone, @email, @budget, @zone, @pi, @source, @score, @insight, @summary, NOW(), NOW())`,
           {
             id,
             aid: agencyId,
@@ -128,7 +128,7 @@ export async function executeTool(toolName, toolInput, context) {
         const agent = get('SELECT * FROM users WHERE id = @id', { id: toolInput.user_id });
         if (!agent) { result = { error: 'Usuario no encontrado' }; break; }
 
-        run("UPDATE leads SET assigned_to = @uid, updated_at = datetime('now') WHERE id = @lid", { uid: toolInput.user_id, lid: toolInput.lead_id });
+        run("UPDATE leads SET assigned_to = @uid, updated_at = NOW() WHERE id = @lid", { uid: toolInput.user_id, lid: toolInput.lead_id });
 
         logActivity(lead.agency_id, toolInput.lead_id, userId || toolInput.user_id, 'lead_assigned',
           `Lead asignado a ${agent.name}${toolInput.reason ? ': ' + toolInput.reason : ''}`, { toolName, reason: toolInput.reason });
@@ -147,7 +147,7 @@ export async function executeTool(toolName, toolInput, context) {
         for (const uid of targetUsers) {
           run(
             `INSERT INTO notifications (id, agency_id, user_id, lead_id, title, body, type, created_at)
-             VALUES (@id, @aid, @uid, @lid, @title, @body, 'alert', datetime('now'))`,
+             VALUES (@id, @aid, @uid, @lid, @title, @body, 'alert', NOW())`,
             {
               id: uuidv4(), aid: toolInput.agency_id || agencyId, uid,
               lid: toolInput.lead_id || null,
@@ -220,7 +220,7 @@ export async function executeTool(toolName, toolInput, context) {
 
         run(
           `INSERT INTO tasks (id, lead_id, assigned_to, title, description, due_date, created_at)
-           VALUES (@id, @lid, @uid, @title, @desc, @due, datetime('now'))`,
+           VALUES (@id, @lid, @uid, @title, @desc, @due, NOW())`,
           {
             id: visitId, lid: toolInput.lead_id, uid: toolInput.user_id,
             title: 'Visita agendada por IA',
@@ -229,7 +229,7 @@ export async function executeTool(toolName, toolInput, context) {
           }
         );
 
-        run("UPDATE leads SET status = 'visita_agendada', updated_at = datetime('now') WHERE id = @id", { id: toolInput.lead_id });
+        run("UPDATE leads SET status = 'visita_agendada', updated_at = NOW() WHERE id = @id", { id: toolInput.lead_id });
 
         logActivity(agencyId || toolInput.agency_id, toolInput.lead_id, toolInput.user_id, 'visita_creada',
           `Visita creada por IA para ${toolInput.scheduled_at}`, { toolName, visitData });
@@ -251,7 +251,7 @@ export async function executeTool(toolName, toolInput, context) {
         const newTaskId = uuidv4();
         run(
           `INSERT INTO tasks (id, lead_id, title, description, due_date, created_at)
-           VALUES (@id, @lid, @title, @desc, @due, datetime('now'))`,
+           VALUES (@id, @lid, @title, @desc, @due, NOW())`,
           {
             id: newTaskId, lid: toolInput.lead_id,
             title: 'Visita reprogramada',

@@ -166,7 +166,7 @@ export async function executeSalesAction({ lead, agency, action, channel, messag
     result,
   });
 
-  run(`UPDATE leads SET last_activity = datetime('now'), last_channel = @channel WHERE id = @id`,
+  run(`UPDATE leads SET last_activity = NOW(), last_channel = @channel WHERE id = @id`,
     { id: lead.id, channel }
   );
 

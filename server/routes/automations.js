@@ -99,7 +99,7 @@ router.post('/', checkLimit('automations'), validateBody(automationSchema), (req
     const id = uuidv4()
     run(
       `INSERT INTO automations (id, agency_id, name, description, is_active, trigger_type, trigger_event, trigger_config, conditions, actions, action, run_count, created_at)
-       VALUES (@id, @agency_id, @name, @description, 1, @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, '', 0, datetime('now'))`,
+       VALUES (@id, @agency_id, @name, @description, 1, @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, '', 0, NOW())`,
       {
         id,
         agency_id: agencyId,
@@ -403,7 +403,7 @@ router.post('/execute', async (req, res) => {
       // Log activity
       run(
         `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
-         VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, datetime('now'))`,
+         VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, NOW())`,
         {
           id: uuidv4(),
           agency_id: agencyId,
@@ -418,7 +418,7 @@ router.post('/execute', async (req, res) => {
       try {
         run(
           `INSERT INTO automation_logs (id, automation_id, lead_id, agency_id, status, actions_executed, created_at)
-           VALUES (@id, @automation_id, @lead_id, @agency_id, @status, @actions_executed, datetime('now'))`,
+           VALUES (@id, @automation_id, @lead_id, @agency_id, @status, @actions_executed, NOW())`,
           {
             id: uuidv4(),
             automation_id: auto.id,
@@ -558,7 +558,7 @@ router.post('/install-template', checkLimit('automations'), async (req, res) => 
     const templateId = name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()
     run(
       `INSERT INTO automations (id, agency_id, name, description, is_active, active, trigger_type, trigger_event, trigger_config, conditions, actions, run_count, created_at, template_id)
-       VALUES (@id, @agency_id, @name, @description, 1, 1, @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, 0, datetime('now'), @template_id)`,
+       VALUES (@id, @agency_id, @name, @description, 1, 1, @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, 0, NOW(), @template_id)`,
       {
         id, agency_id: agencyId,
         name: template.name, description: template.description,

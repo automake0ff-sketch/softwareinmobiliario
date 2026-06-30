@@ -14,14 +14,14 @@ export function incrementUsage(agencyId, counter, amount = 1) {
   )
   if (existing) {
     run(
-      `UPDATE usage_monthly SET value = value + @amount, updated_at = datetime('now')
+      `UPDATE usage_monthly SET value = value + @amount, updated_at = NOW()
        WHERE id = @id`,
       { id: existing.id, amount }
     )
   } else {
     run(
       `INSERT INTO usage_monthly (id, agency_id, period, counter, value, created_at, updated_at)
-       VALUES (@id, @aid, @period, @counter, @amount, datetime('now'), datetime('now'))`,
+       VALUES (@id, @aid, @period, @counter, @amount, NOW(), NOW())`,
       { id: uuidv4(), aid: agencyId, period, counter, amount }
     )
   }

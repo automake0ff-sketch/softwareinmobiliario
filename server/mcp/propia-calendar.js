@@ -23,7 +23,7 @@ server
   .resource('calendar://agents/availability', 'Disponibilidad de comerciales', 'Huecos libres de todos los comerciales', async (agencyId) => {
     const agents = all(
       `SELECT u.id, u.name, u.email, u.phone,
-              (SELECT COUNT(*) FROM tasks WHERE assigned_to = u.id AND completed = 0 AND due_date >= datetime('now')) as pending_tasks,
+              (SELECT COUNT(*) FROM tasks WHERE assigned_to = u.id AND completed = 0 AND due_date >= NOW()) as pending_tasks,
               (SELECT COUNT(*) FROM leads WHERE assigned_to = u.id AND status NOT IN ('cerrado', 'reserva')) as active_leads
        FROM users u WHERE u.role = 'comercial' AND u.active = 1
        ${agencyId ? 'AND u.agency_id = @aid' : ''}
@@ -99,7 +99,7 @@ server
     const taskId = uuidv4();
     run(
       `INSERT INTO tasks (id, lead_id, assigned_to, title, description, due_date, created_at)
-       VALUES (@id, @lid, @uid, @title, @desc, @due, datetime('now'))`,
+       VALUES (@id, @lid, @uid, @title, @desc, @due, NOW())`,
       {
         id: taskId, lid: args.lead_id, uid: args.user_id,
         title: 'Visita agendada',
@@ -108,7 +108,7 @@ server
       }
     );
 
-    run("UPDATE leads SET status = 'visita_agendada', updated_at = datetime('now') WHERE id = @id", { id: args.lead_id });
+    run("UPDATE leads SET status = 'visita_agendada', updated_at = NOW() WHERE id = @id", { id: args.lead_id });
 
     logActivity(context.agencyId, args.lead_id, args.user_id, 'visita_creada',
       `Visita creada para ${args.scheduled_at} con ${commercial?.name || 'comercial'}`, { taskId, scheduled_at: args.scheduled_at });

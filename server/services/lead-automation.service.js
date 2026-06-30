@@ -7,7 +7,7 @@ import { WhatsAppService } from './whatsapp.js';
 export function logCommunication({ agencyId, leadId, appointmentId, channel, direction, subject, body, status, providerMessageId, error }) {
   run(
     `INSERT INTO communication_logs (id, agency_id, lead_id, appointment_id, channel, direction, subject, body, status, provider_message_id, error, sent_at, created_at)
-     VALUES (@id, @aid, @lid, @appt_id, @channel, @direction, @subject, @body, @status, @pmid, @err, CASE WHEN @status IN ('sent','failed') THEN datetime('now') ELSE NULL END, datetime('now'))`,
+     VALUES (@id, @aid, @lid, @appt_id, @channel, @direction, @subject, @body, @status, @pmid, @err, CASE WHEN @status IN ('sent','failed') THEN NOW() ELSE NULL END, NOW())`,
     {
       id: uuidv4(), aid: agencyId, lid: leadId, appt_id: appointmentId || null,
       channel, direction, subject, body,
@@ -20,7 +20,7 @@ export function logLeadAutomation({ agencyId, leadId, type, channel, status, pay
   const id = uuidv4();
   run(
     `INSERT INTO lead_automations (id, agency_id, lead_id, type, channel, status, payload, result, created_at)
-     VALUES (@id, @aid, @lid, @type, @channel, @status, @payload, @result, datetime('now'))`,
+     VALUES (@id, @aid, @lid, @type, @channel, @status, @payload, @result, NOW())`,
     { id, aid: agencyId, lid: leadId, type, channel: channel || null, status, payload: payload ? JSON.stringify(payload) : null, result: result ? JSON.stringify(result) : null }
   );
   return id;
@@ -29,7 +29,7 @@ export function logLeadAutomation({ agencyId, leadId, type, channel, status, pay
 export function logActivity(agencyId, leadId, userId, type, description, metadata = null) {
   run(
     `INSERT INTO activities (id, agency_id, lead_id, user_id, type, description, metadata, created_at)
-     VALUES (@id, @agency_id, @lead_id, @user_id, @type, @description, @metadata, datetime('now'))`,
+     VALUES (@id, @agency_id, @lead_id, @user_id, @type, @description, @metadata, NOW())`,
     {
       id: uuidv4(), agency_id: agencyId, lead_id: leadId, user_id: userId,
       type, description, metadata: metadata ? JSON.stringify(metadata) : null,
@@ -216,7 +216,7 @@ export async function sendAutomatedEmail({ lead, agency, property, subject, body
     { subject, template, status, messageId: result.messageId }
   );
 
-  run(`UPDATE leads SET last_activity = datetime('now'), last_channel = 'email' WHERE id = @id`, { id: leadId });
+  run(`UPDATE leads SET last_activity = NOW(), last_channel = 'email' WHERE id = @id`, { id: leadId });
 
   logLeadAutomation({
     agencyId, leadId, type: 'auto_email', channel: 'email', status,
@@ -277,7 +277,7 @@ export function createFollowUpTask(agencyId, leadId, userId, days = 3) {
   const taskId = uuidv4();
   run(
     `INSERT INTO tasks (id, lead_id, assigned_to, title, description, due_date, completed, created_at)
-     VALUES (@id, @lid, @uid, @title, @desc, @due, 0, datetime('now'))`,
+     VALUES (@id, @lid, @uid, @title, @desc, @due, 0, NOW())`,
     {
       id: taskId, lid: leadId, uid: userId || null,
       title: 'Seguimiento de email',

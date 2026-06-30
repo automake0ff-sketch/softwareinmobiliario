@@ -20,6 +20,16 @@ import TwilioService from './services/twilio.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+function validateEnv() {
+  const required = ['DATABASE_URL', 'SUPABASE_JWT_SECRET'];
+  const missing = required.filter((k) => !process.env[k]);
+  if (missing.length > 0) {
+    console.error('❌ Variables de entorno faltantes:', missing.join(', '));
+    process.exit(1);
+  }
+  console.log('✅ Variables de entorno validadas');
+}
+
 const app = express();
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
@@ -132,7 +142,7 @@ app.use(express.urlencoded({ extended: true }));
 function logActivity(agencyId, leadId, userId, type, description, metadata = null) {
   run(
     `INSERT INTO activities (id, agency_id, lead_id, user_id, type, description, metadata, created_at)
-     VALUES (@id, @agency_id, @lead_id, @user_id, @type, @description, @metadata, datetime('now'))`,
+     VALUES (@id, @agency_id, @lead_id, @user_id, @type, @description, @metadata, NOW())`,
     {
       id: uuidv4(), agency_id: agencyId, lead_id: leadId, user_id: userId,
       type, description, metadata: metadata ? JSON.stringify(metadata) : null,
@@ -141,6 +151,7 @@ function logActivity(agencyId, leadId, userId, type, description, metadata = nul
 }
 
 async function start() {
+  validateEnv();
   await initDB();
 
   const { auth } = await import('./middleware/auth.js');
@@ -217,9 +228,9 @@ async function start() {
       const agentResponse = agentResult.message || '';
 
       if (lead.status === 'nuevo') {
-        run("UPDATE leads SET status = 'contactado', updated_at = datetime('now') WHERE id = @id", { id: leadId });
+        run("UPDATE leads SET status = 'contactado', updated_at = NOW() WHERE id = @id", { id: leadId });
       }
-      run("UPDATE leads SET last_activity = datetime('now'), updated_at = datetime('now') WHERE id = @id", { id: leadId });
+      run("UPDATE leads SET last_activity = NOW(), updated_at = NOW() WHERE id = @id", { id: leadId });
 
       logActivity(
         agencyId, leadId, null, 'ia_response',
@@ -257,7 +268,7 @@ async function start() {
 
       if (comerciales && comerciales.length > 0) {
         const comercial = comerciales[0];
-        run("UPDATE leads SET assigned_to = @assigned_to, updated_at = datetime('now') WHERE id = @id",
+        run("UPDATE leads SET assigned_to = @assigned_to, updated_at = NOW() WHERE id = @id",
           { assigned_to: comercial.id, id: leadId });
         logActivity(agencyId, leadId, comercial.id, 'lead_assigned',
           `Lead asignado automáticamente a ${comercial.name}`, { comercialId: comercial.id, source });
@@ -276,7 +287,7 @@ async function start() {
       const convId = uuidv4();
       run(
         `INSERT INTO conversations (id, lead_id, channel, messages, created_at)
-         VALUES (@id, @lead_id, @channel, @messages, datetime('now'))`,
+         VALUES (@id, @lead_id, @channel, @messages, NOW())`,
         {
           id: convId, lead_id: leadId, channel: source === 'meta_ads' ? 'web' : 'whatsapp',
           messages: JSON.stringify([{ role: 'agent', content: welcomeMessage, timestamp: new Date().toISOString() }]),
@@ -692,7 +703,7 @@ async function start() {
           if (!exists) {
             run(
               `INSERT INTO ai_agents (id, agency_id, type, name, is_active, status, stats, created_at)
-               VALUES (@id, @agency_id, @type, @name, 1, 'active', @stats, datetime('now'))`,
+               VALUES (@id, @agency_id, @type, @name, 1, 'active', @stats, NOW())`,
               {
                 id: uuidv4(),
                 agency_id: agency.id,
@@ -801,123 +812,120 @@ function generateAgentResponse(agentType, lead, messageBody, history) {
 }
 
 // DB Migration: Expand tables schema
+// NOTA: el schema "canónico" vive en supabase/migrations/. Este runner ad-hoc se
+// mantiene por compatibilidad con columnas/tablas que se fueron añadiendo aquí
+// y que no siempre llegaron a supabase/migrations/. Usa `IF NOT EXISTS` en todo
+// (Postgres lo soporta nativamente en ADD COLUMN desde la v9.6), así que es
+// idempotente sin necesitar un columnExists() manual (que dependía de PRAGMA,
+// exclusivo de SQLite, y rompía el arranque del servidor contra Postgres).
 async function runMigration() {
-  function columnExists(tableName, columnName) {
-    try {
-      const columns = all(`PRAGMA table_info(${tableName})`);
-      return columns.some(c => c.name === columnName);
-    } catch (e) {
-      return false;
-    }
-  }
-
   const migrations = [
-    { type: 'column', table: 'ai_agents', column: 'is_active', sql: `ALTER TABLE ai_agents ADD COLUMN is_active INTEGER DEFAULT 1` },
-    { type: 'column', table: 'ai_agents', column: 'stats', sql: `ALTER TABLE ai_agents ADD COLUMN stats TEXT DEFAULT '{"leads_today":0,"messages_today":0,"automations_today":0,"conversions_today":0}'` },
-    { type: 'column', table: 'conversations', column: 'ia_handling', sql: `ALTER TABLE conversations ADD COLUMN ia_handling INTEGER DEFAULT 1` },
-    { type: 'column', table: 'conversations', column: 'updated_at', sql: `ALTER TABLE conversations ADD COLUMN updated_at TEXT` },
-    { type: 'column', table: 'automations', column: 'description', sql: `ALTER TABLE automations ADD COLUMN description TEXT DEFAULT ''` },
-    { type: 'column', table: 'automations', column: 'is_active', sql: `ALTER TABLE automations ADD COLUMN is_active INTEGER DEFAULT 1` },
-    { type: 'column', table: 'automations', column: 'trigger_type', sql: `ALTER TABLE automations ADD COLUMN trigger_type TEXT DEFAULT 'lead_created'` },
-    { type: 'column', table: 'automations', column: 'trigger_config', sql: `ALTER TABLE automations ADD COLUMN trigger_config TEXT DEFAULT '{}'` },
-    { type: 'column', table: 'automations', column: 'conditions', sql: `ALTER TABLE automations ADD COLUMN conditions TEXT DEFAULT '[]'` },
-    { type: 'column', table: 'automations', column: 'actions', sql: `ALTER TABLE automations ADD COLUMN actions TEXT DEFAULT '[]'` },
-    { type: 'column', table: 'automations', column: 'run_count', sql: `ALTER TABLE automations ADD COLUMN run_count INTEGER DEFAULT 0` },
-    { type: 'column', table: 'automations', column: 'last_run_at', sql: `ALTER TABLE automations ADD COLUMN last_run_at TEXT` },
+    { type: 'column', table: 'ai_agents', column: 'is_active', sql: `ALTER TABLE ai_agents ADD COLUMN IF NOT EXISTS is_active INTEGER DEFAULT 1` },
+    { type: 'column', table: 'ai_agents', column: 'stats', sql: `ALTER TABLE ai_agents ADD COLUMN IF NOT EXISTS stats TEXT DEFAULT '{"leads_today":0,"messages_today":0,"automations_today":0,"conversions_today":0}'` },
+    { type: 'column', table: 'conversations', column: 'ia_handling', sql: `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS ia_handling INTEGER DEFAULT 1` },
+    { type: 'column', table: 'conversations', column: 'updated_at', sql: `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS updated_at TEXT` },
+    { type: 'column', table: 'automations', column: 'description', sql: `ALTER TABLE automations ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''` },
+    { type: 'column', table: 'automations', column: 'is_active', sql: `ALTER TABLE automations ADD COLUMN IF NOT EXISTS is_active INTEGER DEFAULT 1` },
+    { type: 'column', table: 'automations', column: 'trigger_type', sql: `ALTER TABLE automations ADD COLUMN IF NOT EXISTS trigger_type TEXT DEFAULT 'lead_created'` },
+    { type: 'column', table: 'automations', column: 'trigger_config', sql: `ALTER TABLE automations ADD COLUMN IF NOT EXISTS trigger_config TEXT DEFAULT '{}'` },
+    { type: 'column', table: 'automations', column: 'conditions', sql: `ALTER TABLE automations ADD COLUMN IF NOT EXISTS conditions TEXT DEFAULT '[]'` },
+    { type: 'column', table: 'automations', column: 'actions', sql: `ALTER TABLE automations ADD COLUMN IF NOT EXISTS actions TEXT DEFAULT '[]'` },
+    { type: 'column', table: 'automations', column: 'run_count', sql: `ALTER TABLE automations ADD COLUMN IF NOT EXISTS run_count INTEGER DEFAULT 0` },
+    { type: 'column', table: 'automations', column: 'last_run_at', sql: `ALTER TABLE automations ADD COLUMN IF NOT EXISTS last_run_at TEXT` },
     { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS automation_logs (
-      id TEXT PRIMARY KEY,
-      automation_id TEXT REFERENCES automations(id) ON DELETE CASCADE,
-      lead_id TEXT REFERENCES leads(id) ON DELETE SET NULL,
-      agency_id TEXT REFERENCES agencies(id) ON DELETE CASCADE,
+      id UUID PRIMARY KEY,
+      automation_id UUID REFERENCES automations(id) ON DELETE CASCADE,
+      lead_id UUID REFERENCES leads(id) ON DELETE SET NULL,
+      agency_id UUID REFERENCES agencies(id) ON DELETE CASCADE,
       status TEXT NOT NULL DEFAULT 'success',
       actions_executed TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (NOW())
     )` },
-    { type: 'column', table: 'automation_logs', column: 'agency_id', sql: `ALTER TABLE automation_logs ADD COLUMN agency_id TEXT REFERENCES agencies(id) ON DELETE CASCADE` },
-    { type: 'column', table: 'activities', column: 'title', sql: `ALTER TABLE activities ADD COLUMN title TEXT` },
-    { type: 'column', table: 'activities', column: 'agent_type', sql: `ALTER TABLE activities ADD COLUMN agent_type TEXT` },
-    { type: 'column', table: 'leads', column: 'last_contact_at', sql: `ALTER TABLE leads ADD COLUMN last_contact_at TEXT` },
-    { type: 'column', table: 'leads', column: 'ia_score_label', sql: `ALTER TABLE leads ADD COLUMN ia_score_label TEXT` },
-    { type: 'column', table: 'leads', column: 'ia_next_action', sql: `ALTER TABLE leads ADD COLUMN ia_next_action TEXT` },
-    { type: 'column', table: 'leads', column: 'ia_insights', sql: `ALTER TABLE leads ADD COLUMN ia_insights TEXT` },
-    { type: 'column', table: 'leads', column: 'pipeline_stage', sql: `ALTER TABLE leads ADD COLUMN pipeline_stage TEXT` },
-    { type: 'column', table: 'leads', column: 'pipeline_stage_updated_at', sql: `ALTER TABLE leads ADD COLUMN pipeline_stage_updated_at TEXT` },
-    { type: 'column', table: 'leads', column: 'operation_type', sql: `ALTER TABLE leads ADD COLUMN operation_type TEXT` },
-    { type: 'column', table: 'leads', column: 'budget_max', sql: `ALTER TABLE leads ADD COLUMN budget_max REAL` },
-    { type: 'column', table: 'leads', column: 'zones', sql: `ALTER TABLE leads ADD COLUMN zones TEXT` },
-    { type: 'column', table: 'leads', column: 'urgency', sql: `ALTER TABLE leads ADD COLUMN urgency TEXT` },
-    { type: 'column', table: 'leads', column: 'property_type', sql: `ALTER TABLE leads ADD COLUMN property_type TEXT` },
-    { type: 'column', table: 'automations', column: 'destinations', sql: `ALTER TABLE automations ADD COLUMN destinations TEXT DEFAULT '[]'` },
-    { type: 'column', table: 'automations', column: 'version', sql: `ALTER TABLE automations ADD COLUMN version INTEGER DEFAULT 2` },
+    { type: 'column', table: 'automation_logs', column: 'agency_id', sql: `ALTER TABLE automation_logs ADD COLUMN IF NOT EXISTS agency_id UUID REFERENCES agencies(id) ON DELETE CASCADE` },
+    { type: 'column', table: 'activities', column: 'title', sql: `ALTER TABLE activities ADD COLUMN IF NOT EXISTS title TEXT` },
+    { type: 'column', table: 'activities', column: 'agent_type', sql: `ALTER TABLE activities ADD COLUMN IF NOT EXISTS agent_type TEXT` },
+    { type: 'column', table: 'leads', column: 'last_contact_at', sql: `ALTER TABLE leads ADD COLUMN IF NOT EXISTS last_contact_at TEXT` },
+    { type: 'column', table: 'leads', column: 'ia_score_label', sql: `ALTER TABLE leads ADD COLUMN IF NOT EXISTS ia_score_label TEXT` },
+    { type: 'column', table: 'leads', column: 'ia_next_action', sql: `ALTER TABLE leads ADD COLUMN IF NOT EXISTS ia_next_action TEXT` },
+    { type: 'column', table: 'leads', column: 'ia_insights', sql: `ALTER TABLE leads ADD COLUMN IF NOT EXISTS ia_insights TEXT` },
+    { type: 'column', table: 'leads', column: 'pipeline_stage', sql: `ALTER TABLE leads ADD COLUMN IF NOT EXISTS pipeline_stage TEXT` },
+    { type: 'column', table: 'leads', column: 'pipeline_stage_updated_at', sql: `ALTER TABLE leads ADD COLUMN IF NOT EXISTS pipeline_stage_updated_at TEXT` },
+    { type: 'column', table: 'leads', column: 'operation_type', sql: `ALTER TABLE leads ADD COLUMN IF NOT EXISTS operation_type TEXT` },
+    { type: 'column', table: 'leads', column: 'budget_max', sql: `ALTER TABLE leads ADD COLUMN IF NOT EXISTS budget_max REAL` },
+    { type: 'column', table: 'leads', column: 'zones', sql: `ALTER TABLE leads ADD COLUMN IF NOT EXISTS zones TEXT` },
+    { type: 'column', table: 'leads', column: 'urgency', sql: `ALTER TABLE leads ADD COLUMN IF NOT EXISTS urgency TEXT` },
+    { type: 'column', table: 'leads', column: 'property_type', sql: `ALTER TABLE leads ADD COLUMN IF NOT EXISTS property_type TEXT` },
+    { type: 'column', table: 'automations', column: 'destinations', sql: `ALTER TABLE automations ADD COLUMN IF NOT EXISTS destinations TEXT DEFAULT '[]'` },
+    { type: 'column', table: 'automations', column: 'version', sql: `ALTER TABLE automations ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 2` },
     { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS agency_destinations (
-      id TEXT PRIMARY KEY,
-      agency_id TEXT REFERENCES agencies(id) ON DELETE CASCADE,
+      id UUID PRIMARY KEY,
+      agency_id UUID REFERENCES agencies(id) ON DELETE CASCADE,
       type TEXT NOT NULL,
       name TEXT NOT NULL,
       credentials TEXT DEFAULT '{}',
       is_active INTEGER DEFAULT 1,
       last_tested_at TEXT,
       last_test_ok INTEGER,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (NOW())
     )` },
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_agency_destinations ON agency_destinations(agency_id, type, is_active)` },
-    { type: 'column', table: 'agencies', column: 'email', sql: `ALTER TABLE agencies ADD COLUMN email TEXT` },
-    { type: 'column', table: 'agencies', column: 'phone', sql: `ALTER TABLE agencies ADD COLUMN phone TEXT` },
-    { type: 'column', table: 'agencies', column: 'whatsapp_token', sql: `ALTER TABLE agencies ADD COLUMN whatsapp_token TEXT` },
-    { type: 'column', table: 'agencies', column: 'whatsapp_phone_id', sql: `ALTER TABLE agencies ADD COLUMN whatsapp_phone_id TEXT` },
-    { type: 'column', table: 'agencies', column: 'whatsapp_number', sql: `ALTER TABLE agencies ADD COLUMN whatsapp_number TEXT` },
-    { type: 'column', table: 'agencies', column: 'address', sql: `ALTER TABLE agencies ADD COLUMN address TEXT` },
-    { type: 'column', table: 'agencies', column: 'city', sql: `ALTER TABLE agencies ADD COLUMN city TEXT` },
-    { type: 'column', table: 'agencies', column: 'website', sql: `ALTER TABLE agencies ADD COLUMN website TEXT` },
-    { type: 'column', table: 'agencies', column: 'instagram', sql: `ALTER TABLE agencies ADD COLUMN instagram TEXT` },
-    { type: 'column', table: 'agencies', column: 'facebook', sql: `ALTER TABLE agencies ADD COLUMN facebook TEXT` },
-    { type: 'column', table: 'agencies', column: 'linkedin', sql: `ALTER TABLE agencies ADD COLUMN linkedin TEXT` },
-    { type: 'column', table: 'agencies', column: 'tiktok', sql: `ALTER TABLE agencies ADD COLUMN tiktok TEXT` },
-    { type: 'column', table: 'agencies', column: 'cif', sql: `ALTER TABLE agencies ADD COLUMN cif TEXT` },
-    { type: 'column', table: 'agencies', column: 'legal_name', sql: `ALTER TABLE agencies ADD COLUMN legal_name TEXT` },
-    { type: 'column', table: 'agencies', column: 'sendgrid_api_key', sql: `ALTER TABLE agencies ADD COLUMN sendgrid_api_key TEXT` },
-    { type: 'column', table: 'agencies', column: 'sendgrid_from_email', sql: `ALTER TABLE agencies ADD COLUMN sendgrid_from_email TEXT` },
-    { type: 'column', table: 'agencies', column: 'sendgrid_from_name', sql: `ALTER TABLE agencies ADD COLUMN sendgrid_from_name TEXT` },
-    { type: 'column', table: 'agencies', column: 'smtp_host', sql: `ALTER TABLE agencies ADD COLUMN smtp_host TEXT` },
-    { type: 'column', table: 'agencies', column: 'smtp_port', sql: `ALTER TABLE agencies ADD COLUMN smtp_port INTEGER` },
-    { type: 'column', table: 'agencies', column: 'smtp_user', sql: `ALTER TABLE agencies ADD COLUMN smtp_user TEXT` },
-    { type: 'column', table: 'agencies', column: 'smtp_password', sql: `ALTER TABLE agencies ADD COLUMN smtp_password TEXT` },
-    { type: 'column', table: 'agencies', column: 'telegram_bot_token', sql: `ALTER TABLE agencies ADD COLUMN telegram_bot_token TEXT` },
-    { type: 'column', table: 'agencies', column: 'telegram_chat_id', sql: `ALTER TABLE agencies ADD COLUMN telegram_chat_id TEXT` },
-    { type: 'column', table: 'agencies', column: 'slack_webhook_url', sql: `ALTER TABLE agencies ADD COLUMN slack_webhook_url TEXT` },
-    { type: 'column', table: 'agencies', column: 'notion_api_key', sql: `ALTER TABLE agencies ADD COLUMN notion_api_key TEXT` },
-    { type: 'column', table: 'agencies', column: 'notion_database_id', sql: `ALTER TABLE agencies ADD COLUMN notion_database_id TEXT` },
-    { type: 'column', table: 'agencies', column: 'airtable_api_key', sql: `ALTER TABLE agencies ADD COLUMN airtable_api_key TEXT` },
-    { type: 'column', table: 'agencies', column: 'airtable_base_id', sql: `ALTER TABLE agencies ADD COLUMN airtable_base_id TEXT` },
-    { type: 'column', table: 'agencies', column: 'airtable_table', sql: `ALTER TABLE agencies ADD COLUMN airtable_table TEXT` },
-    { type: 'column', table: 'agencies', column: 'google_sheets_id', sql: `ALTER TABLE agencies ADD COLUMN google_sheets_id TEXT` },
-    { type: 'column', table: 'agencies', column: 'google_service_account', sql: `ALTER TABLE agencies ADD COLUMN google_service_account TEXT` },
-    { type: 'column', table: 'agencies', column: 'zapier_webhook_url', sql: `ALTER TABLE agencies ADD COLUMN zapier_webhook_url TEXT` },
-    { type: 'column', table: 'agencies', column: 'make_webhook_url', sql: `ALTER TABLE agencies ADD COLUMN make_webhook_url TEXT` },
-    { type: 'column', table: 'agencies', column: 'n8n_webhook_url', sql: `ALTER TABLE agencies ADD COLUMN n8n_webhook_url TEXT` },
-    { type: 'column', table: 'agencies', column: 'onboarding_completed', sql: `ALTER TABLE agencies ADD COLUMN onboarding_completed INTEGER DEFAULT 0` },
-    { type: 'column', table: 'agencies', column: 'onboarding_step', sql: `ALTER TABLE agencies ADD COLUMN onboarding_step INTEGER DEFAULT 0` },
-    { type: 'column', table: 'agencies', column: 'meta_page_id', sql: `ALTER TABLE agencies ADD COLUMN meta_page_id TEXT` },
-    { type: 'column', table: 'agencies', column: 'plan', sql: `ALTER TABLE agencies ADD COLUMN plan TEXT DEFAULT 'starter'` },
-    { type: 'column', table: 'agencies', column: 'plan_status', sql: `ALTER TABLE agencies ADD COLUMN plan_status TEXT DEFAULT 'trialing'` },
-    { type: 'column', table: 'agencies', column: 'wa_verify_token', sql: `ALTER TABLE agencies ADD COLUMN wa_verify_token TEXT` },
-    { type: 'column', table: 'agencies', column: 'wa_webhook_token', sql: `ALTER TABLE agencies ADD COLUMN wa_webhook_token TEXT` },
-    { type: 'column', table: 'agencies', column: 'email_provider', sql: `ALTER TABLE agencies ADD COLUMN email_provider TEXT DEFAULT 'sendgrid'` },
-    { type: 'column', table: 'agencies', column: 'slugs', sql: `ALTER TABLE agencies ADD COLUMN slugs TEXT` },
-    { type: 'column', table: 'agencies', column: 'primary_color', sql: `ALTER TABLE agencies ADD COLUMN primary_color TEXT DEFAULT '#6366f1'` },
-    { type: 'column', table: 'agencies', column: 'secondary_color', sql: `ALTER TABLE agencies ADD COLUMN secondary_color TEXT DEFAULT '#8b5cf6'` },
-    { type: 'column', table: 'agencies', column: 'logo_url', sql: `ALTER TABLE agencies ADD COLUMN logo_url TEXT` },
-    { type: 'column', table: 'agencies', column: 'custom_domain', sql: `ALTER TABLE agencies ADD COLUMN custom_domain TEXT` },
-    { type: 'column', table: 'agencies', column: 'province', sql: `ALTER TABLE agencies ADD COLUMN province TEXT` },
-    { type: 'column', table: 'agencies', column: 'country', sql: `ALTER TABLE agencies ADD COLUMN country TEXT DEFAULT 'ES'` },
-    { type: 'column', table: 'agencies', column: 'timezone', sql: `ALTER TABLE agencies ADD COLUMN timezone TEXT DEFAULT 'Europe/Madrid'` },
-    { type: 'column', table: 'agencies', column: 'language', sql: `ALTER TABLE agencies ADD COLUMN language TEXT DEFAULT 'es'` },
-    { type: 'column', table: 'agencies', column: 'bot_name', sql: `ALTER TABLE agencies ADD COLUMN bot_name TEXT DEFAULT 'Asistente IA'` },
-    { type: 'column', table: 'agencies', column: 'bot_tone', sql: `ALTER TABLE agencies ADD COLUMN bot_tone TEXT DEFAULT 'profesional'` },
-    { type: 'column', table: 'agencies', column: 'working_hours', sql: `ALTER TABLE agencies ADD COLUMN working_hours TEXT DEFAULT '{"start":"09:00","end":"20:00","days":[1,2,3,4,5]}'` },
-    { type: 'column', table: 'agencies', column: 'webhook_custom', sql: `ALTER TABLE agencies ADD COLUMN webhook_custom TEXT` },
+    { type: 'column', table: 'agencies', column: 'email', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS email TEXT` },
+    { type: 'column', table: 'agencies', column: 'phone', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS phone TEXT` },
+    { type: 'column', table: 'agencies', column: 'whatsapp_token', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS whatsapp_token TEXT` },
+    { type: 'column', table: 'agencies', column: 'whatsapp_phone_id', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS whatsapp_phone_id TEXT` },
+    { type: 'column', table: 'agencies', column: 'whatsapp_number', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS whatsapp_number TEXT` },
+    { type: 'column', table: 'agencies', column: 'address', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS address TEXT` },
+    { type: 'column', table: 'agencies', column: 'city', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS city TEXT` },
+    { type: 'column', table: 'agencies', column: 'website', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS website TEXT` },
+    { type: 'column', table: 'agencies', column: 'instagram', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS instagram TEXT` },
+    { type: 'column', table: 'agencies', column: 'facebook', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS facebook TEXT` },
+    { type: 'column', table: 'agencies', column: 'linkedin', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS linkedin TEXT` },
+    { type: 'column', table: 'agencies', column: 'tiktok', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS tiktok TEXT` },
+    { type: 'column', table: 'agencies', column: 'cif', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS cif TEXT` },
+    { type: 'column', table: 'agencies', column: 'legal_name', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS legal_name TEXT` },
+    { type: 'column', table: 'agencies', column: 'sendgrid_api_key', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS sendgrid_api_key TEXT` },
+    { type: 'column', table: 'agencies', column: 'sendgrid_from_email', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS sendgrid_from_email TEXT` },
+    { type: 'column', table: 'agencies', column: 'sendgrid_from_name', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS sendgrid_from_name TEXT` },
+    { type: 'column', table: 'agencies', column: 'smtp_host', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS smtp_host TEXT` },
+    { type: 'column', table: 'agencies', column: 'smtp_port', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS smtp_port INTEGER` },
+    { type: 'column', table: 'agencies', column: 'smtp_user', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS smtp_user TEXT` },
+    { type: 'column', table: 'agencies', column: 'smtp_password', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS smtp_password TEXT` },
+    { type: 'column', table: 'agencies', column: 'telegram_bot_token', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS telegram_bot_token TEXT` },
+    { type: 'column', table: 'agencies', column: 'telegram_chat_id', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT` },
+    { type: 'column', table: 'agencies', column: 'slack_webhook_url', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS slack_webhook_url TEXT` },
+    { type: 'column', table: 'agencies', column: 'notion_api_key', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS notion_api_key TEXT` },
+    { type: 'column', table: 'agencies', column: 'notion_database_id', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS notion_database_id TEXT` },
+    { type: 'column', table: 'agencies', column: 'airtable_api_key', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS airtable_api_key TEXT` },
+    { type: 'column', table: 'agencies', column: 'airtable_base_id', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS airtable_base_id TEXT` },
+    { type: 'column', table: 'agencies', column: 'airtable_table', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS airtable_table TEXT` },
+    { type: 'column', table: 'agencies', column: 'google_sheets_id', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS google_sheets_id TEXT` },
+    { type: 'column', table: 'agencies', column: 'google_service_account', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS google_service_account TEXT` },
+    { type: 'column', table: 'agencies', column: 'zapier_webhook_url', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS zapier_webhook_url TEXT` },
+    { type: 'column', table: 'agencies', column: 'make_webhook_url', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS make_webhook_url TEXT` },
+    { type: 'column', table: 'agencies', column: 'n8n_webhook_url', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS n8n_webhook_url TEXT` },
+    { type: 'column', table: 'agencies', column: 'onboarding_completed', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS onboarding_completed INTEGER DEFAULT 0` },
+    { type: 'column', table: 'agencies', column: 'onboarding_step', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS onboarding_step INTEGER DEFAULT 0` },
+    { type: 'column', table: 'agencies', column: 'meta_page_id', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS meta_page_id TEXT` },
+    { type: 'column', table: 'agencies', column: 'plan', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'starter'` },
+    { type: 'column', table: 'agencies', column: 'plan_status', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS plan_status TEXT DEFAULT 'trialing'` },
+    { type: 'column', table: 'agencies', column: 'wa_verify_token', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS wa_verify_token TEXT` },
+    { type: 'column', table: 'agencies', column: 'wa_webhook_token', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS wa_webhook_token TEXT` },
+    { type: 'column', table: 'agencies', column: 'email_provider', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS email_provider TEXT DEFAULT 'sendgrid'` },
+    { type: 'column', table: 'agencies', column: 'slugs', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS slugs TEXT` },
+    { type: 'column', table: 'agencies', column: 'primary_color', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS primary_color TEXT DEFAULT '#6366f1'` },
+    { type: 'column', table: 'agencies', column: 'secondary_color', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS secondary_color TEXT DEFAULT '#8b5cf6'` },
+    { type: 'column', table: 'agencies', column: 'logo_url', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS logo_url TEXT` },
+    { type: 'column', table: 'agencies', column: 'custom_domain', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS custom_domain TEXT` },
+    { type: 'column', table: 'agencies', column: 'province', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS province TEXT` },
+    { type: 'column', table: 'agencies', column: 'country', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS country TEXT DEFAULT 'ES'` },
+    { type: 'column', table: 'agencies', column: 'timezone', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT 'Europe/Madrid'` },
+    { type: 'column', table: 'agencies', column: 'language', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS language TEXT DEFAULT 'es'` },
+    { type: 'column', table: 'agencies', column: 'bot_name', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS bot_name TEXT DEFAULT 'Asistente IA'` },
+    { type: 'column', table: 'agencies', column: 'bot_tone', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS bot_tone TEXT DEFAULT 'profesional'` },
+    { type: 'column', table: 'agencies', column: 'working_hours', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS working_hours TEXT DEFAULT '{"start":"09:00","end":"20:00","days":[1,2,3,4,5]}'` },
+    { type: 'column', table: 'agencies', column: 'webhook_custom', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS webhook_custom TEXT` },
     { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS automation_templates (
-      id TEXT PRIMARY KEY,
+      id UUID PRIMARY KEY,
       name TEXT NOT NULL,
       description TEXT,
       category TEXT,
@@ -933,18 +941,18 @@ async function runMigration() {
       is_active INTEGER DEFAULT 1,
       is_featured INTEGER DEFAULT 0,
       sort_order INTEGER DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (NOW())
     )` },
-    { type: 'column', table: 'users', column: 'whatsapp_number', sql: `ALTER TABLE users ADD COLUMN whatsapp_number TEXT` },
-    { type: 'column', table: 'users', column: 'telegram_chat_id', sql: `ALTER TABLE users ADD COLUMN telegram_chat_id TEXT` },
-    { type: 'column', table: 'users', column: 'slack_user_id', sql: `ALTER TABLE users ADD COLUMN slack_user_id TEXT` },
-    { type: 'column', table: 'users', column: 'notification_email', sql: `ALTER TABLE users ADD COLUMN notification_email TEXT` },
-    { type: 'column', table: 'users', column: 'signature', sql: `ALTER TABLE users ADD COLUMN signature TEXT` },
-    { type: 'column', table: 'conversations', column: 'agency_id', sql: `ALTER TABLE conversations ADD COLUMN agency_id TEXT REFERENCES agencies(id) ON DELETE CASCADE` },
+    { type: 'column', table: 'users', column: 'whatsapp_number', sql: `ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_number TEXT` },
+    { type: 'column', table: 'users', column: 'telegram_chat_id', sql: `ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT` },
+    { type: 'column', table: 'users', column: 'slack_user_id', sql: `ALTER TABLE users ADD COLUMN IF NOT EXISTS slack_user_id TEXT` },
+    { type: 'column', table: 'users', column: 'notification_email', sql: `ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_email TEXT` },
+    { type: 'column', table: 'users', column: 'signature', sql: `ALTER TABLE users ADD COLUMN IF NOT EXISTS signature TEXT` },
+    { type: 'column', table: 'conversations', column: 'agency_id', sql: `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS agency_id UUID REFERENCES agencies(id) ON DELETE CASCADE` },
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_conversations_agency ON conversations(agency_id)` },
-    { type: 'column', table: 'users', column: 'timezone', sql: `ALTER TABLE users ADD COLUMN timezone TEXT DEFAULT 'Europe/Madrid'` },
-    { type: 'column', table: 'users', column: 'working_hours', sql: `ALTER TABLE users ADD COLUMN working_hours TEXT DEFAULT '{"start":"09:00","end":"20:00","days":[1,2,3,4,5]}'` },
-    { type: 'column', table: 'users', column: 'preferences', sql: `ALTER TABLE users ADD COLUMN preferences TEXT DEFAULT '{}'` },
+    { type: 'column', table: 'users', column: 'timezone', sql: `ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT 'Europe/Madrid'` },
+    { type: 'column', table: 'users', column: 'working_hours', sql: `ALTER TABLE users ADD COLUMN IF NOT EXISTS working_hours TEXT DEFAULT '{"start":"09:00","end":"20:00","days":[1,2,3,4,5]}'` },
+    { type: 'column', table: 'users', column: 'preferences', sql: `ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences TEXT DEFAULT '{}'` },
     { type: 'sql', sql: `DROP VIEW IF EXISTS agency_full_context` },
     { type: 'sql', sql: `CREATE VIEW agency_full_context AS
       SELECT a.id AS agency_id, a.name AS agency_name, a.city AS agency_city,
@@ -962,27 +970,27 @@ async function runMigration() {
         a.google_sheets_id,
         a.zapier_webhook_url, a.make_webhook_url, a.n8n_webhook_url
       FROM agencies a` },
-    { type: 'column', table: 'usage_counters', column: 'created_at', sql: `ALTER TABLE usage_counters ADD COLUMN created_at TEXT DEFAULT (datetime('now'))` },
+    { type: 'column', table: 'usage_counters', column: 'created_at', sql: `ALTER TABLE usage_counters ADD COLUMN IF NOT EXISTS created_at TEXT DEFAULT (NOW())` },
     { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS usage_monthly (
-      id TEXT PRIMARY KEY,
-      agency_id TEXT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      id UUID PRIMARY KEY,
+      agency_id UUID NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
       period TEXT NOT NULL,
       counter TEXT NOT NULL,
       value INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT NOT NULL DEFAULT (NOW()),
+      updated_at TEXT NOT NULL DEFAULT (NOW()),
       UNIQUE(agency_id, period, counter)
     )` },
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_usage_monthly ON usage_monthly(agency_id, period, counter)` },
-    { type: 'column', table: 'automations', column: 'template_id', sql: `ALTER TABLE automations ADD COLUMN template_id TEXT REFERENCES automation_templates(id) ON DELETE SET NULL` },
+    { type: 'column', table: 'automations', column: 'template_id', sql: `ALTER TABLE automations ADD COLUMN IF NOT EXISTS template_id UUID REFERENCES automation_templates(id) ON DELETE SET NULL` },
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_automations_template ON automations(agency_id, template_id)` },
-    { type: 'column', table: 'agencies', column: 'online_meeting_url', sql: `ALTER TABLE agencies ADD COLUMN online_meeting_url TEXT` },
-    { type: 'column', table: 'agencies', column: 'appointment_attendant_name', sql: `ALTER TABLE agencies ADD COLUMN appointment_attendant_name TEXT` },
+    { type: 'column', table: 'agencies', column: 'online_meeting_url', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS online_meeting_url TEXT` },
+    { type: 'column', table: 'agencies', column: 'appointment_attendant_name', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS appointment_attendant_name TEXT` },
     { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS appointments (
-      id TEXT PRIMARY KEY,
-      agency_id TEXT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
-      lead_id TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
-      assigned_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      id UUID PRIMARY KEY,
+      agency_id UUID NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+      assigned_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
       type TEXT CHECK(type IN ('online','physical')) NOT NULL,
       status TEXT CHECK(status IN ('scheduled','confirmed','reschedule_requested','cancelled','completed','no_show')) NOT NULL DEFAULT 'scheduled',
       starts_at TEXT NOT NULL,
@@ -993,88 +1001,88 @@ async function runMigration() {
       notes TEXT,
       client_token TEXT UNIQUE NOT NULL,
       reminder_48h_sent_at TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (NOW()),
+      updated_at TEXT NOT NULL DEFAULT (NOW())
     )` },
     { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS appointment_messages (
-      id TEXT PRIMARY KEY,
-      appointment_id TEXT NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
+      id UUID PRIMARY KEY,
+      appointment_id UUID NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
       channel TEXT CHECK(channel IN ('email','whatsapp')) NOT NULL,
       type TEXT CHECK(type IN ('confirmation','reminder','update','cancel')) NOT NULL,
       status TEXT NOT NULL,
-      sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+      sent_at TEXT NOT NULL DEFAULT (NOW()),
       error TEXT
     )` },
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_appointments_client_token ON appointments(client_token)` },
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_appointments_lead ON appointments(lead_id)` },
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_appointments_agency ON appointments(agency_id)` },
     // ── Properties new columns ──
-    { type: 'column', table: 'properties', column: 'operation_type', sql: `ALTER TABLE properties ADD COLUMN operation_type TEXT DEFAULT 'sale'` },
-    { type: 'column', table: 'properties', column: 'address', sql: `ALTER TABLE properties ADD COLUMN address TEXT` },
-    { type: 'column', table: 'properties', column: 'province', sql: `ALTER TABLE properties ADD COLUMN province TEXT` },
-    { type: 'column', table: 'properties', column: 'postal_code', sql: `ALTER TABLE properties ADD COLUMN postal_code TEXT` },
-    { type: 'column', table: 'properties', column: 'floor', sql: `ALTER TABLE properties ADD COLUMN floor TEXT` },
-    { type: 'column', table: 'properties', column: 'has_elevator', sql: `ALTER TABLE properties ADD COLUMN has_elevator INTEGER DEFAULT 0` },
-    { type: 'column', table: 'properties', column: 'has_terrace', sql: `ALTER TABLE properties ADD COLUMN has_terrace INTEGER DEFAULT 0` },
-    { type: 'column', table: 'properties', column: 'has_garage', sql: `ALTER TABLE properties ADD COLUMN has_garage INTEGER DEFAULT 0` },
-    { type: 'column', table: 'properties', column: 'condition', sql: `ALTER TABLE properties ADD COLUMN condition TEXT` },
-    { type: 'column', table: 'properties', column: 'source', sql: `ALTER TABLE properties ADD COLUMN source TEXT DEFAULT 'manual'` },
-    { type: 'column', table: 'properties', column: 'external_source', sql: `ALTER TABLE properties ADD COLUMN external_source TEXT` },
-    { type: 'column', table: 'properties', column: 'external_id', sql: `ALTER TABLE properties ADD COLUMN external_id TEXT` },
-    { type: 'column', table: 'properties', column: 'external_url', sql: `ALTER TABLE properties ADD COLUMN external_url TEXT` },
-    { type: 'column', table: 'properties', column: 'imported_at', sql: `ALTER TABLE properties ADD COLUMN imported_at TEXT` },
-    { type: 'column', table: 'properties', column: 'updated_at', sql: `ALTER TABLE properties ADD COLUMN updated_at TEXT` },
-    { type: 'column', table: 'properties', column: 'public_url', sql: `ALTER TABLE properties ADD COLUMN public_url TEXT` },
+    { type: 'column', table: 'properties', column: 'operation_type', sql: `ALTER TABLE properties ADD COLUMN IF NOT EXISTS operation_type TEXT DEFAULT 'sale'` },
+    { type: 'column', table: 'properties', column: 'address', sql: `ALTER TABLE properties ADD COLUMN IF NOT EXISTS address TEXT` },
+    { type: 'column', table: 'properties', column: 'province', sql: `ALTER TABLE properties ADD COLUMN IF NOT EXISTS province TEXT` },
+    { type: 'column', table: 'properties', column: 'postal_code', sql: `ALTER TABLE properties ADD COLUMN IF NOT EXISTS postal_code TEXT` },
+    { type: 'column', table: 'properties', column: 'floor', sql: `ALTER TABLE properties ADD COLUMN IF NOT EXISTS floor TEXT` },
+    { type: 'column', table: 'properties', column: 'has_elevator', sql: `ALTER TABLE properties ADD COLUMN IF NOT EXISTS has_elevator INTEGER DEFAULT 0` },
+    { type: 'column', table: 'properties', column: 'has_terrace', sql: `ALTER TABLE properties ADD COLUMN IF NOT EXISTS has_terrace INTEGER DEFAULT 0` },
+    { type: 'column', table: 'properties', column: 'has_garage', sql: `ALTER TABLE properties ADD COLUMN IF NOT EXISTS has_garage INTEGER DEFAULT 0` },
+    { type: 'column', table: 'properties', column: 'condition', sql: `ALTER TABLE properties ADD COLUMN IF NOT EXISTS condition TEXT` },
+    { type: 'column', table: 'properties', column: 'source', sql: `ALTER TABLE properties ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manual'` },
+    { type: 'column', table: 'properties', column: 'external_source', sql: `ALTER TABLE properties ADD COLUMN IF NOT EXISTS external_source TEXT` },
+    { type: 'column', table: 'properties', column: 'external_id', sql: `ALTER TABLE properties ADD COLUMN IF NOT EXISTS external_id TEXT` },
+    { type: 'column', table: 'properties', column: 'external_url', sql: `ALTER TABLE properties ADD COLUMN IF NOT EXISTS external_url TEXT` },
+    { type: 'column', table: 'properties', column: 'imported_at', sql: `ALTER TABLE properties ADD COLUMN IF NOT EXISTS imported_at TEXT` },
+    { type: 'column', table: 'properties', column: 'updated_at', sql: `ALTER TABLE properties ADD COLUMN IF NOT EXISTS updated_at TEXT` },
+    { type: 'column', table: 'properties', column: 'public_url', sql: `ALTER TABLE properties ADD COLUMN IF NOT EXISTS public_url TEXT` },
     // ── Agencias columns for Idealista ──
-    { type: 'column', table: 'agencies', column: 'idealista_api_key', sql: `ALTER TABLE agencies ADD COLUMN idealista_api_key TEXT` },
-    { type: 'column', table: 'agencies', column: 'idealista_api_secret', sql: `ALTER TABLE agencies ADD COLUMN idealista_api_secret TEXT` },
-    { type: 'column', table: 'agencies', column: 'idealista_import_mode', sql: `ALTER TABLE agencies ADD COLUMN idealista_import_mode TEXT DEFAULT 'url'` },
-    { type: 'column', table: 'agencies', column: 'idealista_office_id', sql: `ALTER TABLE agencies ADD COLUMN idealista_office_id TEXT` },
+    { type: 'column', table: 'agencies', column: 'idealista_api_key', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS idealista_api_key TEXT` },
+    { type: 'column', table: 'agencies', column: 'idealista_api_secret', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS idealista_api_secret TEXT` },
+    { type: 'column', table: 'agencies', column: 'idealista_import_mode', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS idealista_import_mode TEXT DEFAULT 'url'` },
+    { type: 'column', table: 'agencies', column: 'idealista_office_id', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS idealista_office_id TEXT` },
     // ── New indexes for properties ──
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_properties_source ON properties(source)` },
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_properties_operation ON properties(operation_type)` },
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_properties_external ON properties(external_source, external_id)` },
-    { type: 'column', table: 'properties', column: 'assigned_to', sql: `ALTER TABLE properties ADD COLUMN assigned_to TEXT REFERENCES users(id) ON DELETE SET NULL` },
-    { type: 'column', table: 'properties', column: 'quality_score', sql: `ALTER TABLE properties ADD COLUMN quality_score INTEGER DEFAULT 0` },
-    { type: 'column', table: 'properties', column: 'ai_generated', sql: `ALTER TABLE properties ADD COLUMN ai_generated INTEGER DEFAULT 0` },
-    { type: 'column', table: 'properties', column: 'marketing_assets', sql: `ALTER TABLE properties ADD COLUMN marketing_assets TEXT` },
+    { type: 'column', table: 'properties', column: 'assigned_to', sql: `ALTER TABLE properties ADD COLUMN IF NOT EXISTS assigned_to UUID REFERENCES users(id) ON DELETE SET NULL` },
+    { type: 'column', table: 'properties', column: 'quality_score', sql: `ALTER TABLE properties ADD COLUMN IF NOT EXISTS quality_score INTEGER DEFAULT 0` },
+    { type: 'column', table: 'properties', column: 'ai_generated', sql: `ALTER TABLE properties ADD COLUMN IF NOT EXISTS ai_generated INTEGER DEFAULT 0` },
+    { type: 'column', table: 'properties', column: 'marketing_assets', sql: `ALTER TABLE properties ADD COLUMN IF NOT EXISTS marketing_assets TEXT` },
     { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS property_leads (
-      id TEXT PRIMARY KEY,
-      agency_id TEXT REFERENCES agencies(id) ON DELETE CASCADE,
-      property_id TEXT REFERENCES properties(id) ON DELETE CASCADE,
-      lead_id TEXT REFERENCES leads(id) ON DELETE CASCADE,
+      id UUID PRIMARY KEY,
+      agency_id UUID REFERENCES agencies(id) ON DELETE CASCADE,
+      property_id UUID REFERENCES properties(id) ON DELETE CASCADE,
+      lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
       relation_type TEXT,
       match_score REAL DEFAULT 0,
       notes TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT NOT NULL DEFAULT (NOW()),
       updated_at TEXT
     )` },
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_property_leads_agency ON property_leads(agency_id)` },
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_property_leads_property ON property_leads(property_id)` },
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_property_leads_lead ON property_leads(lead_id)` },
     { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS property_marketing_assets (
-      id TEXT PRIMARY KEY,
-      agency_id TEXT REFERENCES agencies(id) ON DELETE CASCADE,
-      property_id TEXT REFERENCES properties(id) ON DELETE CASCADE,
+      id UUID PRIMARY KEY,
+      agency_id UUID REFERENCES agencies(id) ON DELETE CASCADE,
+      property_id UUID REFERENCES properties(id) ON DELETE CASCADE,
       type TEXT,
       title TEXT,
       content TEXT,
       channel TEXT,
       created_by_ai INTEGER DEFAULT 1,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (NOW())
     )` },
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_property_marketing_assets_agency ON property_marketing_assets(agency_id)` },
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_property_marketing_assets_prop ON property_marketing_assets(property_id)` },
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_properties_assigned ON properties(assigned_to)` },
     { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS property_interests (
-      id TEXT PRIMARY KEY,
-      property_id TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
-      lead_id TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
-      agency_id TEXT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      id UUID PRIMARY KEY,
+      property_id UUID NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+      lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+      agency_id UUID NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
       status TEXT NOT NULL DEFAULT 'interested',
       channel TEXT,
       notes TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT NOT NULL DEFAULT (NOW()),
       updated_at TEXT,
       UNIQUE(property_id, lead_id)
     )` },
@@ -1082,10 +1090,10 @@ async function runMigration() {
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_property_interests_lead ON property_interests(lead_id)` },
     // ── Lead Automation new tables ──
     { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS communication_logs (
-      id TEXT PRIMARY KEY,
-      agency_id TEXT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
-      lead_id TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
-      appointment_id TEXT REFERENCES appointments(id) ON DELETE SET NULL,
+      id UUID PRIMARY KEY,
+      agency_id UUID NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+      appointment_id UUID REFERENCES appointments(id) ON DELETE SET NULL,
       channel TEXT NOT NULL CHECK(channel IN ('email','whatsapp','sms','call')),
       direction TEXT NOT NULL CHECK(direction IN ('outbound','inbound')),
       subject TEXT,
@@ -1094,24 +1102,24 @@ async function runMigration() {
       provider_message_id TEXT,
       error TEXT,
       sent_at TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (NOW())
     )` },
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_comm_logs_lead ON communication_logs(lead_id)` },
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_comm_logs_agency ON communication_logs(agency_id)` },
     { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS lead_automations (
-      id TEXT PRIMARY KEY,
-      agency_id TEXT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
-      lead_id TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+      id UUID PRIMARY KEY,
+      agency_id UUID NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
       type TEXT NOT NULL,
       channel TEXT,
       status TEXT NOT NULL DEFAULT 'pending',
       payload TEXT,
       result TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (NOW())
     )` },
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_lead_automations_lead ON lead_automations(lead_id)` },
     { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS lead_preferences (
-      lead_id TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+      lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
       preferred_channel TEXT DEFAULT 'whatsapp',
       preferred_time TEXT,
       consent_email INTEGER DEFAULT 0,
@@ -1120,40 +1128,31 @@ async function runMigration() {
       notes TEXT,
       PRIMARY KEY (lead_id)
     )` },
-    { type: 'column', table: 'appointments', column: 'reminder_2h_sent_at', sql: `ALTER TABLE appointments ADD COLUMN reminder_2h_sent_at TEXT` },
-    { type: 'column', table: 'appointments', column: 'property_id', sql: `ALTER TABLE appointments ADD COLUMN property_id TEXT REFERENCES properties(id) ON DELETE SET NULL` },
-    { type: 'column', table: 'agencies', column: 'email_signature', sql: `ALTER TABLE agencies ADD COLUMN email_signature TEXT` },
-    { type: 'column', table: 'agencies', column: 'auto_send_email', sql: `ALTER TABLE agencies ADD COLUMN auto_send_email INTEGER DEFAULT 0` },
-    { type: 'column', table: 'agencies', column: 'auto_send_whatsapp', sql: `ALTER TABLE agencies ADD COLUMN auto_send_whatsapp INTEGER DEFAULT 0` },
-    { type: 'column', table: 'agencies', column: 'require_email_confirmation', sql: `ALTER TABLE agencies ADD COLUMN require_email_confirmation INTEGER DEFAULT 1` },
-    { type: 'column', table: 'agencies', column: 'require_whatsapp_confirmation', sql: `ALTER TABLE agencies ADD COLUMN require_whatsapp_confirmation INTEGER DEFAULT 1` },
-    { type: 'column', table: 'agencies', column: 'default_channel', sql: `ALTER TABLE agencies ADD COLUMN default_channel TEXT DEFAULT 'email'` },
-    { type: 'column', table: 'agencies', column: 'reminder_2h_enabled', sql: `ALTER TABLE agencies ADD COLUMN reminder_2h_enabled INTEGER DEFAULT 1` },
-    { type: 'column', table: 'leads', column: 'last_channel', sql: `ALTER TABLE leads ADD COLUMN last_channel TEXT` },
+    { type: 'column', table: 'appointments', column: 'reminder_2h_sent_at', sql: `ALTER TABLE appointments ADD COLUMN IF NOT EXISTS reminder_2h_sent_at TEXT` },
+    { type: 'column', table: 'appointments', column: 'property_id', sql: `ALTER TABLE appointments ADD COLUMN IF NOT EXISTS property_id UUID REFERENCES properties(id) ON DELETE SET NULL` },
+    { type: 'column', table: 'agencies', column: 'email_signature', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS email_signature TEXT` },
+    { type: 'column', table: 'agencies', column: 'auto_send_email', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS auto_send_email INTEGER DEFAULT 0` },
+    { type: 'column', table: 'agencies', column: 'auto_send_whatsapp', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS auto_send_whatsapp INTEGER DEFAULT 0` },
+    { type: 'column', table: 'agencies', column: 'require_email_confirmation', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS require_email_confirmation INTEGER DEFAULT 1` },
+    { type: 'column', table: 'agencies', column: 'require_whatsapp_confirmation', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS require_whatsapp_confirmation INTEGER DEFAULT 1` },
+    { type: 'column', table: 'agencies', column: 'default_channel', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS default_channel TEXT DEFAULT 'email'` },
+    { type: 'column', table: 'agencies', column: 'reminder_2h_enabled', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS reminder_2h_enabled INTEGER DEFAULT 1` },
+    { type: 'column', table: 'leads', column: 'last_channel', sql: `ALTER TABLE leads ADD COLUMN IF NOT EXISTS last_channel TEXT` },
   ];
 
   for (const migration of migrations) {
-    if (migration.type === 'column') {
-      if (!columnExists(migration.table, migration.column)) {
-        try {
-          run(migration.sql);
-        } catch (e) {
-          console.log(`[Migration] Error adding column ${migration.column} to ${migration.table}:`, e.message);
-        }
-      }
-    } else {
-      try {
-        run(migration.sql);
-      } catch (e) {
-        // Ignorar si la tabla, índice o vista ya existe o no se puede recrear temporalmente
-      }
+    try {
+      await run(migration.sql);
+    } catch (e) {
+      // Ignorar si la tabla/columna/índice/vista ya existe o no se puede recrear temporalmente
+      console.log(`[Migration] Aviso (${migration.table || migration.type}):`, e.message);
     }
   }
 
   // ── Seed plantillas globales del marketplace ──
   try {
     const { seedAutomationTemplates } = await import('./services/seed-templates.js');
-    seedAutomationTemplates();
+    await seedAutomationTemplates();
   } catch (e) {
     console.log('[Migration] Seed templates error:', e.message);
   }
@@ -1613,7 +1612,7 @@ function seedAutomationsIntoDb(agencyId) {
     try {
       run(
         `INSERT INTO automations (id, agency_id, name, description, is_active, trigger_type, trigger_event, trigger_config, conditions, actions, run_count, created_at)
-         VALUES (@id, @agency_id, @name, @description, 1, @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, @floor, datetime('now'))`,
+         VALUES (@id, @agency_id, @name, @description, 1, @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, @floor, NOW())`,
         {
           id: uuidv4(),
           agency_id: agencyId,

@@ -11,7 +11,7 @@ const router = Router();
 function logActivity(agencyId, leadId, userId, type, description, metadata = null) {
   run(
     `INSERT INTO activities (id, agency_id, lead_id, user_id, type, description, metadata, created_at)
-     VALUES (@id, @agency_id, @lead_id, @user_id, @type, @description, @metadata, datetime('now'))`,
+     VALUES (@id, @agency_id, @lead_id, @user_id, @type, @description, @metadata, NOW())`,
     {
       id: uuidv4(),
       agency_id: agencyId,
@@ -70,7 +70,7 @@ router.post('/public/appointment/:token/confirm', (req, res) => {
     }
 
     run(
-      "UPDATE appointments SET status = 'confirmed', updated_at = datetime('now') WHERE id = @id",
+      "UPDATE appointments SET status = 'confirmed', updated_at = NOW() WHERE id = @id",
       { id: appointment.id }
     );
 
@@ -98,7 +98,7 @@ router.post('/public/appointment/:token/cancel', async (req, res) => {
     if (!appointment) return res.status(404).json({ error: 'Cita no encontrada.' });
 
     run(
-      "UPDATE appointments SET status = 'cancelled', updated_at = datetime('now') WHERE id = @id",
+      "UPDATE appointments SET status = 'cancelled', updated_at = NOW() WHERE id = @id",
       { id: appointment.id }
     );
 
@@ -163,7 +163,7 @@ router.post('/public/appointment/:token/reschedule', async (req, res) => {
 
     run(
       `UPDATE appointments 
-       SET starts_at = @starts_at, ends_at = @ends_at, notes = @notes, status = 'reschedule_requested', updated_at = datetime('now')
+       SET starts_at = @starts_at, ends_at = @ends_at, notes = @notes, status = 'reschedule_requested', updated_at = NOW()
        WHERE id = @id`,
       {
         id: appointment.id,
@@ -242,7 +242,7 @@ router.patch('/appointments/:id', auth, async (req, res) => {
 
     if (updates.length === 0) return res.status(400).json({ error: 'No hay campos para actualizar.' });
 
-    updates.push("updated_at = datetime('now')");
+    updates.push("updated_at = NOW()");
     run(`UPDATE appointments SET ${updates.join(', ')} WHERE id = @id`, params);
 
     const updatedAppt = get('SELECT * FROM appointments WHERE id = @id', { id });
@@ -301,7 +301,7 @@ router.post('/appointments/:id/cancel', auth, async (req, res) => {
     const appointment = get('SELECT * FROM appointments WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
     if (!appointment) return res.status(404).json({ error: 'Cita no encontrada.' });
 
-    run("UPDATE appointments SET status = 'cancelled', updated_at = datetime('now') WHERE id = @id", { id });
+    run("UPDATE appointments SET status = 'cancelled', updated_at = NOW() WHERE id = @id", { id });
 
     logActivity(
       agencyId,

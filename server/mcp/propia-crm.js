@@ -73,7 +73,7 @@ server
   }, async (args, context) => {
     const scoreLabel = args.score > 75 ? 'caliente' : args.score > 40 ? 'templado' : 'frio';
     run(
-      `UPDATE leads SET ia_score = @score, ia_insight = @label, ia_summary = @summary, updated_at = datetime('now') WHERE id = @id`,
+      `UPDATE leads SET ia_score = @score, ia_insight = @label, ia_summary = @summary, updated_at = NOW() WHERE id = @id`,
       { score: args.score, label: scoreLabel, summary: args.summary || null, id: args.lead_id }
     );
     logActivity(context.agencyId, args.lead_id, context.userId, 'ia_action', `Score actualizado a ${args.score} (${scoreLabel})`);
@@ -94,7 +94,7 @@ server
   }, async (args, context) => {
     const existing = get('SELECT status FROM leads WHERE id = @id', { id: args.lead_id });
     if (!existing) throw new Error('Lead no encontrado');
-    run("UPDATE leads SET status = @status, updated_at = datetime('now') WHERE id = @id", { status: args.new_stage, id: args.lead_id });
+    run("UPDATE leads SET status = @status, updated_at = NOW() WHERE id = @id", { status: args.new_stage, id: args.lead_id });
     logActivity(context.agencyId, args.lead_id, context.userId, 'status_change',
       `Pipeline: ${existing.status} → ${args.new_stage}${args.reason ? ': ' + args.reason : ''}`);
     return { success: true, from: existing.status, to: args.new_stage };
@@ -135,7 +135,7 @@ server
       if (!existing) {
         run(
           `INSERT INTO matchings (id, lead_id, property_id, score, reason, created_at)
-           VALUES (@id, @lid, @pid, @score, @reason, datetime('now'))`,
+           VALUES (@id, @lid, @pid, @score, @reason, NOW())`,
           { id: uuidv4(), lid: args.lead_id, pid: p.id, score: p.compatibility_score, reason: p.match_reasons?.join(', ') || '' }
         );
       }

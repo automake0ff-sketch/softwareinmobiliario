@@ -80,10 +80,10 @@ async function processMetaLead(leadData, pageId) {
 
     const existingLead = email ? get('SELECT id FROM leads WHERE email = @email', { email }) : null;
     if (existingLead) {
-      run("UPDATE leads SET last_activity = datetime('now'), updated_at = datetime('now') WHERE id = @id", { id: existingLead.id });
+      run("UPDATE leads SET last_activity = NOW(), updated_at = NOW() WHERE id = @id", { id: existingLead.id });
       run(
         `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
-         VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, datetime('now'))`,
+         VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, NOW())`,
         {
           id: uuidv4(), agency_id: agency.id, lead_id: existingLead.id,
           type: 'webhook',
@@ -97,7 +97,7 @@ async function processMetaLead(leadData, pageId) {
     const leadId = uuidv4();
     run(
       `INSERT INTO leads (id, agency_id, name, phone, email, budget, zone, property_interest, source, status, created_at, updated_at)
-       VALUES (@id, @agency_id, @name, @phone, @email, @budget, @zone, @property_interest, @source, @status, datetime('now'), datetime('now'))`,
+       VALUES (@id, @agency_id, @name, @phone, @email, @budget, @zone, @property_interest, @source, @status, NOW(), NOW())`,
       {
         id: leadId, agency_id: agency.id, name, phone, email, budget,
         zone: city, property_interest: propertyType, source: 'meta_ads', status: 'nuevo',
@@ -107,7 +107,7 @@ async function processMetaLead(leadData, pageId) {
     const utmId = uuidv4();
     run(
       `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
-       VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, datetime('now'))`,
+       VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, NOW())`,
       {
         id: utmId, agency_id: agency.id, lead_id: leadId, type: 'utm_data',
         description: 'UTM data from Meta Ads',
@@ -130,14 +130,14 @@ async function processMetaLead(leadData, pageId) {
       const msgs = [{ role: 'lead', content: message, timestamp: new Date().toISOString() }];
       run(
         `INSERT INTO conversations (id, agency_id, lead_id, channel, messages, created_at)
-         VALUES (@id, @agency_id, @lead_id, @channel, @messages, datetime('now'))`,
+         VALUES (@id, @agency_id, @lead_id, @channel, @messages, NOW())`,
         { id: convId, agency_id: agency.id, lead_id: leadId, channel: 'web', messages: JSON.stringify(msgs) }
       );
     }
 
     run(
       `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
-       VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, datetime('now'))`,
+       VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, NOW())`,
       {
         id: uuidv4(), agency_id: agency.id, lead_id: leadId,
         type: 'webhook',

@@ -15,7 +15,7 @@ router.use(auth);
 function logActivity(agencyId, leadId, userId, type, description, metadata = null) {
   run(
     `INSERT INTO activities (id, agency_id, lead_id, user_id, type, description, metadata, created_at)
-     VALUES (@id, @agency_id, @lead_id, @user_id, @type, @description, @metadata, datetime('now'))`,
+     VALUES (@id, @agency_id, @lead_id, @user_id, @type, @description, @metadata, NOW())`,
     {
       id: uuidv4(),
       agency_id: agencyId,
@@ -163,7 +163,7 @@ router.post('/', checkLimit('leads'), validateBody(leadSchema), (req, res) => {
 
     run(
       `INSERT INTO leads (id, agency_id, office_id, name, phone, email, budget, zone, property_interest, source, status, pipeline_stage, pipeline_stage_updated_at, created_at, updated_at)
-       VALUES (@id, @agency_id, @office_id, @name, @phone, @email, @budget, @zone, @property_interest, @source, @status, @pipeline_stage, datetime('now'), datetime('now'), datetime('now'))`,
+       VALUES (@id, @agency_id, @office_id, @name, @phone, @email, @budget, @zone, @property_interest, @source, @status, @pipeline_stage, NOW(), NOW(), NOW())`,
       {
         id,
         agency_id: activeAgencyId,
@@ -242,7 +242,7 @@ router.patch('/:id/status', (req, res) => {
       updates.push('status = @status');
     }
 
-    run(`UPDATE leads SET ${updates.join(', ')}, updated_at = datetime('now') WHERE id = @id`, params);
+    run(`UPDATE leads SET ${updates.join(', ')}, updated_at = NOW() WHERE id = @id`, params);
 
     if (status !== existing.pipeline_stage) {
       logActivity(req.user.agency_id, req.params.id, req.user.id, 'stage_changed', `Etapa cambiada de ${existing.pipeline_stage || existing.status} a ${status}.`, { from: existing.pipeline_stage || existing.status, to: status });
@@ -295,7 +295,7 @@ router.patch('/:id', validateBody(leadSchema.partial()), (req, res) => {
 
     if (updates.length === 0) return res.status(400).json({ error: 'No hay campos para actualizar.' });
 
-    updates.push("updated_at = datetime('now')");
+    updates.push("updated_at = NOW()");
     run(`UPDATE leads SET ${updates.join(', ')} WHERE id = @id`, params);
 
     const oldStage = existing.pipeline_stage || existing.status;
@@ -372,7 +372,7 @@ router.delete('/:id', (req, res) => {
     const existing = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!existing) return res.status(404).json({ error: 'Lead no encontrado.' });
 
-    run("UPDATE leads SET pipeline_stage = 'archivo', updated_at = datetime('now') WHERE id = @id", { id: req.params.id });
+    run("UPDATE leads SET pipeline_stage = 'archivo', updated_at = NOW() WHERE id = @id", { id: req.params.id });
     logActivity(req.user.agency_id, req.params.id, req.user.id, 'stage_changed', `Lead archivado.`, { from: existing.pipeline_stage || existing.status, to: 'archivo' });
 
     res.json({ ok: true, success: true });
@@ -393,7 +393,7 @@ router.post('/:id/assign', (req, res) => {
     const agent = get('SELECT * FROM users WHERE id = @id', { id: agent_id });
     if (!agent) return res.status(404).json({ error: 'Usuario no encontrado.' });
 
-    run("UPDATE leads SET assigned_to = @agent_id, updated_at = datetime('now') WHERE id = @id", { agent_id, id: req.params.id });
+    run("UPDATE leads SET assigned_to = @agent_id, updated_at = NOW() WHERE id = @id", { agent_id, id: req.params.id });
     logActivity(req.user.agency_id, req.params.id, req.user.id, 'lead_assigned', `Lead asignado a ${agent.name}.`, { agent_id, agent_name: agent.name });
 
     const lead = get('SELECT * FROM leads WHERE id = @id', { id: req.params.id });
@@ -433,11 +433,11 @@ router.post('/:id/insights', async (req, res) => {
     const insightId = uuidv4();
     run(
       `INSERT INTO ai_insights (id, lead_id, agent_type, insight, action, created_at)
-       VALUES (@id, @lead_id, @agent_type, @insight, @action, datetime('now'))`,
+       VALUES (@id, @lead_id, @agent_type, @insight, @action, NOW())`,
       { id: insightId, lead_id: req.params.id, agent_type: 'analista', insight: summary, action: 'Revisar y contactar' }
     );
 
-    run("UPDATE leads SET ia_summary = @summary, updated_at = datetime('now') WHERE id = @id", { summary, id: req.params.id });
+    run("UPDATE leads SET ia_summary = @summary, updated_at = NOW() WHERE id = @id", { summary, id: req.params.id });
 
     logActivity(req.user.agency_id, req.params.id, null, 'ai_insight', 'Insight de IA generado para lead.');
 
@@ -458,7 +458,7 @@ router.post('/:id/tasks', (req, res) => {
     const taskId = uuidv4();
     run(
       `INSERT INTO tasks (id, lead_id, title, description, due_date, completed, created_at)
-       VALUES (@id, @lead_id, @title, @description, @due_date, 0, datetime('now'))`,
+       VALUES (@id, @lead_id, @title, @description, @due_date, 0, NOW())`,
       {
         id: taskId,
         lead_id: req.params.id,
@@ -593,7 +593,7 @@ router.post('/:id/appointments', async (req, res) => {
 
     run(
       `INSERT INTO appointments (id, agency_id, lead_id, assigned_user_id, type, status, starts_at, ends_at, timezone, location, online_url, notes, client_token, created_at, updated_at)
-       VALUES (@id, @agency_id, @lead_id, @assigned_user_id, @type, 'scheduled', @starts_at, @ends_at, @timezone, @location, @online_url, @notes, @client_token, datetime('now'), datetime('now'))`,
+       VALUES (@id, @agency_id, @lead_id, @assigned_user_id, @type, 'scheduled', @starts_at, @ends_at, @timezone, @location, @online_url, @notes, @client_token, NOW(), NOW())`,
       {
         id: appointmentId,
         agency_id: agencyId,
@@ -645,7 +645,7 @@ router.post('/:id/appointments', async (req, res) => {
       emailResult = await emailService.sendAppointmentConfirmation(lead, appointment, agency, modifyUrl);
       run(
         `INSERT INTO appointment_messages (id, appointment_id, channel, type, status, error, sent_at)
-         VALUES (@id, @appt_id, 'email', 'confirmation', @status, @error, datetime('now'))`,
+         VALUES (@id, @appt_id, 'email', 'confirmation', @status, @error, NOW())`,
         {
           id: uuidv4(),
           appt_id: appointmentId,
@@ -667,7 +667,7 @@ router.post('/:id/appointments', async (req, res) => {
       waResult = await whatsappService.sendAppointmentConfirmation(lead, appointment, agency, modifyUrl);
       run(
         `INSERT INTO appointment_messages (id, appointment_id, channel, type, status, error, sent_at)
-         VALUES (@id, @appt_id, 'whatsapp', 'confirmation', @status, @error, datetime('now'))`,
+         VALUES (@id, @appt_id, 'whatsapp', 'confirmation', @status, @error, NOW())`,
         {
           id: uuidv4(),
           appt_id: appointmentId,
@@ -766,7 +766,7 @@ router.post('/:id/auto-email', async (req, res) => {
     createFollowUpTask(agencyId, id, req.user.id);
 
     if (lead.status === 'nuevo') {
-      run(`UPDATE leads SET status = 'contactado', updated_at = datetime('now') WHERE id = @id`, { id });
+      run(`UPDATE leads SET status = 'contactado', updated_at = NOW() WHERE id = @id`, { id });
     }
 
     res.json({ ...result, subject, body, template, lead_status_updated: lead.status === 'nuevo' });

@@ -266,7 +266,7 @@ export class BillingService {
           if (agencyId) {
             run(
               `INSERT INTO payment_history (id, agency_id, amount, currency, status, payment_method, stripe_invoice_id, stripe_payment_intent_id, invoice_url, invoice_pdf_url, description, period_start, period_end, created_at)
-               VALUES (@id, @agency_id, @amount, @currency, 'succeeded', 'card', @inv_id, @pi_id, @inv_url, @pdf_url, @desc, @p_start, @p_end, datetime('now'))`,
+               VALUES (@id, @agency_id, @amount, @currency, 'succeeded', 'card', @inv_id, @pi_id, @inv_url, @pdf_url, @desc, @p_start, @p_end, NOW())`,
               {
                 id: uuidv4(),
                 agency_id: agencyId,
@@ -292,7 +292,7 @@ export class BillingService {
           if (agencyId) {
             const status = sub.status === 'active' ? 'active' : sub.status === 'past_due' ? 'past_due' : sub.status === 'canceled' ? 'canceled' : sub.status === 'trialing' ? 'trialing' : 'expired';
             run(
-              `UPDATE subscriptions SET status = @status, cancel_at_period_end = @cancel, current_period_end = @period_end, updated_at = datetime('now') WHERE agency_id = @agency_id`,
+              `UPDATE subscriptions SET status = @status, cancel_at_period_end = @cancel, current_period_end = @period_end, updated_at = NOW() WHERE agency_id = @agency_id`,
               {
                 status,
                 cancel: sub.cancel_at_period_end ? 1 : 0,
@@ -337,7 +337,7 @@ export class BillingService {
                            resource.plan_id?.includes('profesional') ? 'profesional' : 'agencia';
             run(
               `INSERT OR REPLACE INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, paypal_subscription_id, paypal_plan_id, updated_at)
-               VALUES (@id, @agency_id, @plan_id, 'active', 'monthly', @paypal_sub, @paypal_plan, datetime('now'))`,
+               VALUES (@id, @agency_id, @plan_id, 'active', 'monthly', @paypal_sub, @paypal_plan, NOW())`,
               {
                 id: uuidv4(), agency_id: agencyId, plan_id: planId,
                 paypal_sub: resource.id, paypal_plan: resource.plan_id,
@@ -356,7 +356,7 @@ export class BillingService {
           if (agencyId) {
             run(
               `INSERT INTO payment_history (id, agency_id, amount, currency, status, payment_method, paypal_transaction_id, created_at)
-               VALUES (@id, @agency_id, @amount, 'EUR', 'succeeded', 'paypal', @txn_id, datetime('now'))`,
+               VALUES (@id, @agency_id, @amount, 'EUR', 'succeeded', 'paypal', @txn_id, NOW())`,
               {
                 id: uuidv4(), agency_id: agencyId,
                 amount: resource.amount?.total ? Math.round(parseFloat(resource.amount.total) * 100) : 0,

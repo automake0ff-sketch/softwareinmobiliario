@@ -6,7 +6,7 @@ import { checkLimit } from '../services/plan-checker.js';
 
 // Auto-run schema migrations for automations table
 try {
-  run('ALTER TABLE automations ADD COLUMN template_id TEXT');
+  await run('ALTER TABLE automations ADD COLUMN IF NOT EXISTS template_id TEXT');
 } catch (e) {
   // Column already exists
 }
@@ -116,7 +116,7 @@ router.post('/:id/install', checkLimit('automations'), (req, res) => {
       `INSERT INTO automations (id, agency_id, name, description, is_active, active,
         trigger_type, trigger_event, trigger_config, conditions, actions, run_count, created_at, template_id)
        VALUES (@id, @agency_id, @name, @description, 0, 0,
-        @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, 0, datetime('now'), @template_id)`,
+        @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, 0, NOW(), @template_id)`,
       {
         id: automationId,
         agency_id: agencyId,

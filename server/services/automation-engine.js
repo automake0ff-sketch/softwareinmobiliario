@@ -86,7 +86,7 @@ function saveMessageToConversation(leadId, agencyId, content, senderType, sender
     const convId = uuidv4()
     run(
       `INSERT INTO conversations (id, agency_id, lead_id, channel, messages, created_at)
-       VALUES (@id, @agency_id, @lead_id, @channel, @messages, datetime('now'))`,
+       VALUES (@id, @agency_id, @lead_id, @channel, @messages, NOW())`,
       { id: convId, agency_id: agencyId, lead_id: leadId, channel: 'whatsapp', messages: '[]' }
     )
     conv = { id: convId, messages: '[]' }
@@ -105,11 +105,11 @@ function saveMessageToConversation(leadId, agencyId, content, senderType, sender
   }
   const msgs = JSON.parse(conv.messages || '[]')
   msgs.push(newMessage)
-  run(`UPDATE conversations SET messages = @messages, updated_at = datetime('now') WHERE id = @id`, { messages: JSON.stringify(msgs), id: conv.id })
+  run(`UPDATE conversations SET messages = @messages, updated_at = NOW() WHERE id = @id`, { messages: JSON.stringify(msgs), id: conv.id })
 
   run(
     `INSERT INTO messages (id, conversation_id, author, content, message_type, created_at)
-     VALUES (@id, @conversation_id, @author, @content, @message_type, datetime('now'))`,
+     VALUES (@id, @conversation_id, @author, @content, @message_type, NOW())`,
     {
       id: msgId,
       conversation_id: conv.id,
@@ -132,7 +132,7 @@ function logActivity(agencyId, leadId, type, title, description, metadata, agent
   const created_at = new Date().toISOString()
   run(
     `INSERT INTO activities (id, agency_id, lead_id, type, title, description, agent_type, metadata, created_at)
-     VALUES (@id, @agency_id, @lead_id, @type, @title, @description, @agent_type, @metadata, datetime('now'))`,
+     VALUES (@id, @agency_id, @lead_id, @type, @title, @description, @agent_type, @metadata, NOW())`,
     {
       id,
       agency_id: agencyId,
@@ -180,7 +180,7 @@ export function incrementAgentStats(agentType, agencyId, isNewLead = false) {
 function createNotification(agencyId, userId, leadId, title, message, level) {
   run(
     `INSERT INTO notifications (id, agency_id, user_id, lead_id, title, message, level, is_read, created_at)
-     VALUES (@id, @agency_id, @user_id, @lead_id, @title, @message, @level, 0, datetime('now'))`,
+     VALUES (@id, @agency_id, @user_id, @lead_id, @title, @message, @level, 0, NOW())`,
     {
       id: uuidv4(),
       agency_id: agencyId,
@@ -272,7 +272,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
           }
 
           run(
-            `UPDATE leads SET last_contact_at = datetime('now'), updated_at = datetime('now') WHERE id = @id`,
+            `UPDATE leads SET last_contact_at = NOW(), updated_at = NOW() WHERE id = @id`,
             { id: leadId }
           )
 
@@ -367,7 +367,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
         if (!newStage) throw new Error('new_stage requerido')
         const oldStage = leadContext.stage || leadContext.status
         if (!testMode && leadId) {
-          run("UPDATE leads SET status = @status, pipeline_stage = @status, pipeline_stage_updated_at = datetime('now'), updated_at = datetime('now') WHERE id = @id",
+          run("UPDATE leads SET status = @status, pipeline_stage = @status, pipeline_stage_updated_at = NOW(), updated_at = NOW() WHERE id = @id",
             { status: newStage, id: leadId })
           if (agencyId) {
             logActivity(agencyId, leadId, 'stage_changed', `🔄 Etapa: ${oldStage} → ${newStage}`,
@@ -387,7 +387,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
         }
 
         if (!testMode && leadId && assignedUserId) {
-          run("UPDATE leads SET assigned_to = @assigned_to, updated_at = datetime('now') WHERE id = @id",
+          run("UPDATE leads SET assigned_to = @assigned_to, updated_at = NOW() WHERE id = @id",
             { assigned_to: assignedUserId, id: leadId })
           if (agencyId) {
             logActivity(agencyId, leadId, 'ia_action', `👤 Lead asignado a ${assignedName}`,
@@ -419,7 +419,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
 
           run(
             `INSERT INTO tasks (id, agency_id, lead_id, assigned_to, title, description, due_at, priority, status, created_at)
-             VALUES (@id, @agency_id, @lead_id, @assigned_to, @title, @description, @due_at, @priority, 'pending', datetime('now'))`,
+             VALUES (@id, @agency_id, @lead_id, @assigned_to, @title, @description, @due_at, @priority, 'pending', NOW())`,
             {
               id: uuidv4(),
               agency_id: agencyId, lead_id: leadId,
@@ -482,7 +482,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
               { id: tagId, name: tagName, color: config.tag_color || '#6366F1', agency_id: agencyId })
             tag = { id: tagId }
           }
-          run('INSERT OR IGNORE INTO lead_tags (lead_id, tag_id) VALUES (@lead_id, @tag_id)',
+          run('INSERT INTO lead_tags (lead_id, tag_id) VALUES (@lead_id, @tag_id) ON CONFLICT DO NOTHING',
             { lead_id: leadId, tag_id: tag.id })
         }
         return { success: true, result: `Etiqueta "${tagName}" añadida`, aiUsed: false }
@@ -511,7 +511,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
         }
         const label = newScore > 75 ? 'caliente' : newScore > 40 ? 'templado' : 'frio'
         if (!testMode && leadId) {
-          run("UPDATE leads SET ia_score = @score, ia_score_label = @label, updated_at = datetime('now') WHERE id = @id",
+          run("UPDATE leads SET ia_score = @score, ia_score_label = @label, updated_at = NOW() WHERE id = @id",
             { score: newScore, label, id: leadId })
         }
         return { success: true, result: `Score actualizado a ${newScore}/100 (${label})`, aiUsed: false }
@@ -522,7 +522,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
         const value = config.value
         if (!field) throw new Error('field requerido')
         if (!testMode && leadId) {
-          run(`UPDATE leads SET ${field} = @value, updated_at = datetime('now') WHERE id = @id`,
+          run(`UPDATE leads SET ${field} = @value, updated_at = NOW() WHERE id = @id`,
             { value, id: leadId })
         }
         return { success: true, result: `Campo "${field}" actualizado`, aiUsed: false }
@@ -537,7 +537,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
           const lead = get('SELECT assigned_to FROM leads WHERE id = @id', { id: leadId })
           run(
             `INSERT INTO visits (id, lead_id, property_id, assigned_to, scheduled_at, status, notes, created_at)
-             VALUES (@id, @lead_id, @property_id, @assigned_to, @scheduled_at, 'scheduled', @notes, datetime('now'))`,
+             VALUES (@id, @lead_id, @property_id, @assigned_to, @scheduled_at, 'scheduled', @notes, NOW())`,
             {
               id: uuidv4(), lead_id: leadId,
               property_id: config.property_id || null,
@@ -549,7 +549,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
           logActivity(agencyId, leadId, 'visit_scheduled', `📅 Visita agendada para ${visitDate.toLocaleDateString('es-ES')}`,
             `Visita creada automáticamente para dentro de ${daysAhead} días`,
             { scheduled_at: visitDate.toISOString(), days_ahead: daysAhead }, null)
-          run("UPDATE leads SET status = 'visita_agendada', pipeline_stage = 'visita_agendada', updated_at = datetime('now') WHERE id = @id",
+          run("UPDATE leads SET status = 'visita_agendada', pipeline_stage = 'visita_agendada', updated_at = NOW() WHERE id = @id",
             { id: leadId })
         }
         return { success: true, result: `Visita agendada para ${visitDate.toLocaleDateString('es-ES')}`, aiUsed: false }
@@ -562,7 +562,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
           for (const type of docTypes) {
             run(
               `INSERT INTO documents (id, lead_id, type, name, status, requested_at, created_at)
-               VALUES (@id, @lead_id, @type, @name, 'pending', datetime('now'), datetime('now'))`,
+               VALUES (@id, @lead_id, @type, @name, 'pending', NOW(), NOW())`,
               { id: uuidv4(), lead_id: leadId, type, name: type.toUpperCase() }
             )
           }
@@ -750,7 +750,7 @@ export async function triggerAutomations({ trigger_type, lead_id, agency_id, tri
       // Log activity
       run(
         `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
-         VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, datetime('now'))`,
+         VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, NOW())`,
         {
           id: uuidv4(),
           agency_id: aid,
@@ -765,7 +765,7 @@ export async function triggerAutomations({ trigger_type, lead_id, agency_id, tri
       try {
         run(
           `INSERT INTO automation_logs (id, automation_id, lead_id, agency_id, status, actions_executed, created_at)
-           VALUES (@id, @automation_id, @lead_id, @agency_id, @status, @actions_executed, datetime('now'))`,
+           VALUES (@id, @automation_id, @lead_id, @agency_id, @status, @actions_executed, NOW())`,
           {
             id: uuidv4(),
             automation_id: auto.id,

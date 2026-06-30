@@ -36,14 +36,14 @@ async function saveMessageToConversation(leadId, agencyId, content) {
     const convId = uuidv4()
     run(
       `INSERT INTO conversations (id, lead_id, agent_id, channel, messages, created_at)
-       VALUES (@id, @lead_id, @agent_id, @channel, @messages, datetime('now'))`,
+       VALUES (@id, @lead_id, @agent_id, @channel, @messages, NOW())`,
       { id: convId, lead_id: leadId, agent_id: null, channel: 'whatsapp', messages: '[]' }
     )
     conv = { id: convId }
   }
   run(
     `INSERT INTO messages (id, conversation_id, author, content, message_type, created_at)
-     VALUES (@id, @conversation_id, @author, @content, @message_type, datetime('now'))`,
+     VALUES (@id, @conversation_id, @author, @content, @message_type, NOW())`,
     {
       id: uuidv4(),
       conversation_id: conv.id,
@@ -250,7 +250,7 @@ export async function sendToDestination({ destConfig, content, ctx, subject, age
       case 'crm_field': {
         const field = destConfig.crm_field
         if (!field || !ctx.lead_id) return { ok: false, detail: 'crm_field o lead_id no especificado' }
-        run(`UPDATE leads SET ${field} = @value, updated_at = datetime('now') WHERE id = @id`, { value: content, id: ctx.lead_id })
+        run(`UPDATE leads SET ${field} = @value, updated_at = NOW() WHERE id = @id`, { value: content, id: ctx.lead_id })
         return { ok: true, detail: `Campo "${field}" actualizado en el lead` }
       }
 
@@ -259,7 +259,7 @@ export async function sendToDestination({ destConfig, content, ctx, subject, age
         for (const u of users) {
           run(
             `INSERT INTO notifications (id, agency_id, user_id, lead_id, title, body, type, created_at)
-             VALUES (@id, @agency_id, @user_id, @lead_id, @title, @body, @type, datetime('now'))`,
+             VALUES (@id, @agency_id, @user_id, @lead_id, @title, @body, @type, NOW())`,
             {
               id: uuidv4(), agency_id: agencyId, user_id: u.id,
               lead_id: ctx.lead_id || null,

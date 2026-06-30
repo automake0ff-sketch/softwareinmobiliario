@@ -1,184 +1,110 @@
 import { get, run } from '../db/db.js';
 import jwt from 'jsonwebtoken';
-import crypto from 'crypto';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'crm-inmobiliario-secret-dev-key-2026';
-const API_TOKEN = process.env.API_TOKEN || 'demo-token-dev';
+const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
+// Compatibilidad temporal: JWTs propios emitidos antes de la migración a Supabase Auth
+// (p.ej. tokens ya en circulación firmados con JWT_SECRET). Si no necesitas soportarlos,
+// puedes eliminar este fallback y JWT_SECRET del .env.
+const JWT_SECRET = process.env.JWT_SECRET;
 
-export function getAgencyFromUser(userId) {
-  const user = get('SELECT agency_id FROM users WHERE id = @id', { id: userId })
-  if (user) return user.agency_id
-  return null
+export async function getAgencyFromUser(userId) {
+  const user = await get('SELECT agency_id FROM users WHERE id = @id', { id: userId });
+  return user ? user.agency_id : null;
 }
 
-export function auth(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  const xAuthToken = req.headers['x-auth-token'];
-  let token = null;
+async function loadUserWithPlan(userId) {
+  // agencies.plan / agencies.plan_status son la fuente de verdad del plan activo
+  // (subscriptions.plan_id es un UUID que referencia plans.id y NO es el slug
+  // 'starter'/'profesional'/'agencia' que usa el resto del código — ver notas de migración).
+  const user = await get(
+    `SELECT u.id, u.role, u.agency_id, u.office_id, a.plan, a.plan_status
+     FROM users u
+     LEFT JOIN agencies a ON a.id = u.agency_id
+     WHERE u.id = @id AND u.active = true`,
+    { id: userId }
+  );
+  return user;
+}
 
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.substring(7);
-  } else if (xAuthToken) {
-    token = xAuthToken;
-  }
+function buildReqUser(user) {
+  return {
+    id: user.id,
+    role: user.role,
+    agency_id: user.agency_id,
+    office_id: user.office_id,
+    plan_id: user.plan || 'starter',
+    plan_status: user.plan_status || 'active',
+  };
+}
+
+export async function auth(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader?.startsWith('Bearer ')
+    ? authHeader.substring(7)
+    : req.headers['x-auth-token'];
 
   if (!token) {
     return res.status(401).json({ error: 'Se requiere token de autenticación.' });
   }
 
-  // Soporte legacy para API_TOKEN de desarrollo (si no es formato JWT)
-  if (token === API_TOKEN && !token.includes('.')) {
-    const userId = req.headers['x-auth-user'];
-    if (!userId) {
-      return res.status(401).json({ error: 'Se requiere x-auth-user para autenticación de desarrollo legacy.' });
-    }
-    
-    let user = get('SELECT id, role, agency_id, office_id FROM users WHERE id = @id AND active = 1', { id: userId });
-    
-    if (!user) {
-      const emailHeader = req.headers['x-auth-email'];
-      if (emailHeader) {
-        user = get('SELECT id, role, agency_id, office_id FROM users WHERE email = @email AND active = 1', { email: emailHeader });
-        if (user) {
-          try {
-            const oldUserId = user.id;
-            const oldAgencyId = user.agency_id;
-            const newAgencyId = req.headers['x-auth-agency'] || oldAgencyId || userId;
-            
-            run('PRAGMA foreign_keys = OFF;');
-
-            // 1. Actualizar la agencia si existía
-            if (oldAgencyId && oldAgencyId !== newAgencyId) {
-              run('UPDATE agencies SET id = @newAgencyId WHERE id = @oldAgencyId', {
-                newAgencyId,
-                oldAgencyId
-              });
-            }
-
-            // 2. Actualizar el usuario
-            run('UPDATE users SET id = @newUserId, agency_id = @newAgencyId WHERE id = @oldUserId', {
-              newUserId: userId,
-              newAgencyId,
-              oldUserId
-            });
-
-            // 3. Actualizar todas las tablas que referencian al usuario o la agencia
-            run('UPDATE properties SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
-            run('UPDATE leads SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
-            run('UPDATE leads SET assigned_to = @newUserId WHERE assigned_to = @oldUserId', { newUserId, oldUserId });
-            run('UPDATE ai_agents SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
-            run('UPDATE subscriptions SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
-            run('UPDATE usage_counters SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
-            run('UPDATE activities SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
-            run('UPDATE activities SET user_id = @newUserId WHERE user_id = @oldUserId', { newUserId, oldUserId });
-            run('UPDATE conversations SET agent_id = @newUserId WHERE agent_id = @oldUserId', { newUserId, oldUserId });
-            run('UPDATE appointments SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
-            run('UPDATE appointments SET assigned_user_id = @newUserId WHERE assigned_user_id = @oldUserId', { newUserId, oldUserId });
-            run('UPDATE tasks SET assigned_to = @newUserId WHERE assigned_to = @oldUserId', { newUserId, oldUserId });
-            run('UPDATE notifications SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
-            run('UPDATE notifications SET user_id = @newUserId WHERE user_id = @oldUserId', { newUserId, oldUserId });
-            run('UPDATE property_leads SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
-            run('UPDATE property_marketing_assets SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
-            run('UPDATE payment_history SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
-            run('UPDATE reports SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
-            run('UPDATE tags SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
-            run('UPDATE offices SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
-            run('UPDATE property_embeddings SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
-            run('UPDATE successful_conversation_embeddings SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
-            run('UPDATE knowledge_base_embeddings SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
-            run('UPDATE communication_logs SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
-            run('UPDATE lead_automations SET agency_id = @newAgencyId WHERE agency_id = @oldAgencyId', { newAgencyId, oldAgencyId });
-
-            run('PRAGMA foreign_keys = ON;');
-
-            user = get('SELECT id, role, agency_id, office_id FROM users WHERE id = @id AND active = 1', { id: userId });
-          } catch (err) {
-            console.error('[AUTH LINK OAUTH] Error linking user by email:', err.message);
-            try { run('PRAGMA foreign_keys = ON;'); } catch (_) {}
-          }
-        }
-      }
-    }
-
-    if (!user) {
+  let decoded;
+  try {
+    decoded = jwt.verify(token, SUPABASE_JWT_SECRET);
+  } catch (supabaseErr) {
+    // Fallback opcional a JWTs propios pre-migración. Elimina este bloque si no aplica.
+    if (JWT_SECRET) {
       try {
-        const agencyId = req.headers['x-auth-agency'] || userId;
-        const userEmail = req.headers['x-auth-email'] || 'oauth-' + userId.substring(0, 8) + '@inmotech.es';
-        const agencySlug = 'inmo-' + agencyId.substring(0, 8);
-
-        run(
-          `INSERT OR IGNORE INTO agencies (id, name, slug, plan, plan_status, onboarding_completed, onboarding_step)
-           VALUES (@id, @name, @slug, 'starter', 'active', 0, 0)`,
-          { id: agencyId, name: 'Mi Inmobiliaria', slug: agencySlug }
-        );
-        
-        run(
-          `INSERT OR IGNORE INTO users (id, email, name, password_hash, role, agency_id, active)
-           VALUES (@id, @email, @name, 'oauth-user-pass-hash', 'admin', @agency_id, 1)`,
-          { id: userId, email: userEmail, name: 'Asesor Google', agency_id: agencyId }
-        );
-
-        run(
-          `INSERT OR IGNORE INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, created_at)
-           VALUES (@id, @agency_id, 'starter', 'active', 'monthly', datetime('now'))`,
-          { id: crypto.randomUUID(), agency_id: agencyId }
-        );
-
-        run(
-          `INSERT OR IGNORE INTO usage_counters (id, agency_id, period_start, created_at)
-           VALUES (@id, @agency_id, @period_start, datetime('now'))`,
-          {
-            id: crypto.randomUUID(),
-            agency_id: agencyId,
-            period_start: new Date().toISOString().slice(0, 7) + '-01'
-          }
-        );
-
-        user = get('SELECT id, role, agency_id, office_id FROM users WHERE id = @id AND active = 1', { id: userId });
-      } catch (e) {
-        console.error('[AUTH AUTO-PROVISION] Error:', e.message);
+        decoded = jwt.verify(token, JWT_SECRET);
+        decoded.sub = decoded.sub || decoded.userId;
+      } catch (legacyErr) {
+        return res.status(401).json({ error: 'Token inválido o expirado.' });
       }
+    } else {
+      return res.status(401).json({ error: 'Token inválido o expirado.' });
     }
+  }
 
-    if (!user) {
-      return res.status(401).json({ error: 'Usuario no encontrado o inactivo.' });
-    }
-    const sub = get('SELECT plan_id, status FROM subscriptions WHERE agency_id = @aid ORDER BY created_at DESC LIMIT 1', { aid: user.agency_id });
-    
-    req.user = {
-      id: user.id,
-      role: user.role,
-      agency_id: user.agency_id,
-      office_id: user.office_id,
-      plan_id: sub?.plan_id || 'starter',
-      plan_status: sub?.status || 'active',
-    };
-    return next();
+  const userId = decoded.sub; // Supabase pone el UUID del usuario en 'sub'
+  if (!userId) {
+    return res.status(401).json({ error: 'Token inválido: falta el identificador de usuario.' });
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const userId = decoded.userId;
+    let user = await loadUserWithPlan(userId);
 
-    const user = get('SELECT id, role, agency_id, office_id FROM users WHERE id = @id AND active = 1', { id: userId });
+    if (!user) {
+      // Primer login con este UUID de Supabase Auth: aprovisionar agencia + usuario.
+      const agencyId = userId; // usamos el mismo UUID como agencyId para el alta inicial
+      const email = decoded.email || '';
+      const name = email ? email.split('@')[0] : 'Usuario';
+      const slug = 'inmo-' + userId.slice(0, 8);
+
+      await run(
+        `INSERT INTO agencies (id, name, slug, plan, plan_status)
+         VALUES (@id, @name, @slug, 'starter', 'active')
+         ON CONFLICT DO NOTHING`,
+        { id: agencyId, name: 'Mi Inmobiliaria', slug }
+      );
+
+      await run(
+        `INSERT INTO users (id, email, name, role, agency_id, active)
+         VALUES (@id, @email, @name, 'admin', @agency_id, true)
+         ON CONFLICT DO NOTHING`,
+        { id: userId, email, name, agency_id: agencyId }
+      );
+
+      user = await loadUserWithPlan(userId);
+    }
+
     if (!user) {
       return res.status(401).json({ error: 'Usuario no encontrado o inactivo.' });
     }
 
-    const sub = get('SELECT plan_id, status FROM subscriptions WHERE agency_id = @aid ORDER BY created_at DESC LIMIT 1', { aid: user.agency_id });
-
-    req.user = {
-      id: user.id,
-      role: user.role,
-      agency_id: user.agency_id,
-      office_id: user.office_id,
-      plan_id: sub?.plan_id || 'starter',
-      plan_status: sub?.status || 'active',
-    };
-
+    req.user = buildReqUser(user);
     next();
   } catch (err) {
-    return res.status(401).json({ error: 'Token inválido o expirado.' });
+    console.error('[AUTH] Error verificando/aprovisionando usuario:', err.message);
+    return res.status(500).json({ error: 'Error interno de autenticación.' });
   }
 }
 
@@ -204,4 +130,4 @@ export function requireSuperAdmin(req, res, next) {
   next();
 }
 
-export default { auth, requireRole, requireSuperAdmin };
+export default { auth, requireRole, requireSuperAdmin, getAgencyFromUser };

@@ -341,7 +341,7 @@ export function seedAutomationTemplates() {
           installs, rating, is_active, is_featured, sort_order, created_at)
          VALUES (@id, @name, @description, @category, @difficulty,
           @trigger_type, @trigger_config, @conditions, @actions, @min_plan, @requires,
-          @installs, @rating, 1, @is_featured, @sort_order, datetime('now'))`,
+          @installs, @rating, 1, @is_featured, @sort_order, NOW())`,
         {
           id: uuidv4(),
           name: t.name,

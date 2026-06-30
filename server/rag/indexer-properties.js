@@ -12,7 +12,7 @@ export async function indexProperty(propertyId) {
   const existing = get('SELECT id FROM property_embeddings WHERE property_id = @pid', { pid: propertyId });
   if (existing) {
     run(
-      `UPDATE property_embeddings SET content = @content, embedding = @embedding, metadata = @metadata, created_at = datetime('now') WHERE property_id = @pid`,
+      `UPDATE property_embeddings SET content = @content, embedding = @embedding, metadata = @metadata, created_at = NOW() WHERE property_id = @pid`,
       {
         content,
         embedding: JSON.stringify(embedding),
@@ -31,7 +31,7 @@ export async function indexProperty(propertyId) {
     );
   } else {
     run(
-      `INSERT INTO property_embeddings (id, property_id, agency_id, content, embedding, metadata, created_at) VALUES (@id, @pid, @aid, @content, @embedding, @metadata, datetime('now'))`,
+      `INSERT INTO property_embeddings (id, property_id, agency_id, content, embedding, metadata, created_at) VALUES (@id, @pid, @aid, @content, @embedding, @metadata, NOW())`,
       {
         id: uuidv4(),
         pid: propertyId,

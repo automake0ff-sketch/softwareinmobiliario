@@ -130,7 +130,7 @@ export class ActionExecutor {
           });
           if (eventCreated) actions.push('Evento creado en Google Calendar ✓');
 
-          run("UPDATE leads SET pipeline_stage = 'visita_agendada', status = 'visita_agendada', pipeline_stage_updated_at = datetime('now') WHERE id = @id", { id: leadId });
+          run("UPDATE leads SET pipeline_stage = 'visita_agendada', status = 'visita_agendada', pipeline_stage_updated_at = NOW() WHERE id = @id", { id: leadId });
           actions.push('Lead movido a Visita agendada');
         }
 
@@ -149,7 +149,7 @@ export class ActionExecutor {
           for (const type of newDocs) {
             run(
               `INSERT INTO documents (id, lead_id, type, name, status, requested_at, created_at)
-               VALUES (@id, @lead_id, @type, @name, 'pending', datetime('now'), datetime('now'))`,
+               VALUES (@id, @lead_id, @type, @name, 'pending', NOW(), NOW())`,
               {
                 id: uuidv4(),
                 lead_id: leadId,
@@ -195,7 +195,7 @@ export class ActionExecutor {
       }
 
       case 'tasador': {
-        run("UPDATE leads SET ia_summary = @msg, updated_at = datetime('now') WHERE id = @id", { msg: message.slice(0, 1000), id: leadId });
+        run("UPDATE leads SET ia_summary = @msg, updated_at = NOW() WHERE id = @id", { msg: message.slice(0, 1000), id: leadId });
         actions.push('Valoración guardada en el perfil del lead');
 
         if (ctx.email && ctx.sg_key && ctx.sg_from_email) {
@@ -244,7 +244,7 @@ export class ActionExecutor {
           actions.push('Reactivación detectada — Vendedor IA alertado');
         }
         if (nurData?.archive_after_this) {
-          run("UPDATE leads SET pipeline_stage = 'archivo', status = 'cerrado', updated_at = datetime('now') WHERE id = @id", { id: leadId });
+          run("UPDATE leads SET pipeline_stage = 'archivo', status = 'cerrado', updated_at = NOW() WHERE id = @id", { id: leadId });
           actions.push('Lead archivado después del último intento');
         }
         break;
@@ -254,7 +254,7 @@ export class ActionExecutor {
       case 'copywriter': {
         run(
           `INSERT INTO activities (id, agency_id, lead_id, type, title, description, agent_type, created_at)
-           VALUES (@id, @agency_id, @lead_id, 'ia_action', @title, @description, @agent_type, datetime('now'))`,
+           VALUES (@id, @agency_id, @lead_id, 'ia_action', @title, @description, @agent_type, NOW())`,
           {
             id: uuidv4(),
             agency_id: this.agencyId,
@@ -279,7 +279,7 @@ export class ActionExecutor {
       const newId = uuidv4();
       run(
         `INSERT INTO conversations (id, lead_id, agency_id, channel, created_at)
-         VALUES (@id, @lead_id, @agency_id, 'whatsapp', datetime('now'))`,
+         VALUES (@id, @lead_id, @agency_id, 'whatsapp', NOW())`,
         { id: newId, lead_id: leadId, agency_id: this.agencyId }
       );
       conv = { id: newId };
@@ -288,7 +288,7 @@ export class ActionExecutor {
     if (conv?.id) {
       run(
         `INSERT INTO messages (id, conversation_id, author, content, message_type, created_at)
-         VALUES (@id, @conversation_id, 'ia_agent', @content, 'text', datetime('now'))`,
+         VALUES (@id, @conversation_id, 'ia_agent', @content, 'text', NOW())`,
         {
           id: uuidv4(),
           conversation_id: conv.id,
@@ -310,7 +310,7 @@ export class ActionExecutor {
 
     run(
       `INSERT INTO tasks (id, lead_id, assigned_to, title, description, due_date, completed, created_at)
-       VALUES (@id, @lead_id, @assigned_to, @title, @description, @due, 0, datetime('now'))`,
+       VALUES (@id, @lead_id, @assigned_to, @title, @description, @due, 0, NOW())`,
       {
         id: uuidv4(),
         lead_id: leadId,
@@ -334,7 +334,7 @@ export class ActionExecutor {
     for (const u of users) {
       run(
         `INSERT INTO notifications (id, agency_id, user_id, lead_id, title, body, type, read, created_at)
-         VALUES (@id, @agency_id, @user_id, @lead_id, @title, @body, @type, 0, datetime('now'))`,
+         VALUES (@id, @agency_id, @user_id, @lead_id, @title, @body, @type, 0, NOW())`,
         {
           id: uuidv4(),
           agency_id: this.agencyId,

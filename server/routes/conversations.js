@@ -6,13 +6,13 @@ import { realtime } from '../services/realtime.js';
 
 // Auto-run schema migrations for conversations table
 const convMigrations = [
-  `ALTER TABLE conversations ADD COLUMN ia_handling INTEGER DEFAULT 1`,
-  `ALTER TABLE conversations ADD COLUMN updated_at TEXT`,
-  `ALTER TABLE conversations ADD COLUMN status TEXT DEFAULT 'active'`,
-  `ALTER TABLE conversations ADD COLUMN agency_id TEXT`,
+  `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS ia_handling INTEGER DEFAULT 1`,
+  `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`,
+  `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active'`,
+  `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS agency_id UUID`,
 ];
 for (const sql of convMigrations) {
-  try { run(sql); } catch (e) { /* column already exists */ }
+  try { await run(sql); } catch (e) { console.log('[Migration] conversations:', e.message); }
 }
 
 const router = Router();
@@ -75,13 +75,13 @@ router.post('/', (req, res) => {
     // Insert using only the guaranteed base columns
     run(
       `INSERT INTO conversations (id, lead_id, channel, messages, created_at)
-       VALUES (@id, @lead_id, @channel, @messages, datetime('now'))`,
+       VALUES (@id, @lead_id, @channel, @messages, NOW())`,
       { id: convId, lead_id, channel, messages: JSON.stringify(messages) }
     );
     // Update optional columns separately (safe even if they were just migrated)
     try {
       run(
-        `UPDATE conversations SET agency_id = @agency_id, status = 'active', ia_handling = 1, updated_at = datetime('now') WHERE id = @id`,
+        `UPDATE conversations SET agency_id = @agency_id, status = 'active', ia_handling = 1, updated_at = NOW() WHERE id = @id`,
         { agency_id: agencyId, id: convId }
       );
     } catch (e) { /* ignore if columns still not available */ }
@@ -208,7 +208,7 @@ router.post('/:id/messages', (req, res) => {
 
     run(
       `UPDATE conversations
-       SET messages = @messages, updated_at = datetime('now')
+       SET messages = @messages, updated_at = NOW()
        WHERE id = @id`,
       { messages: JSON.stringify(messagesList), id: conversationId }
     );
@@ -216,7 +216,7 @@ router.post('/:id/messages', (req, res) => {
     // Save to messages table
     run(
       `INSERT INTO messages (id, conversation_id, author, content, message_type, created_at)
-       VALUES (@id, @conversation_id, @author, @content, 'text', datetime('now'))`,
+       VALUES (@id, @conversation_id, @author, @content, 'text', NOW())`,
       {
         id: newMsg.id,
         conversation_id: conversationId,

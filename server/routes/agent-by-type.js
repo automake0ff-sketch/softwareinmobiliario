@@ -141,7 +141,7 @@ router.post('/type/:type/chat', async (req, res) => {
     const activityId = uuidv4()
     run(
       `INSERT INTO activities (id, agency_id, lead_id, type, title, description, agent_type, created_at)
-       VALUES (@id, @agency_id, @lead_id, 'ia_action', @title, @description, @agent_type, datetime('now'))`,
+       VALUES (@id, @agency_id, @lead_id, 'ia_action', @title, @description, @agent_type, NOW())`,
       {
         id: activityId,
         agency_id: agencyId,

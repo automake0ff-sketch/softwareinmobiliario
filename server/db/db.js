@@ -1,103 +1,157 @@
-import initSqlJs from 'sql.js';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import pg from 'pg';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DB_DIR = join(__dirname, '..', '..', 'data');
-const DB_PATH = join(DB_DIR, 'crm.db');
+const { Pool } = pg;
 
-let db = null;
+let pool = null;
 
 export async function initDB() {
-  if (!existsSync(DB_DIR)) mkdirSync(DB_DIR, { recursive: true });
+  if (pool) return pool;
 
-  const SQL = await initSqlJs();
+  pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    // Supabase (y la mayoría de proveedores gestionados de Postgres) requieren SSL.
+    // Se desactiva la verificación del certificado porque Supabase usa certificados
+    // gestionados que no siempre validan con la CA por defecto de Node.
+    ssl: process.env.DATABASE_URL?.includes('sslmode=disable')
+      ? false
+      : { rejectUnauthorized: false },
+    max: parseInt(process.env.PG_POOL_MAX || '10', 10),
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
+  });
 
-  if (existsSync(DB_PATH)) {
-    const buffer = readFileSync(DB_PATH);
-    db = new SQL.Database(buffer);
-  } else {
-    db = new SQL.Database();
+  pool.on('error', (err) => {
+    // Evita que un error en una conexión idle del pool tire abajo el proceso entero.
+    console.error('[DB POOL ERROR]', err.message);
+  });
+
+  // Solo testeamos la conexión. El schema ya vive en Supabase (supabase/migrations/).
+  await pool.query('SELECT 1');
+  console.log('✅ Conexión a PostgreSQL verificada');
+
+  return pool;
+}
+
+function getPool() {
+  if (!pool) throw new Error('DB not initialized. Call initDB() first.');
+  return pool;
+}
+
+/**
+ * Convierte queries escritas con params nombrados estilo SQLite (@nombre o $nombre)
+ * al formato posicional de PostgreSQL ($1, $2...).
+ *
+ * - WHERE id = @id            -> WHERE id = $1   con values = [params.id]
+ * - WHERE id = $id            -> idem (alias soportado por compatibilidad)
+ * - Si `params` ya es un array, se asume que la query ya usa $1, $2... y se devuelve tal cual.
+ * - Si un mismo nombre aparece varias veces en la query, reutiliza el mismo índice posicional.
+ */
+function convertParams(sql, params) {
+  if (Array.isArray(params)) {
+    return { text: sql, values: params };
   }
 
-  const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf-8');
-  db.run('PRAGMA foreign_keys = ON;');
-  db.run(schema);
-
-  saveDB();
-  return db;
-}
-
-function saveDB() {
-  if (!db) return;
-  const data = db.export();
-  const buffer = Buffer.from(data);
-  writeFileSync(DB_PATH, buffer);
-}
-
-export function all(sql, params = {}) {
-  if (!db) throw new Error('DB not initialized. Call initDB() first.');
-  const nparams = normalizeParams(params);
-  const stmt = db.prepare(sql);
-  const paramKeys = Object.keys(nparams);
-  if (paramKeys.length > 0) {
-    stmt.bind(nparams);
+  if (!params || typeof params !== 'object' || Object.keys(params).length === 0) {
+    return { text: sql, values: [] };
   }
-  const rows = [];
-  while (stmt.step()) {
-    rows.push(stmt.getAsObject());
-  }
-  stmt.free();
-  return rows;
-}
 
-export function get(sql, params = {}) {
-  const rows = all(sql, params);
-  return rows.length > 0 ? rows[0] : null;
-}
+  const indexByName = new Map();
+  const values = [];
 
-function normalizeParams(params) {
-  if (Array.isArray(params)) return params;
-  if (!params || typeof params !== 'object') return params;
-  const normalized = {};
-  for (const [key, val] of Object.entries(params)) {
-    const finalVal = val === undefined ? null : val;
-    if (key.startsWith('@') || key.startsWith('$') || key.startsWith(':')) {
-      normalized[key] = finalVal;
-    } else {
-      normalized['@' + key] = finalVal;
+  // Une @nombre y $nombre (pero no $1, $2... que ya son posicionales de PG)
+  const text = sql.replace(/[@$]([a-zA-Z_][a-zA-Z0-9_]*)/g, (match, name) => {
+    if (indexByName.has(name)) {
+      return `$${indexByName.get(name)}`;
     }
-  }
-  return normalized;
+
+    const rawVal = params[name];
+    const val = rawVal === undefined ? null : rawVal;
+    values.push(val);
+    const idx = values.length;
+    indexByName.set(name, idx);
+    return `$${idx}`;
+  });
+
+  return { text, values };
 }
 
-export function run(sql, params = {}) {
-  if (!db) throw new Error('DB not initialized. Call initDB() first.');
+export async function all(sql, params = {}) {
+  const { text, values } = convertParams(sql, params);
   try {
-    const nparams = normalizeParams(params);
-    db.run(sql, nparams);
-    saveDB();
-    return { changes: db.getRowsModified() };
+    const result = await getPool().query(text, values);
+    return result.rows;
   } catch (err) {
-    console.error('SQL Error:', err.message, 'SQL:', sql.substring(0, 80));
+    console.error('SQL Error:', err.message, 'SQL:', sql.substring(0, 120));
     throw err;
   }
 }
 
-export function transaction(fn) {
-  return function(...args) {
-    try {
-      db.run('BEGIN TRANSACTION');
-      const result = fn(...args);
-      db.run('COMMIT');
-      saveDB();
-      return result;
-    } catch (err) {
-      db.run('ROLLBACK');
-      throw err;
-    }
-  };
+export async function get(sql, params = {}) {
+  const rows = await all(sql, params);
+  return rows.length > 0 ? rows[0] : null;
 }
 
-export { initDB as default, saveDB };
+export async function run(sql, params = {}) {
+  const { text, values } = convertParams(sql, params);
+  try {
+    const result = await getPool().query(text, values);
+    return { changes: result.rowCount, rows: result.rows, lastID: result.rows?.[0]?.id };
+  } catch (err) {
+    console.error('SQL Error:', err.message, 'SQL:', sql.substring(0, 120));
+    throw err;
+  }
+}
+
+/**
+ * Ejecuta `fn` dentro de una transacción real usando un único client del pool.
+ * `fn` recibe un objeto { all, get, run } que ejecuta las queries DENTRO de esa
+ * misma transacción (BEGIN/COMMIT/ROLLBACK) — no usar los `all/get/run` globales
+ * dentro de una transacción, porque usarían conexiones distintas del pool.
+ *
+ * Uso:
+ *   await transaction(async (tx) => {
+ *     await tx.run('UPDATE agencies SET plan = @plan WHERE id = @id', { plan, id })
+ *     await tx.run('INSERT INTO activities (...) VALUES (...)', { ... })
+ *   })
+ */
+export async function transaction(fn) {
+  const client = await getPool().connect();
+  const tx = {
+    all: async (sql, params = {}) => {
+      const { text, values } = convertParams(sql, params);
+      const result = await client.query(text, values);
+      return result.rows;
+    },
+    get: async (sql, params = {}) => {
+      const rows = await tx.all(sql, params);
+      return rows.length > 0 ? rows[0] : null;
+    },
+    run: async (sql, params = {}) => {
+      const { text, values } = convertParams(sql, params);
+      const result = await client.query(text, values);
+      return { changes: result.rowCount, rows: result.rows, lastID: result.rows?.[0]?.id };
+    },
+  };
+
+  try {
+    await client.query('BEGIN');
+    const result = await fn(tx);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackErr) {
+      console.error('[DB] Error en ROLLBACK:', rollbackErr.message);
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// saveDB ya no existe con PostgreSQL (no hay export/import de buffer en memoria).
+// Se mantiene como no-op para no romper imports existentes (`import { saveDB } ...`).
+export function saveDB() {}
+
+export { initDB as default };

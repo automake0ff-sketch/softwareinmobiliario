@@ -241,12 +241,12 @@ async function handleIncomingMessage(message, metadata, contacts) {
     let leadId;
     if (existingLead) {
       leadId = existingLead.id;
-      run("UPDATE leads SET last_activity = datetime('now'), updated_at = datetime('now') WHERE id = @id", { id: leadId });
+      run("UPDATE leads SET last_activity = NOW(), updated_at = NOW() WHERE id = @id", { id: leadId });
     } else {
       leadId = uuidv4();
       run(
         `INSERT INTO leads (id, agency_id, name, phone, source, status, created_at, updated_at)
-         VALUES (@id, @agency_id, @name, @phone, @source, @status, datetime('now'), datetime('now'))`,
+         VALUES (@id, @agency_id, @name, @phone, @source, @status, NOW(), NOW())`,
         { id: leadId, agency_id: agency.id, name: contactName, phone: phoneNumber, source: 'whatsapp', status: 'nuevo' }
       );
       existingLead = get('SELECT * FROM leads WHERE id = @id', { id: leadId });
@@ -271,7 +271,7 @@ async function handleIncomingMessage(message, metadata, contacts) {
       existingConv = { id: uuidv4() };
       run(
         `INSERT INTO conversations (id, agency_id, lead_id, channel, messages, created_at)
-         VALUES (@id, @agency_id, @lead_id, @channel, @messages, datetime('now'))`,
+         VALUES (@id, @agency_id, @lead_id, @channel, @messages, NOW())`,
         { id: existingConv.id, agency_id: agency.id, lead_id: leadId, channel: 'whatsapp', messages: JSON.stringify([newMessage]) }
       );
     }
@@ -279,7 +279,7 @@ async function handleIncomingMessage(message, metadata, contacts) {
     const mappedType = ({ text: 'text', interactive: 'text', audio: 'audio', image: 'image', document: 'document' })[msgType] || 'text';
     run(
       `INSERT INTO messages (id, conversation_id, author, content, message_type, created_at)
-       VALUES (@id, @conversation_id, @author, @content, @message_type, datetime('now'))`,
+       VALUES (@id, @conversation_id, @author, @content, @message_type, NOW())`,
       {
         id: messageId,
         conversation_id: existingConv.id,
@@ -295,7 +295,7 @@ async function handleIncomingMessage(message, metadata, contacts) {
       : `Nuevo lead creado desde WhatsApp: ${contactName}`;
     run(
       `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
-       VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, datetime('now'))`,
+       VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, NOW())`,
       {
         id: uuidv4(), agency_id: agency.id, lead_id: leadId, type: activityType,
         description: activityDesc,

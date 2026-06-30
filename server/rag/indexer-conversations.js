@@ -29,7 +29,7 @@ export async function indexSuccessfulConversation(leadId, outcome) {
 
   run(
     `INSERT INTO successful_conversation_embeddings (id, agency_id, lead_id, content, context, outcome, embedding, metadata, created_at)
-     VALUES (@id, @aid, @lid, @content, @context, @outcome, @embedding, @metadata, datetime('now'))`,
+     VALUES (@id, @aid, @lid, @content, @context, @outcome, @embedding, @metadata, NOW())`,
     {
       id: uuidv4(),
       aid: lead.agency_id,

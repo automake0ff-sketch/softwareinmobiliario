@@ -70,7 +70,7 @@ Resumen: ${lead.ia_summary || 'ninguno'}`;
 
   run(
     `UPDATE leads SET ia_score = @score, ia_insights = @insights, ia_summary = @summary,
-     status = @status, updated_at = datetime('now'), last_activity = datetime('now')
+     status = @status, updated_at = NOW(), last_activity = NOW()
      WHERE id = @id`,
     {
       score, insights: JSON.stringify(insights.slice(-20)),
@@ -93,7 +93,7 @@ Resumen: ${lead.ia_summary || 'ninguno'}`;
     const taskId = uuidv4();
     run(
       `INSERT INTO tasks (id, lead_id, assigned_to, title, description, due_date, completed, created_at)
-       VALUES (@id, @lid, @uid, @title, @desc, @due, 0, datetime('now'))`,
+       VALUES (@id, @lid, @uid, @title, @desc, @due, 0, NOW())`,
       {
         id: taskId, lid: lead.id, uid: userId,
         title: 'Lead caliente - acción urgente',

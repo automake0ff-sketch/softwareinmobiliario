@@ -99,7 +99,7 @@ export async function createAppointment({ lead, agency, type, starts_at, ends_at
 
   run(
     `INSERT INTO appointments (id, agency_id, lead_id, assigned_user_id, type, status, starts_at, ends_at, timezone, location, online_url, notes, client_token, property_id, created_at, updated_at)
-     VALUES (@id, @aid, @lid, @auid, @type, 'scheduled', @starts, @ends, @tz, @loc, @ourl, @notes, @token, @pid, datetime('now'), datetime('now'))`,
+     VALUES (@id, @aid, @lid, @auid, @type, 'scheduled', @starts, @ends, @tz, @loc, @ourl, @notes, @token, @pid, NOW(), NOW())`,
     {
       id: appointmentId, aid: agency.id, lid: lead.id, auid: assigned_user_id || userId,
       type, starts: starts_at, ends: ends_at, tz: timezone || agency.timezone || 'Europe/Madrid',
@@ -147,7 +147,7 @@ export async function createAppointment({ lead, agency, type, starts_at, ends_at
     });
   }
 
-  run(`UPDATE leads SET last_activity = datetime('now'), last_channel = 'appointment' WHERE id = @id`, { id: lead.id });
+  run(`UPDATE leads SET last_activity = NOW(), last_channel = 'appointment' WHERE id = @id`, { id: lead.id });
 
   logLeadAutomation({
     agencyId: agency.id, leadId: lead.id, type: 'auto_appointment', channel: type,

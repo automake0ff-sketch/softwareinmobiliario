@@ -34,7 +34,7 @@ router.post('/', requireRole('admin'), (req, res) => {
     const finalDomain = custom_domain || domain || null;
     run(
       `INSERT INTO agencies (id, name, slug, logo_url, primary_color, custom_domain, created_at)
-       VALUES (@id, @name, @slug, @logo_url, @primary_color, @custom_domain, datetime('now'))`,
+       VALUES (@id, @name, @slug, @logo_url, @primary_color, @custom_domain, NOW())`,
       { id, name, slug, logo_url, primary_color: primary_color || '#2563eb', custom_domain: finalDomain }
     );
 

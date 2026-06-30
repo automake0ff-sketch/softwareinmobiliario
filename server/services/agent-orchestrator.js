@@ -239,7 +239,7 @@ Fecha y hora: ${now.toLocaleString('es-ES', { timeZone: 'Europe/Madrid' })}`;
     const name = AGENT_META[agentType]?.name || agentType;
     run(
       `INSERT INTO activities (id, agency_id, lead_id, type, title, description, agent_type, metadata, created_at)
-       VALUES (@id, @agency_id, @lead_id, 'ia_action', @title, @description, @agent_type, @metadata, datetime('now'))`,
+       VALUES (@id, @agency_id, @lead_id, 'ia_action', @title, @description, @agent_type, @metadata, NOW())`,
       {
         id: uuidv4(),
         agency_id: this.agencyId,

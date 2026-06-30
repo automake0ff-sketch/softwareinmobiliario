@@ -19,7 +19,7 @@ export class CalendarManager {
         // Sin token de calendar, solo guardar visita en base de datos local SQLite
         run(
           `INSERT INTO visits (id, lead_id, assigned_to, scheduled_at, notes, status, created_at)
-           VALUES (@id, @lead_id, @assigned_to, @scheduled_at, @notes, 'scheduled', datetime('now'))`,
+           VALUES (@id, @lead_id, @assigned_to, @scheduled_at, @notes, 'scheduled', NOW())`,
           {
             id: `visit_${Date.now()}`,
             lead_id: opts.leadId,
@@ -64,7 +64,7 @@ export class CalendarManager {
         const event = await res.json();
         run(
           `INSERT INTO visits (id, lead_id, assigned_to, scheduled_at, notes, status, created_at)
-           VALUES (@id, @lead_id, @assigned_to, @scheduled_at, @notes, 'scheduled', datetime('now'))`,
+           VALUES (@id, @lead_id, @assigned_to, @scheduled_at, @notes, 'scheduled', NOW())`,
           {
             id: event.id || `visit_${Date.now()}`,
             lead_id: opts.leadId,

@@ -13,14 +13,14 @@ export function updateLeadScore(leadId, scoreChange, reason) {
   const label = newScore > 75 ? 'caliente' : newScore > 40 ? 'templado' : 'frio';
 
   run(
-    `UPDATE leads SET ia_score = @score, ia_insight = @label, updated_at = datetime('now') WHERE id = @id`,
+    `UPDATE leads SET ia_score = @score, ia_insight = @label, updated_at = NOW() WHERE id = @id`,
     { score: newScore, label, id: leadId }
   );
 
   if (reason) {
     run(
       `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
-       VALUES (@id, @aid, @lid, @type, @desc, @meta, datetime('now'))`,
+       VALUES (@id, @aid, @lid, @type, @desc, @meta, NOW())`,
       {
         id: uuidv4(), aid: lead.agency_id, lid: leadId,
         type: 'ia_action', desc: reason,
@@ -39,7 +39,7 @@ export function appendInsight(leadId, insight) {
   const existing = (lead.ia_insight || '').split(';').map(s => s.trim()).filter(Boolean);
   const updated = [...new Set([...existing, insight])].slice(-20).join('; ');
 
-  run("UPDATE leads SET ia_insight = @insight, updated_at = datetime('now') WHERE id = @id", { insight: updated, id: leadId });
+  run("UPDATE leads SET ia_insight = @insight, updated_at = NOW() WHERE id = @id", { insight: updated, id: leadId });
 }
 
 export async function regenerateSummary(leadId) {
@@ -61,7 +61,7 @@ Perfil: ${JSON.stringify(memory)}
         prompt
       );
 
-      run("UPDATE leads SET ia_summary = @summary, updated_at = datetime('now') WHERE id = @id", { summary: text, id: leadId });
+      run("UPDATE leads SET ia_summary = @summary, updated_at = NOW() WHERE id = @id", { summary: text, id: leadId });
       return text;
     } catch (err) {
       console.warn('[MEMORY] Error regenerating summary:', err.message);
@@ -69,7 +69,7 @@ Perfil: ${JSON.stringify(memory)}
   }
 
   const fallback = `${memory.name} busca ${memory.propertyType} en ${memory.zones.join(', ') || 'varias zonas'} con presupuesto de ${memory.budgetMax || 'sin definir'}. Score actual: ${memory.score}/100. ${memory.visitsDone > 0 ? `${memory.visitsDone} visita(s) realizada(s).` : 'Sin visitas aún.'} Último contacto: hace ${memory.lastContactDays} días.`;
-  run("UPDATE leads SET ia_summary = @summary, updated_at = datetime('now') WHERE id = @id", { summary: fallback, id: leadId });
+  run("UPDATE leads SET ia_summary = @summary, updated_at = NOW() WHERE id = @id", { summary: fallback, id: leadId });
   return fallback;
 }
 
@@ -105,7 +105,7 @@ export async function updateLeadMemory(leadId, agentType, analysis) {
     }
   }
 
-  updates.push("updated_at = datetime('now')");
+  updates.push("updated_at = NOW()");
 
   if (updates.length > 1) {
     run(`UPDATE leads SET ${updates.join(', ')} WHERE id = @id`, params);
@@ -114,7 +114,7 @@ export async function updateLeadMemory(leadId, agentType, analysis) {
   if (analysis.reason) {
     run(
       `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
-       VALUES (@id, @aid, @lid, @type, @desc, @meta, datetime('now'))`,
+       VALUES (@id, @aid, @lid, @type, @desc, @meta, NOW())`,
       {
         id: uuidv4(), aid: lead.agency_id, lid: leadId,
         type: 'ia_action',

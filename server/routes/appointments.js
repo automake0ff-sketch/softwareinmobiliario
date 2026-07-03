@@ -8,8 +8,8 @@ import { WhatsAppService } from '../services/whatsapp.js';
 const router = Router();
 
 // Helper to log activities
-function logActivity(agencyId, leadId, userId, type, description, metadata = null) {
-  run(
+async function logActivity(agencyId, leadId, userId, type, description, metadata = null) {
+  await run(
     `INSERT INTO activities (id, agency_id, lead_id, user_id, type, description, metadata, created_at)
      VALUES (@id, @agency_id, @lead_id, @user_id, @type, @description, @metadata, NOW())`,
     {
@@ -29,21 +29,21 @@ function logActivity(agencyId, leadId, userId, type, description, metadata = nul
 // ────────────────────────────────────────────────────────────────────────
 
 // GET /api/public/appointment/:token - Fetch details for the public portal
-router.get('/public/appointment/:token', (req, res) => {
+router.get('/public/appointment/:token', async (req, res) => {
   try {
     const { token } = req.params;
     if (!token) return res.status(400).json({ error: 'Token es requerido.' });
 
-    const appointment = get('SELECT * FROM appointments WHERE client_token = @token', { token });
+    const appointment = await get('SELECT * FROM appointments WHERE client_token = @token', { token });
     if (!appointment) return res.status(404).json({ error: 'Cita no encontrada o token inválido.' });
 
-    const lead = get('SELECT id, name, email, phone FROM leads WHERE id = @lead_id AND agency_id = @agency_id', {
+    const lead = await get('SELECT id, name, email, phone FROM leads WHERE id = @lead_id AND agency_id = @agency_id', {
       lead_id: appointment.lead_id,
       agency_id: appointment.agency_id
     });
     if (!lead) return res.status(404).json({ error: 'Lead asociado no encontrado.' });
 
-    const agency = get('SELECT id, name, logo_url, email, phone, address, online_meeting_url FROM agencies WHERE id = @agency_id', {
+    const agency = await get('SELECT id, name, logo_url, email, phone, address, online_meeting_url FROM agencies WHERE id = @agency_id', {
       agency_id: appointment.agency_id
     });
 
@@ -59,17 +59,17 @@ router.get('/public/appointment/:token', (req, res) => {
 });
 
 // POST /api/public/appointment/:token/confirm - Client confirms attendance
-router.post('/public/appointment/:token/confirm', (req, res) => {
+router.post('/public/appointment/:token/confirm', async (req, res) => {
   try {
     const { token } = req.params;
-    const appointment = get('SELECT * FROM appointments WHERE client_token = @token', { token });
+    const appointment = await get('SELECT * FROM appointments WHERE client_token = @token', { token });
     if (!appointment) return res.status(404).json({ error: 'Cita no encontrada.' });
 
     if (appointment.status === 'cancelled') {
       return res.status(400).json({ error: 'No se puede confirmar una cita cancelada.' });
     }
 
-    run(
+    await run(
       "UPDATE appointments SET status = 'confirmed', updated_at = NOW() WHERE id = @id",
       { id: appointment.id }
     );
@@ -94,10 +94,10 @@ router.post('/public/appointment/:token/confirm', (req, res) => {
 router.post('/public/appointment/:token/cancel', async (req, res) => {
   try {
     const { token } = req.params;
-    const appointment = get('SELECT * FROM appointments WHERE client_token = @token', { token });
+    const appointment = await get('SELECT * FROM appointments WHERE client_token = @token', { token });
     if (!appointment) return res.status(404).json({ error: 'Cita no encontrada.' });
 
-    run(
+    await run(
       "UPDATE appointments SET status = 'cancelled', updated_at = NOW() WHERE id = @id",
       { id: appointment.id }
     );
@@ -112,8 +112,8 @@ router.post('/public/appointment/:token/cancel', async (req, res) => {
     );
 
     // Send notifications to client and agency
-    const lead = get('SELECT * FROM leads WHERE id = @lead_id', { lead_id: appointment.lead_id });
-    const agency = get('SELECT * FROM agencies WHERE id = @agency_id', { agency_id: appointment.agency_id });
+    const lead = await get('SELECT * FROM leads WHERE id = @lead_id', { lead_id: appointment.lead_id });
+    const agency = await get('SELECT * FROM agencies WHERE id = @agency_id', { agency_id: appointment.agency_id });
 
     const emailService = new EmailService({
       sendgridKey: agency.sendgrid_api_key,
@@ -154,14 +154,14 @@ router.post('/public/appointment/:token/reschedule', async (req, res) => {
       return res.status(400).json({ error: 'La fecha de la cita debe ser futura.' });
     }
 
-    const appointment = get('SELECT * FROM appointments WHERE client_token = @token', { token });
+    const appointment = await get('SELECT * FROM appointments WHERE client_token = @token', { token });
     if (!appointment) return res.status(404).json({ error: 'Cita no encontrada.' });
 
     const updatedNotes = notes 
       ? `${appointment.notes || ''}\n[Cliente solicitó cambio]: ${notes}`.trim()
       : appointment.notes;
 
-    run(
+    await run(
       `UPDATE appointments 
        SET starts_at = @starts_at, ends_at = @ends_at, notes = @notes, status = 'reschedule_requested', updated_at = NOW()
        WHERE id = @id`,
@@ -173,7 +173,7 @@ router.post('/public/appointment/:token/reschedule', async (req, res) => {
       }
     );
 
-    const updatedAppt = get('SELECT * FROM appointments WHERE id = @id', { id: appointment.id });
+    const updatedAppt = await get('SELECT * FROM appointments WHERE id = @id', { id: appointment.id });
 
     logActivity(
       appointment.agency_id,
@@ -185,8 +185,8 @@ router.post('/public/appointment/:token/reschedule', async (req, res) => {
     );
 
     // Send updated notifications
-    const lead = get('SELECT * FROM leads WHERE id = @lead_id', { lead_id: appointment.lead_id });
-    const agency = get('SELECT * FROM agencies WHERE id = @agency_id', { agency_id: appointment.agency_id });
+    const lead = await get('SELECT * FROM leads WHERE id = @lead_id', { lead_id: appointment.lead_id });
+    const agency = await get('SELECT * FROM agencies WHERE id = @agency_id', { agency_id: appointment.agency_id });
 
     const emailService = new EmailService({
       sendgridKey: agency.sendgrid_api_key,
@@ -226,7 +226,7 @@ router.patch('/appointments/:id', auth, async (req, res) => {
     const { id } = req.params;
     const agencyId = req.user.agency_id;
 
-    const appointment = get('SELECT * FROM appointments WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
+    const appointment = await get('SELECT * FROM appointments WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
     if (!appointment) return res.status(404).json({ error: 'Cita no encontrada.' });
 
     const allowed = ['starts_at', 'ends_at', 'type', 'status', 'location', 'online_url', 'notes', 'assigned_user_id'];
@@ -243,9 +243,9 @@ router.patch('/appointments/:id', auth, async (req, res) => {
     if (updates.length === 0) return res.status(400).json({ error: 'No hay campos para actualizar.' });
 
     updates.push("updated_at = NOW()");
-    run(`UPDATE appointments SET ${updates.join(', ')} WHERE id = @id`, params);
+    await run(`UPDATE appointments SET ${updates.join(', ')} WHERE id = @id`, params);
 
-    const updatedAppt = get('SELECT * FROM appointments WHERE id = @id', { id });
+    const updatedAppt = await get('SELECT * FROM appointments WHERE id = @id', { id });
 
     // Log Activity
     logActivity(
@@ -260,8 +260,8 @@ router.patch('/appointments/:id', auth, async (req, res) => {
     // If date/time changed significantly, resend update notification
     const dateChanged = req.body.starts_at && req.body.starts_at !== appointment.starts_at;
     if (dateChanged) {
-      const lead = get('SELECT * FROM leads WHERE id = @lead_id', { lead_id: appointment.lead_id });
-      const agency = get('SELECT * FROM agencies WHERE id = @agency_id', { agency_id: agencyId });
+      const lead = await get('SELECT * FROM leads WHERE id = @lead_id', { lead_id: appointment.lead_id });
+      const agency = await get('SELECT * FROM agencies WHERE id = @agency_id', { agency_id: agencyId });
 
       const emailService = new EmailService({
         sendgridKey: agency.sendgrid_api_key,
@@ -298,10 +298,10 @@ router.post('/appointments/:id/cancel', auth, async (req, res) => {
     const { id } = req.params;
     const agencyId = req.user.agency_id;
 
-    const appointment = get('SELECT * FROM appointments WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
+    const appointment = await get('SELECT * FROM appointments WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
     if (!appointment) return res.status(404).json({ error: 'Cita no encontrada.' });
 
-    run("UPDATE appointments SET status = 'cancelled', updated_at = NOW() WHERE id = @id", { id });
+    await run("UPDATE appointments SET status = 'cancelled', updated_at = NOW() WHERE id = @id", { id });
 
     logActivity(
       agencyId,
@@ -313,8 +313,8 @@ router.post('/appointments/:id/cancel', auth, async (req, res) => {
     );
 
     // Send cancellation notifications
-    const lead = get('SELECT * FROM leads WHERE id = @lead_id', { lead_id: appointment.lead_id });
-    const agency = get('SELECT * FROM agencies WHERE id = @agency_id', { agency_id: agencyId });
+    const lead = await get('SELECT * FROM leads WHERE id = @lead_id', { lead_id: appointment.lead_id });
+    const agency = await get('SELECT * FROM agencies WHERE id = @agency_id', { agency_id: agencyId });
 
     const emailService = new EmailService({
       sendgridKey: agency.sendgrid_api_key,

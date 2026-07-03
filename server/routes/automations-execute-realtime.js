@@ -18,7 +18,7 @@ router.post('/execute-realtime', async (req, res) => {
   }
 
   // Cargar automatización
-  const auto = get('SELECT * FROM automations WHERE id = @id', { id: automation_id })
+  const auto = await get('SELECT * FROM automations WHERE id = @id', { id: automation_id })
   if (!auto) {
     return res.status(404).json({ error: 'Automatización no encontrada' })
   }
@@ -193,13 +193,13 @@ router.post('/execute-realtime', async (req, res) => {
 
     // Actualizar contadores de la automatización
     if (!test_mode) {
-      run(
-        'UPDATE automations SET run_count = COALESCE(run_count, 0) + 1, last_run_at = datetime(\'now\') WHERE id = @id',
+      await run(
+        'UPDATE automations SET run_count = COALESCE(run_count, 0) + 1, last_run_at = NOW() WHERE id = @id',
         { id: automation_id }
       )
 
       try {
-        run(
+        await run(
           `INSERT INTO automation_logs (id, automation_id, lead_id, agency_id, status, actions_executed, created_at)
            VALUES (@id, @automation_id, @lead_id, @agency_id, @status, @actions_executed, NOW())`,
           {
@@ -256,7 +256,7 @@ async function applyLeadChanges(leadId, agentType, data) {
 
   if (agentType === 'vendedor') {
     if (data.score_change) {
-      const lead = get('SELECT ia_score FROM leads WHERE id = @id', { id: leadId })
+      const lead = await get('SELECT ia_score FROM leads WHERE id = @id', { id: leadId })
       if (lead) {
         const newScore = Math.max(0, Math.min(100, (lead.ia_score ?? 50) + Number(data.score_change)))
         updates.ia_score = newScore
@@ -268,7 +268,7 @@ async function applyLeadChanges(leadId, agentType, data) {
 
   if (Object.keys(updates).length > 1) {
     const setClauses = Object.keys(updates).map(k => `${k} = @${k}`).join(', ')
-    run(`UPDATE leads SET ${setClauses} WHERE id = @id`, { ...updates, id: leadId })
+    await run(`UPDATE leads SET ${setClauses} WHERE id = @id`, { ...updates, id: leadId })
   }
 }
 

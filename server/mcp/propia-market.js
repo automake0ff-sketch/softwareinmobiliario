@@ -81,7 +81,7 @@ server
     const zoneKey = args.zone?.toLowerCase().replace(/\s+/g, '-') || '';
     const ref = ZONE_PRICE_REFERENCE[zoneKey];
 
-    const dbResult = all(
+    const dbResult = await all(
       `SELECT price, surface, type, zone, city FROM properties
        WHERE (zone LIKE @zone OR city LIKE @city) AND status IN ('disponible', 'vendido')
        AND price > 0 AND surface > 0

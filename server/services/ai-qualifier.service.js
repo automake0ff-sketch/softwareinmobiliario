@@ -68,7 +68,7 @@ Resumen: ${lead.ia_summary || 'ninguno'}`;
     summary: result.summary,
   });
 
-  run(
+  await run(
     `UPDATE leads SET ia_score = @score, ia_insights = @insights, ia_summary = @summary,
      status = @status, updated_at = NOW(), last_activity = NOW()
      WHERE id = @id`,
@@ -91,7 +91,7 @@ Resumen: ${lead.ia_summary || 'ninguno'}`;
 
   if (score >= 80) {
     const taskId = uuidv4();
-    run(
+    await run(
       `INSERT INTO tasks (id, lead_id, assigned_to, title, description, due_date, completed, created_at)
        VALUES (@id, @lid, @uid, @title, @desc, @due, 0, NOW())`,
       {

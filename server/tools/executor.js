@@ -1,8 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { all, get, run } from '../db/db.js';
 
-function logActivity(agencyId, leadId, userId, type, description, metadata = null) {
-  run(
+async function logActivity(agencyId, leadId, userId, type, description, metadata = null) {
+  await run(
     `INSERT INTO activities (id, agency_id, lead_id, user_id, type, description, metadata, created_at)
      VALUES (@id, @agency_id, @lead_id, @user_id, @type, @description, @metadata, NOW())`,
     {
@@ -44,7 +44,7 @@ export async function executeTool(toolName, toolInput, context) {
         const id = uuidv4();
         if (!agencyId) throw new Error('Se requiere agency_id para crear un lead');
 
-        run(
+        await run(
           `INSERT INTO leads (id, agency_id, name, phone, email, budget, zone, property_interest, source, ia_score, ia_insight, ia_summary, created_at, updated_at)
            VALUES (@id, @aid, @name, @phone, @email, @budget, @zone, @pi, @source, @score, @insight, @summary, NOW(), NOW())`,
           {
@@ -63,7 +63,7 @@ export async function executeTool(toolName, toolInput, context) {
           }
         );
 
-        result = get('SELECT * FROM leads WHERE id = @id', { id });
+        result = await get('SELECT * FROM leads WHERE id = @id', { id });
         logActivity(defaultAgencyId, id, userId, 'lead_created', `Lead ${toolInput.name} creado por IA`, { toolName, input: toolInput });
         break;
       }
@@ -71,11 +71,11 @@ export async function executeTool(toolName, toolInput, context) {
       case 'detectar_duplicado': {
         const duplicates = [];
         if (toolInput.phone) {
-          const byPhone = all('SELECT id, name, phone, email, status, created_at FROM leads WHERE phone = @phone', { phone: toolInput.phone });
+          const byPhone = await all('SELECT id, name, phone, email, status, created_at FROM leads WHERE phone = @phone', { phone: toolInput.phone });
           duplicates.push(...byPhone);
         }
         if (toolInput.email) {
-          const byEmail = all('SELECT id, name, phone, email, status, created_at FROM leads WHERE email = @email', { email: toolInput.email });
+          const byEmail = await all('SELECT id, name, phone, email, status, created_at FROM leads WHERE email = @email', { email: toolInput.email });
           for (const e of byEmail) {
             if (!duplicates.find(d => d.id === e.id)) duplicates.push(e);
           }
@@ -122,30 +122,30 @@ export async function executeTool(toolName, toolInput, context) {
       }
 
       case 'asignar_lead': {
-        const lead = get('SELECT * FROM leads WHERE id = @id', { id: toolInput.lead_id });
+        const lead = await get('SELECT * FROM leads WHERE id = @id', { id: toolInput.lead_id });
         if (!lead) { result = { error: 'Lead no encontrado' }; break; }
 
-        const agent = get('SELECT * FROM users WHERE id = @id', { id: toolInput.user_id });
+        const agent = await get('SELECT * FROM users WHERE id = @id', { id: toolInput.user_id });
         if (!agent) { result = { error: 'Usuario no encontrado' }; break; }
 
-        run("UPDATE leads SET assigned_to = @uid, updated_at = NOW() WHERE id = @lid", { uid: toolInput.user_id, lid: toolInput.lead_id });
+        await run("UPDATE leads SET assigned_to = @uid, updated_at = NOW() WHERE id = @lid", { uid: toolInput.user_id, lid: toolInput.lead_id });
 
         logActivity(lead.agency_id, toolInput.lead_id, userId || toolInput.user_id, 'lead_assigned',
           `Lead asignado a ${agent.name}${toolInput.reason ? ': ' + toolInput.reason : ''}`, { toolName, reason: toolInput.reason });
 
-        result = get('SELECT l.*, u.name AS assigned_name FROM leads l LEFT JOIN users u ON l.assigned_to = u.id WHERE l.id = @id', { id: toolInput.lead_id });
+        result = await get('SELECT l.*, u.name AS assigned_name FROM leads l LEFT JOIN users u ON l.assigned_to = u.id WHERE l.id = @id', { id: toolInput.lead_id });
         break;
       }
 
       case 'enviar_alerta_equipo': {
         const alertId = uuidv4();
-        const targetUsers = toolInput.user_ids || all(
+        const targetUsers = toolInput.user_ids || await all(
           `SELECT id FROM users WHERE agency_id = @aid${toolInput.role ? " AND role = @role" : ""}`,
           { aid: toolInput.agency_id || agencyId, role: toolInput.role }
         ).map(u => u.id);
 
         for (const uid of targetUsers) {
-          run(
+          await run(
             `INSERT INTO notifications (id, agency_id, user_id, lead_id, title, body, type, created_at)
              VALUES (@id, @aid, @uid, @lid, @title, @body, 'alert', NOW())`,
             {
@@ -168,10 +168,10 @@ export async function executeTool(toolName, toolInput, context) {
         const placeholders = stages.map((_, i) => `@stage${i}`);
         stages.forEach((s, i) => { params[`stage${i}`] = s; });
 
-        result = all(
+        result = await all(
           `SELECT id, name, phone, email, status, ia_score, last_activity, created_at
            FROM leads WHERE agency_id = @aid AND status IN (${placeholders.join(',')})
-           AND (last_activity IS NULL OR last_activity < datetime('now', '-' || @threshold || ' hours'))
+           AND (last_activity IS NULL OR last_activity < NOW() - (@threshold * INTERVAL '1 hour'))
            ORDER BY last_activity ASC NULLS FIRST`,
           params
         );
@@ -218,7 +218,7 @@ export async function executeTool(toolName, toolInput, context) {
           created_at: new Date().toISOString(),
         };
 
-        run(
+        await run(
           `INSERT INTO tasks (id, lead_id, assigned_to, title, description, due_date, created_at)
            VALUES (@id, @lid, @uid, @title, @desc, @due, NOW())`,
           {
@@ -229,7 +229,7 @@ export async function executeTool(toolName, toolInput, context) {
           }
         );
 
-        run("UPDATE leads SET status = 'visita_agendada', updated_at = NOW() WHERE id = @id", { id: toolInput.lead_id });
+        await run("UPDATE leads SET status = 'visita_agendada', updated_at = NOW() WHERE id = @id", { id: toolInput.lead_id });
 
         logActivity(agencyId || toolInput.agency_id, toolInput.lead_id, toolInput.user_id, 'visita_creada',
           `Visita creada por IA para ${toolInput.scheduled_at}`, { toolName, visitData });
@@ -239,17 +239,17 @@ export async function executeTool(toolName, toolInput, context) {
       }
 
       case 'reagendar_visita': {
-        const existingTasks = all(
+        const existingTasks = await all(
           'SELECT * FROM tasks WHERE lead_id = @lid AND completed = 0 ORDER BY created_at DESC LIMIT 1',
           { lid: toolInput.lead_id }
         );
 
         if (existingTasks.length) {
-          run('UPDATE tasks SET completed = 1 WHERE id = @id', { id: existingTasks[0].id });
+          await run('UPDATE tasks SET completed = 1 WHERE id = @id', { id: existingTasks[0].id });
         }
 
         const newTaskId = uuidv4();
-        run(
+        await run(
           `INSERT INTO tasks (id, lead_id, title, description, due_date, created_at)
            VALUES (@id, @lid, @title, @desc, @due, NOW())`,
           {
@@ -283,7 +283,7 @@ export async function executeTool(toolName, toolInput, context) {
       }
 
       case 'calcular_precio_mercado': {
-        const properties = all(
+        const properties = await all(
           `SELECT price, surface, type FROM properties
            WHERE (zone LIKE @zone OR city LIKE @city)
            AND status IN ('disponible', 'vendido')

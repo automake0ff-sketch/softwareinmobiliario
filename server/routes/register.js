@@ -7,7 +7,7 @@ import bcrypt from 'bcryptjs';
 
 const router = Router();
 
-function slugify(text) {
+async function slugify(text) {
   return text
     .toString()
     .toLowerCase()
@@ -20,11 +20,11 @@ function slugify(text) {
 }
 import { registerSchema, validateBody } from '../middleware/validators.js';
 
-function hashPassword(password) {
+async function hashPassword(password) {
   return bcrypt.hashSync(password, 10);
 }
 
-function verifyPassword(password, stored) {
+async function verifyPassword(password, stored) {
   if (stored.startsWith('$2a$') || stored.startsWith('$2b$')) {
     return bcrypt.compareSync(password, stored);
   }
@@ -35,16 +35,16 @@ function verifyPassword(password, stored) {
   return hash === verify;
 }
 
-router.post('/', validateBody(registerSchema), (req, res) => {
+router.post('/', validateBody(registerSchema), async (req, res) => {
   try {
     const { email, password, name, phone, agencyName, agencyCity, agencyPhone, agencyEmail, plan } = req.body;
 
-    const existingUser = get('SELECT id FROM users WHERE email = @email', { email });
+    const existingUser = await get('SELECT id FROM users WHERE email = @email', { email });
     if (existingUser) {
       return res.status(409).json({ error: 'Ya existe un usuario con ese email' });
     }
 
-    const existingSlug = get('SELECT id FROM agencies WHERE slug = @slug', { slug: slugify(agencyName) });
+    const existingSlug = await get('SELECT id FROM agencies WHERE slug = @slug', { slug: slugify(agencyName) });
     if (existingSlug) {
       return res.status(409).json({ error: 'Ya existe una agencia con ese nombre. Prueba con otro.' });
     }
@@ -52,7 +52,7 @@ router.post('/', validateBody(registerSchema), (req, res) => {
     const agencyId = uuidv4();
     const now = new Date().toISOString();
 
-    run(
+    await run(
       `INSERT INTO agencies (id, name, slug, email, phone, city, website, plan, plan_status, onboarding_step, onboarding_completed, created_at)
        VALUES (@id, @name, @slug, @email, @phone, @city, @website, @plan, @plan_status, 0, 0, @now)`,
       {
@@ -72,7 +72,7 @@ router.post('/', validateBody(registerSchema), (req, res) => {
     const userId = uuidv4();
     const userRole = 'admin';
 
-    run(
+    await run(
       `INSERT INTO users (id, email, name, password_hash, role, agency_id, phone, active, created_at)
        VALUES (@id, @email, @name, @password_hash, @role, @agency_id, @phone, 1, @created_at)`,
       {
@@ -103,7 +103,7 @@ router.post('/', validateBody(registerSchema), (req, res) => {
     ];
 
     for (const agent of defaultAgents) {
-      run(
+      await run(
         `INSERT INTO ai_agents (id, agency_id, type, name, status, config, created_at)
          VALUES (@id, @agency_id, @type, @name, 'inactive', '{}', @created_at)`,
         {
@@ -116,7 +116,7 @@ router.post('/', validateBody(registerSchema), (req, res) => {
       );
     }
 
-    run(
+    await run(
       `INSERT INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, created_at)
        VALUES (@id, @agency_id, @plan_id, 'active', 'monthly', @created_at)`,
       {
@@ -127,7 +127,7 @@ router.post('/', validateBody(registerSchema), (req, res) => {
       }
     );
 
-    run(
+    await run(
       `INSERT INTO usage_counters (id, agency_id, period_start, created_at)
        VALUES (@id, @agency_id, @period_start, @created_at)`,
       {

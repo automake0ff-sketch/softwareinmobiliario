@@ -16,7 +16,7 @@ router.post('/search/properties', async (req, res) => {
     const { lead_id, limit } = req.body;
     if (!lead_id) return res.status(400).json({ error: 'lead_id es requerido' });
 
-    const lead = get('SELECT * FROM leads WHERE id = @id', { id: lead_id });
+    const lead = await get('SELECT * FROM leads WHERE id = @id', { id: lead_id });
     if (!lead) return res.status(404).json({ error: 'Lead no encontrado' });
 
     const retriever = new PropIARagRetriever();

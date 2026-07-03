@@ -314,7 +314,7 @@ async function start() {
     try {
       const { agencyId, triggerEvent } = job.data;
       const automations = all(
-        'SELECT * FROM automations WHERE agency_id = @agency_id AND trigger_event = @trigger AND is_active = 1',
+        'SELECT * FROM automations WHERE agency_id = @agency_id AND trigger_event = @trigger AND is_active = true',
         { agency_id: agencyId, trigger: triggerEvent }
       );
       for (const auto of automations) {
@@ -334,7 +334,7 @@ async function start() {
         const managers = all('SELECT * FROM users WHERE agency_id = @agency_id AND role = \'manager\'', { agency_id: agencyId });
         const leads = all('SELECT * FROM leads WHERE agency_id = @agency_id');
         const tasks = all('SELECT * FROM tasks WHERE completed = 0');
-        const visits = all('SELECT * FROM activities WHERE type = \'visita\' AND created_at >= datetime(\'now\', \'-1 day\')');
+        const visits = await all(`SELECT * FROM activities WHERE type = 'visita' AND created_at >= NOW() - INTERVAL '1 day'`);
         const properties = all('SELECT * FROM properties WHERE agency_id = @agency_id AND status = \'disponible\'', { agency_id: agencyId });
 
         const newLeads = leads.filter(l => {
@@ -445,7 +445,7 @@ async function start() {
       );
 
       const conversions = all(
-        "SELECT DATE(created_at) as day, COUNT(*) as leads FROM leads WHERE agency_id = @aid AND created_at >= datetime('now', '-14 days') GROUP BY DATE(created_at) ORDER BY day",
+        "SELECT DATE(created_at) as day, COUNT(*) as leads FROM leads WHERE agency_id = @aid AND created_at >= NOW() - INTERVAL '14 days' GROUP BY DATE(created_at) ORDER BY day",
         { aid }
       );
 
@@ -509,7 +509,7 @@ async function start() {
       const usersCount = get("SELECT COUNT(*) as count FROM users WHERE agency_id = @aid AND active = 1", { aid: agencyId })?.count || 0
       const officesCount = get("SELECT COUNT(*) as count FROM offices WHERE agency_id = @aid", { aid: agencyId })?.count || 0
       const agentsCount = get("SELECT COUNT(*) as count FROM ai_agents WHERE agency_id = @aid AND status = 'active'", { aid: agencyId })?.count || 0
-      const automationsCount = get("SELECT COUNT(*) as count FROM automations WHERE agency_id = @aid AND is_active = 1", { aid: agencyId })?.count || 0
+      const automationsCount = get("SELECT COUNT(*) as count FROM automations WHERE agency_id = @aid AND is_active = true", { aid: agencyId })?.count || 0
 
       const leadsLimit = plan.max_leads_per_month
       const leadsPct = leadsLimit === -1 ? 0 : Math.round((leadsCount / leadsLimit) * 100)
@@ -820,12 +820,12 @@ function generateAgentResponse(agentType, lead, messageBody, history) {
 // exclusivo de SQLite, y rompía el arranque del servidor contra Postgres).
 async function runMigration() {
   const migrations = [
-    { type: 'column', table: 'ai_agents', column: 'is_active', sql: `ALTER TABLE ai_agents ADD COLUMN IF NOT EXISTS is_active INTEGER DEFAULT 1` },
+    { type: 'column', table: 'ai_agents', column: 'is_active', sql: `ALTER TABLE ai_agents ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true` },
     { type: 'column', table: 'ai_agents', column: 'stats', sql: `ALTER TABLE ai_agents ADD COLUMN IF NOT EXISTS stats TEXT DEFAULT '{"leads_today":0,"messages_today":0,"automations_today":0,"conversions_today":0}'` },
     { type: 'column', table: 'conversations', column: 'ia_handling', sql: `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS ia_handling INTEGER DEFAULT 1` },
     { type: 'column', table: 'conversations', column: 'updated_at', sql: `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS updated_at TEXT` },
     { type: 'column', table: 'automations', column: 'description', sql: `ALTER TABLE automations ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''` },
-    { type: 'column', table: 'automations', column: 'is_active', sql: `ALTER TABLE automations ADD COLUMN IF NOT EXISTS is_active INTEGER DEFAULT 1` },
+    { type: 'column', table: 'automations', column: 'is_active', sql: `ALTER TABLE automations ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true` },
     { type: 'column', table: 'automations', column: 'trigger_type', sql: `ALTER TABLE automations ADD COLUMN IF NOT EXISTS trigger_type TEXT DEFAULT 'lead_created'` },
     { type: 'column', table: 'automations', column: 'trigger_config', sql: `ALTER TABLE automations ADD COLUMN IF NOT EXISTS trigger_config TEXT DEFAULT '{}'` },
     { type: 'column', table: 'automations', column: 'conditions', sql: `ALTER TABLE automations ADD COLUMN IF NOT EXISTS conditions TEXT DEFAULT '[]'` },
@@ -863,7 +863,7 @@ async function runMigration() {
       type TEXT NOT NULL,
       name TEXT NOT NULL,
       credentials TEXT DEFAULT '{}',
-      is_active INTEGER DEFAULT 1,
+      is_active BOOLEAN DEFAULT true,
       last_tested_at TEXT,
       last_test_ok INTEGER,
       created_at TEXT NOT NULL DEFAULT (NOW())
@@ -938,7 +938,7 @@ async function runMigration() {
       requires TEXT DEFAULT '[]',
       installs INTEGER DEFAULT 0,
       rating REAL DEFAULT 0,
-      is_active INTEGER DEFAULT 1,
+      is_active BOOLEAN DEFAULT true,
       is_featured INTEGER DEFAULT 0,
       sort_order INTEGER DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (NOW())

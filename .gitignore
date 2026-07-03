@@ -12,3 +12,10 @@ vite-err.log
 vite-stdout.log
 
 .vercel
+
+# Archivos de entorno con secretos — NUNCA commitear
+.env.local
+.env.production
+.env.development
+.env.staging
+server/.env

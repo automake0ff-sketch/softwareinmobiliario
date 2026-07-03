@@ -38,7 +38,7 @@ const FIELD_MAP = {
   quality_score: 'quality_score',
 };
 
-function normalizeStatus(status) {
+async function normalizeStatus(status) {
   const map = {
     available: 'disponible',
     reserved: 'reservado',
@@ -48,13 +48,13 @@ function normalizeStatus(status) {
   return map[status] || status || 'disponible';
 }
 
-function normalizeOperation(operation) {
+async function normalizeOperation(operation) {
   const value = String(operation || 'sale').toLowerCase();
   if (['rent', 'rental', 'alquiler'].includes(value)) return 'rent';
   return 'sale';
 }
 
-function normalizePortal(url) {
+async function normalizePortal(url) {
   const value = String(url || '').toLowerCase();
   if (value.includes('idealista')) return 'idealista';
   if (value.includes('fotocasa')) return 'fotocasa';
@@ -63,7 +63,7 @@ function normalizePortal(url) {
   return 'portal';
 }
 
-function parseImages(images) {
+async function parseImages(images) {
   if (!images) return null;
   if (Array.isArray(images)) return JSON.stringify(images.filter(Boolean));
   if (typeof images === 'string') {
@@ -73,7 +73,7 @@ function parseImages(images) {
   return JSON.stringify(images);
 }
 
-function parseFeatures(features) {
+async function parseFeatures(features) {
   if (!features) return null;
   if (Array.isArray(features)) return JSON.stringify(features.filter(Boolean));
   if (typeof features === 'string') {
@@ -82,7 +82,7 @@ function parseFeatures(features) {
   return JSON.stringify(features);
 }
 
-function qualityScore(data) {
+async function qualityScore(data) {
   const checks = [
     data.title,
     Number(data.price) > 0,
@@ -94,7 +94,7 @@ function qualityScore(data) {
   return Math.round((checks.filter(Boolean).length / checks.length) * 100);
 }
 
-function normalizeProperty(body, req, defaults = {}) {
+async function normalizeProperty(body, req, defaults = {}) {
   const data = { ...defaults };
   for (const [input, column] of Object.entries(FIELD_MAP)) {
     if (body[input] !== undefined) data[column] = body[input];
@@ -122,9 +122,9 @@ function normalizeProperty(body, req, defaults = {}) {
   return data;
 }
 
-function insertProperty(data) {
+async function insertProperty(data) {
   const id = uuidv4();
-  run(
+  await run(
     `INSERT INTO properties (
       id, agency_id, office_id, title, description, price, type, operation_type,
       city, zone, address, province, postal_code, bedrooms, bathrooms, surface,
@@ -140,29 +140,29 @@ function insertProperty(data) {
     )`,
     { id, ...data }
   );
-  return get('SELECT * FROM properties WHERE id = @id', { id });
+  return await get('SELECT * FROM properties WHERE id = @id', { id });
 }
 
-function updateProperty(id, agencyId, data) {
+async function updateProperty(id, agencyId, data) {
   const fields = Object.values(FIELD_MAP)
     .filter((field, index, arr) => arr.indexOf(field) === index)
     .filter(field => data[field] !== undefined);
 
   if (!fields.length) {
-    return get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
+    return await get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
   }
 
   const updates = fields.map(field => `${field} = @${field}`);
   updates.push("updated_at = NOW()");
-  run(
+  await run(
     `UPDATE properties SET ${updates.join(', ')} WHERE id = @id AND agency_id = @agency_id`,
     { ...data, id, agency_id: agencyId }
   );
-  return get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
+  return await get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
 }
 
-function logActivity(req, property, type, description, metadata = {}) {
-  run(
+async function logActivity(req, property, type, description, metadata = {}) {
+  await run(
     `INSERT INTO activities (id, agency_id, user_id, type, title, description, metadata, created_at)
      VALUES (@id, @agency_id, @user_id, @type, @title, @description, @metadata, NOW())`,
     {
@@ -177,7 +177,7 @@ function logActivity(req, property, type, description, metadata = {}) {
   );
 }
 
-function parseCsv(text) {
+async function parseCsv(text) {
   const lines = String(text || '').split(/\r?\n/).filter(Boolean);
   if (lines.length < 2) return [];
   const headers = lines[0].split(',').map(h => h.trim());
@@ -190,7 +190,7 @@ function parseCsv(text) {
   });
 }
 
-function decodeHtml(value = '') {
+async function decodeHtml(value = '') {
   return String(value)
     .replace(/\\u002F/gi, '/')
     .replace(/\\u003c/g, '<')
@@ -206,15 +206,15 @@ function decodeHtml(value = '') {
     .trim();
 }
 
-function stripTags(value = '') {
+async function stripTags(value = '') {
   return decodeHtml(String(value).replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' '));
 }
 
-function unique(values) {
+async function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
-function absoluteUrl(src, baseUrl) {
+async function absoluteUrl(src, baseUrl) {
   try {
     return new URL(src, baseUrl).toString();
   } catch {
@@ -222,13 +222,13 @@ function absoluteUrl(src, baseUrl) {
   }
 }
 
-function numberFromText(value = '') {
+async function numberFromText(value = '') {
   const match = String(value).replace(/\./g, '').match(/(\d[\d\s,]*)/);
   if (!match) return 0;
   return Number(match[1].replace(/[^\d]/g, '')) || 0;
 }
 
-function extractMeta(html, property) {
+async function extractMeta(html, property) {
   const patterns = [
     new RegExp(`<meta[^>]+property=["']${property}["'][^>]+content=["']([^"']+)["']`, 'i'),
     new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+property=["']${property}["']`, 'i'),
@@ -241,7 +241,7 @@ function extractMeta(html, property) {
   return '';
 }
 
-function collectJsonLd(html) {
+async function collectJsonLd(html) {
   const blocks = [];
   const regex = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   let match;
@@ -254,7 +254,7 @@ function collectJsonLd(html) {
   return blocks.flatMap((entry) => entry?.['@graph'] || entry).filter(Boolean);
 }
 
-function findDeep(obj, keys, results = []) {
+async function findDeep(obj, keys, results = []) {
   if (!obj || typeof obj !== 'object') return results;
   for (const [key, value] of Object.entries(obj)) {
     if (keys.includes(key)) results.push(value);
@@ -263,7 +263,7 @@ function findDeep(obj, keys, results = []) {
   return results;
 }
 
-function collectImages(html, url, jsonBlocks = []) {
+async function collectImages(html, url, jsonBlocks = []) {
   const images = [];
   const decodedHtml = decodeHtml(html);
   for (const key of ['og:image', 'og:image:url', 'twitter:image', 'twitter:image:src']) {
@@ -315,13 +315,13 @@ function collectImages(html, url, jsonBlocks = []) {
   return unique(images).slice(0, 12);
 }
 
-function isImageLike(src = '') {
+async function isImageLike(src = '') {
   const value = decodeHtml(src).toLowerCase();
   return /\.(jpg|jpeg|png|webp)([?#]|$)/i.test(value) ||
     /(foto|photo|image|img|multimedia|picture|idealista|fotocasa|habitaclia|pisos\.com)/i.test(value);
 }
 
-function firstJsonValue(jsonBlocks, keys) {
+async function firstJsonValue(jsonBlocks, keys) {
   for (const value of findDeep(jsonBlocks, keys)) {
     if (Array.isArray(value)) continue;
     if (value && typeof value === 'object') {
@@ -335,13 +335,13 @@ function firstJsonValue(jsonBlocks, keys) {
   return '';
 }
 
-function inferOperation(text, url) {
+async function inferOperation(text, url) {
   const value = `${text} ${url}`.toLowerCase();
   if (/(alquiler|rent|rental|\/alquiler-|\/alquiler\/)/.test(value)) return 'rent';
   return 'sale';
 }
 
-function inferType(text) {
+async function inferType(text) {
   const value = String(text || '').toLowerCase();
   if (/chalet|villa/.test(value)) return 'villa';
   if (/casa/.test(value)) return 'house';
@@ -353,7 +353,7 @@ function inferType(text) {
   return 'apartment';
 }
 
-function extractByRegex(text, patterns) {
+async function extractByRegex(text, patterns) {
   for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match?.[1]) return Number(match[1].replace(/[^\d]/g, '')) || 0;
@@ -361,7 +361,7 @@ function extractByRegex(text, patterns) {
   return 0;
 }
 
-function findTextLiteral(source, keys) {
+async function findTextLiteral(source, keys) {
   const decoded = decodeHtml(source);
   for (const key of keys) {
     const regex = new RegExp(`["']${key}["']\\s*:\\s*["']([^"']{3,650})["']`, 'i');
@@ -371,7 +371,7 @@ function findTextLiteral(source, keys) {
   return '';
 }
 
-function findNumberLiteral(source, keys) {
+async function findNumberLiteral(source, keys) {
   const decoded = decodeHtml(source);
   for (const key of keys) {
     const regex = new RegExp(`["']${key}["']\\s*:\\s*["']?([\\d.,]{2,})["']?`, 'i');
@@ -381,12 +381,12 @@ function findNumberLiteral(source, keys) {
   return 0;
 }
 
-function isGenericPortalTitle(title = '') {
+async function isGenericPortalTitle(title = '') {
   const value = String(title).trim().toLowerCase();
   return !value || ['idealista', 'fotocasa', 'habitaclia', 'pisos.com'].includes(value) || /^ficha de /.test(value);
 }
 
-function firstMeaningfulParagraph(source = '') {
+async function firstMeaningfulParagraph(source = '') {
   return stripTags(source)
     .split(/\n|\r|\. /)
     .map(line => line.trim())
@@ -396,7 +396,7 @@ function firstMeaningfulParagraph(source = '') {
     ) || '';
 }
 
-function scrapeQuality(data = {}) {
+async function scrapeQuality(data = {}) {
   return [
     data.title && !isGenericPortalTitle(data.title),
     data.description,
@@ -407,7 +407,7 @@ function scrapeQuality(data = {}) {
   ].filter(Boolean).length;
 }
 
-function mergeScraped(base = {}, fallback = {}) {
+async function mergeScraped(base = {}, fallback = {}) {
   return {
     ...base,
     title: !isGenericPortalTitle(base.title) ? base.title : fallback.title || base.title,
@@ -428,7 +428,7 @@ function mergeScraped(base = {}, fallback = {}) {
   };
 }
 
-function extractPortalData(html, url, status = 0, scrapeSource = 'html') {
+async function extractPortalData(html, url, status = 0, scrapeSource = 'html') {
   const jsonBlocks = collectJsonLd(html);
   const cleanText = stripTags(html);
   const title = (
@@ -547,7 +547,7 @@ async function scrapePortal(url) {
   }
 }
 
-function marketingCopy(property, type = 'general') {
+async function marketingCopy(property, type = 'general') {
   const title = property.title || 'Propiedad destacada';
   const zone = [property.zone, property.city].filter(Boolean).join(', ');
   const price = property.price ? `${Number(property.price).toLocaleString('es-ES')} EUR` : 'precio a consultar';
@@ -563,7 +563,7 @@ function marketingCopy(property, type = 'general') {
   return outputs[type] || outputs.general;
 }
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { status, type, city, zone, min_price, max_price, bedrooms, office_id, search, source, operation_type } = req.query;
     let sql = 'SELECT * FROM properties WHERE agency_id = @agency_id';
@@ -592,7 +592,7 @@ router.get('/', (req, res) => {
   }
 });
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const data = normalizeProperty(req.body, req, { source: 'manual', external_source: 'manual' });
     if (!data.title || !data.type || !data.city) {
@@ -628,7 +628,7 @@ router.post('/import/url', async (req, res) => {
     const skipped = [];
     for (const url of urls) {
       const externalSource = normalizePortal(url);
-      const duplicate = get(
+      const duplicate = await get(
         'SELECT * FROM properties WHERE agency_id = @agency_id AND external_url = @external_url',
         { agency_id: req.user.agency_id, external_url: url }
       );
@@ -679,9 +679,9 @@ router.post('/import/url', async (req, res) => {
   }
 });
 
-router.post('/:id/marketing', (req, res) => {
+router.post('/:id/marketing', async (req, res) => {
   try {
-    const property = get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
+    const property = await get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!property) return res.status(404).json({ error: 'Propiedad no encontrada.' });
     const type = req.body.type || 'general';
     const content = marketingCopy(property, type);
@@ -692,9 +692,9 @@ router.post('/:id/marketing', (req, res) => {
   }
 });
 
-router.post('/:id/improve-ai', (req, res) => {
+router.post('/:id/improve-ai', async (req, res) => {
   try {
-    const property = get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
+    const property = await get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!property) return res.status(404).json({ error: 'Propiedad no encontrada.' });
     const improved = {
       title: property.title?.startsWith('Propiedad importada') ? `Vivienda destacada en ${property.city || property.zone || 'zona demandada'}` : property.title,
@@ -713,7 +713,7 @@ router.post('/:id/improve-ai', (req, res) => {
   }
 });
 
-router.post('/import/csv', (req, res) => {
+router.post('/import/csv', async (req, res) => {
   try {
     const rows = Array.isArray(req.body.rows) ? req.body.rows : parseCsv(req.body.csv);
     if (!rows.length) return res.status(400).json({ error: 'CSV vacio o invalido.' });
@@ -723,7 +723,7 @@ router.post('/import/csv', (req, res) => {
     for (const row of rows) {
       const url = row.external_url || row.url || '';
       if (url) {
-        const duplicate = get(
+        const duplicate = await get(
           'SELECT id, title FROM properties WHERE agency_id = @agency_id AND external_url = @external_url',
           { agency_id: req.user.agency_id, external_url: url }
         );
@@ -753,9 +753,9 @@ router.post('/import/csv', (req, res) => {
   }
 });
 
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const property = get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
+    const property = await get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!property) return res.status(404).json({ error: 'Propiedad no encontrada.' });
     res.json(property);
   } catch (error) {
@@ -764,9 +764,9 @@ router.get('/:id', (req, res) => {
   }
 });
 
-router.patch('/:id', (req, res) => {
+router.patch('/:id', async (req, res) => {
   try {
-    const existing = get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
+    const existing = await get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!existing) return res.status(404).json({ error: 'Propiedad no encontrada.' });
 
     const data = normalizeProperty(req.body, req, existing);
@@ -776,8 +776,8 @@ router.patch('/:id', (req, res) => {
       .map(field => `${field} = @${field}`);
 
     updates.push("updated_at = NOW()");
-    run(`UPDATE properties SET ${updates.join(', ')} WHERE id = @id AND agency_id = @agency_id`, { ...data, id: req.params.id, agency_id: req.user.agency_id });
-    const property = get('SELECT * FROM properties WHERE id = @id', { id: req.params.id });
+    await run(`UPDATE properties SET ${updates.join(', ')} WHERE id = @id AND agency_id = @agency_id`, { ...data, id: req.params.id, agency_id: req.user.agency_id });
+    const property = await get('SELECT * FROM properties WHERE id = @id', { id: req.params.id });
     logActivity(req, property, 'property_updated', `Propiedad actualizada: ${property.title}`);
     res.json(property);
   } catch (error) {
@@ -786,13 +786,13 @@ router.patch('/:id', (req, res) => {
   }
 });
 
-router.patch('/:id/status', (req, res) => {
+router.patch('/:id/status', async (req, res) => {
   try {
     const status = normalizeStatus(req.body.status);
-    const existing = get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
+    const existing = await get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!existing) return res.status(404).json({ error: 'Propiedad no encontrada.' });
-    run("UPDATE properties SET status = @status, updated_at = NOW() WHERE id = @id", { id: req.params.id, status });
-    const property = get('SELECT * FROM properties WHERE id = @id', { id: req.params.id });
+    await run("UPDATE properties SET status = @status, updated_at = NOW() WHERE id = @id", { id: req.params.id, status });
+    const property = await get('SELECT * FROM properties WHERE id = @id', { id: req.params.id });
     logActivity(req, property, 'property_status_changed', `Estado cambiado a ${status}`);
     res.json(property);
   } catch (error) {
@@ -801,11 +801,11 @@ router.patch('/:id/status', (req, res) => {
   }
 });
 
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
-    const existing = get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
+    const existing = await get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!existing) return res.status(404).json({ error: 'Propiedad no encontrada.' });
-    run('DELETE FROM properties WHERE id = @id', { id: req.params.id });
+    await run('DELETE FROM properties WHERE id = @id', { id: req.params.id });
     logActivity(req, existing, 'property_deleted', `Propiedad eliminada: ${existing.title}`);
     res.json({ success: true });
   } catch (error) {
@@ -816,10 +816,10 @@ router.delete('/:id', (req, res) => {
 
 router.post('/:id/match-leads', async (req, res) => {
   try {
-    const property = get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
+    const property = await get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!property) return res.status(404).json({ error: 'Propiedad no encontrada.' });
 
-    const leads = all(
+    const leads = await all(
       `SELECT * FROM leads
        WHERE agency_id = @agency_id
        AND status NOT IN ('cerrado', 'reserva')
@@ -855,7 +855,7 @@ router.post('/match-lead', async (req, res) => {
     const { lead_id, filters } = req.body;
     if (!lead_id) return res.status(400).json({ error: 'Se requiere lead_id.' });
     const agencyId = req.user.agency_id;
-    const lead = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: lead_id, agency_id: agencyId });
+    const lead = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: lead_id, agency_id: agencyId });
     if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' });
 
     let sql = "SELECT * FROM properties WHERE status = 'disponible' AND agency_id = @agency_id";

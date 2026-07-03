@@ -12,12 +12,12 @@ const router = Router()
 router.use(auth)
 
 // GET /api/automations - List all automations for agency
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const agencyId = req.user.agency_id
     if (!agencyId) return res.status(400).json({ error: 'agency_id requerido' })
 
-    const automations = all(
+    const automations = await all(
       'SELECT * FROM automations WHERE agency_id = @agency_id ORDER BY created_at DESC',
       { agency_id: agencyId }
     ).map(a => ({
@@ -35,7 +35,7 @@ router.get('/', (req, res) => {
 })
 
 // GET /api/automations/triggers - Get available trigger types
-router.get('/triggers', (req, res) => {
+router.get('/triggers', async (req, res) => {
   res.json([
     { value: 'lead_created',      label: 'Nuevo lead',                icon: 'UserPlus' },
     { value: 'stage_changed',      label: 'Cambio de etapa',          icon: 'ArrowRight' },
@@ -52,7 +52,7 @@ router.get('/triggers', (req, res) => {
 })
 
 // GET /api/automations/actions - Get available action types
-router.get('/actions', (req, res) => {
+router.get('/actions', async (req, res) => {
   res.json([
     { value: 'activate_agent',    label: 'Activar agente IA',        icon: 'Bot' },
     { value: 'send_whatsapp',     label: 'Enviar WhatsApp',           icon: 'MessageCircle' },
@@ -86,7 +86,7 @@ router.get('/agents', async (req, res) => {
 })
 
 // POST /api/automations - Create new automation
-router.post('/', checkLimit('automations'), validateBody(automationSchema), (req, res) => {
+router.post('/', checkLimit('automations'), validateBody(automationSchema), async (req, res) => {
   try {
     const agencyId = req.user.agency_id || req.body.agency_id
     if (!agencyId) return res.status(400).json({ error: 'agency_id requerido' })
@@ -97,7 +97,7 @@ router.post('/', checkLimit('automations'), validateBody(automationSchema), (req
     }
 
     const id = uuidv4()
-    run(
+    await run(
       `INSERT INTO automations (id, agency_id, name, description, is_active, trigger_type, trigger_event, trigger_config, conditions, actions, action, run_count, created_at)
        VALUES (@id, @agency_id, @name, @description, 1, @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, '', 0, NOW())`,
       {
@@ -112,7 +112,7 @@ router.post('/', checkLimit('automations'), validateBody(automationSchema), (req
       }
     )
 
-    const created = get('SELECT * FROM automations WHERE id = @id', { id })
+    const created = await get('SELECT * FROM automations WHERE id = @id', { id })
     res.json({
       ...created,
       conditions: JSON.parse(created.conditions || '[]'),
@@ -126,23 +126,23 @@ router.post('/', checkLimit('automations'), validateBody(automationSchema), (req
 })
 
 // POST /api/automations/:id/toggle - Toggle active/inactive
-router.post('/:id/toggle', (req, res) => {
+router.post('/:id/toggle', async (req, res) => {
   try {
     const agencyId = req.user.agency_id
-    const auto = get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
+    const auto = await get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
       { id: req.params.id, agency_id: agencyId })
     if (!auto) return res.status(404).json({ error: 'Automatización no encontrada.' })
 
     const newStatus = auto.is_active ? 0 : 1
 
     // Check quota if activating
-    if (newStatus === 1) {
+    if (newStatus === true) {
       const planId = req.user?.plan_id || 'starter'
       const plan = PLANS[planId] || PLANS.starter
       const planLimit = plan.max_automations
 
       if (planLimit !== -1) {
-        const row = get("SELECT COUNT(*) as count FROM automations WHERE agency_id = @aid AND is_active = 1", { aid: agencyId })
+        const row = await get("SELECT COUNT(*) as count FROM automations WHERE agency_id = @aid AND is_active = true", { aid: agencyId })
         const currentCount = row?.count || 0
         if (currentCount >= planLimit) {
           return res.status(402).json({
@@ -157,10 +157,10 @@ router.post('/:id/toggle', (req, res) => {
       }
     }
 
-    run('UPDATE automations SET is_active = @is_active, active = @active WHERE id = @id AND agency_id = @agency_id',
+    await run('UPDATE automations SET is_active = @is_active, active = @active WHERE id = @id AND agency_id = @agency_id',
       { is_active: newStatus, active: newStatus, id: req.params.id, agency_id: agencyId })
 
-    const updated = get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
+    const updated = await get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
       { id: req.params.id, agency_id: agencyId })
     res.json({
       ...updated,
@@ -175,23 +175,23 @@ router.post('/:id/toggle', (req, res) => {
 })
 
 // PATCH /api/automations/:id - Update partial fields of an automation (e.g. is_active)
-router.patch('/:id', validateBody(automationSchema.partial()), (req, res) => {
+router.patch('/:id', validateBody(automationSchema.partial()), async (req, res) => {
   try {
     const agencyId = req.user.agency_id
-    const auto = get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
+    const auto = await get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
       { id: req.params.id, agency_id: agencyId })
     if (!auto) return res.status(404).json({ error: 'Automatización no encontrada.' })
 
     const { is_active, name, description } = req.body
 
     // Check quota if attempting to activate
-    if (is_active !== undefined && (is_active === 1 || is_active === true) && !auto.is_active) {
+    if (is_active !== undefined && (is_active === true || is_active === true) && !auto.is_active) {
       const planId = req.user?.plan_id || 'starter'
       const plan = PLANS[planId] || PLANS.starter
       const planLimit = plan.max_automations
 
       if (planLimit !== -1) {
-        const row = get("SELECT COUNT(*) as count FROM automations WHERE agency_id = @aid AND is_active = 1", { aid: agencyId })
+        const row = await get("SELECT COUNT(*) as count FROM automations WHERE agency_id = @aid AND is_active = true", { aid: agencyId })
         const currentCount = row?.count || 0
         if (currentCount >= planLimit) {
           return res.status(402).json({
@@ -212,8 +212,8 @@ router.patch('/:id', validateBody(automationSchema.partial()), (req, res) => {
     if (is_active !== undefined) {
       updates.push('is_active = @is_active')
       updates.push('active = @active')
-      params.is_active = is_active ? 1 : 0
-      params.active = is_active ? 1 : 0
+      params.is_active = is_active ? true : false
+      params.active = is_active ? true : false
     }
     if (name !== undefined) {
       updates.push('name = @name')
@@ -225,10 +225,10 @@ router.patch('/:id', validateBody(automationSchema.partial()), (req, res) => {
     }
 
     if (updates.length > 0) {
-      run(`UPDATE automations SET ${updates.join(', ')} WHERE id = @id AND agency_id = @agency_id`, params)
+      await run(`UPDATE automations SET ${updates.join(', ')} WHERE id = @id AND agency_id = @agency_id`, params)
     }
 
-    const updated = get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
+    const updated = await get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
       { id: req.params.id, agency_id: agencyId })
     res.json({
       ...updated,
@@ -260,16 +260,16 @@ router.post('/trigger', async (req, res) => {
 })
 
 // PUT /api/automations/:id - Update automation
-router.put('/:id', validateBody(automationSchema.partial()), (req, res) => {
+router.put('/:id', validateBody(automationSchema.partial()), async (req, res) => {
   try {
     const agencyId = req.user.agency_id
-    const auto = get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
+    const auto = await get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
       { id: req.params.id, agency_id: agencyId })
     if (!auto) return res.status(404).json({ error: 'Automatización no encontrada.' })
 
     const { name, description, trigger_type, trigger_config, conditions, actions, is_active } = req.body
 
-    run(
+    await run(
       `UPDATE automations SET
         name = @name, description = @description, trigger_type = @trigger_type,
         trigger_event = @trigger_type,
@@ -283,14 +283,14 @@ router.put('/:id', validateBody(automationSchema.partial()), (req, res) => {
         trigger_config: JSON.stringify(trigger_config || JSON.parse(auto.trigger_config || '{}')),
         conditions: JSON.stringify(conditions || JSON.parse(auto.conditions || '[]')),
         actions: JSON.stringify(actions || JSON.parse(auto.actions || '[]')),
-        is_active: is_active !== undefined ? (is_active ? 1 : 0) : auto.is_active,
-        active: is_active !== undefined ? (is_active ? 1 : 0) : auto.is_active,
+        is_active: is_active !== undefined ? (is_active ? true : false) : auto.is_active,
+        active: is_active !== undefined ? (is_active ? true : false) : auto.is_active,
         id: req.params.id,
         agency_id: agencyId,
       }
     )
 
-    const updated = get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
+    const updated = await get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
       { id: req.params.id, agency_id: agencyId })
     res.json({
       ...updated,
@@ -305,14 +305,14 @@ router.put('/:id', validateBody(automationSchema.partial()), (req, res) => {
 })
 
 // DELETE /api/automations/:id
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
     const agencyId = req.user.agency_id
-    const auto = get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
+    const auto = await get('SELECT * FROM automations WHERE id = @id AND agency_id = @agency_id',
       { id: req.params.id, agency_id: agencyId })
     if (!auto) return res.status(404).json({ error: 'Automatización no encontrada.' })
 
-    run('DELETE FROM automations WHERE id = @id AND agency_id = @agency_id',
+    await run('DELETE FROM automations WHERE id = @id AND agency_id = @agency_id',
       { id: req.params.id, agency_id: agencyId })
     res.json({ message: 'Automatización eliminada.' })
   } catch (error) {
@@ -333,7 +333,7 @@ router.post('/execute', async (req, res) => {
     }
 
     // Get lead data from DB
-    const lead = get('SELECT * FROM leads WHERE id = @id', { id: lead_id })
+    const lead = await get('SELECT * FROM leads WHERE id = @id', { id: lead_id })
     if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' })
 
     // Build lead context
@@ -356,8 +356,8 @@ router.post('/execute', async (req, res) => {
     }
 
     // Find matching automations
-    const automations = all(
-      'SELECT * FROM automations WHERE agency_id = @agency_id AND is_active = 1 AND trigger_type = @trigger_type',
+    const automations = await all(
+      'SELECT * FROM automations WHERE agency_id = @agency_id AND is_active = true AND trigger_type = @trigger_type',
       { agency_id: agencyId, trigger_type }
     )
 
@@ -397,11 +397,11 @@ router.post('/execute', async (req, res) => {
       }
 
       // Update run count
-      run('UPDATE automations SET run_count = COALESCE(run_count, 0) + 1, last_run_at = datetime(\'now\') WHERE id = @id',
+      await run('UPDATE automations SET run_count = COALESCE(run_count, 0) + 1, last_run_at = NOW() WHERE id = @id',
         { id: auto.id })
 
       // Log activity
-      run(
+      await run(
         `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
          VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, NOW())`,
         {
@@ -416,7 +416,7 @@ router.post('/execute', async (req, res) => {
 
       // Log in automation_logs table if it exists (try/catch)
       try {
-        run(
+        await run(
           `INSERT INTO automation_logs (id, automation_id, lead_id, agency_id, status, actions_executed, created_at)
            VALUES (@id, @automation_id, @lead_id, @agency_id, @status, @actions_executed, NOW())`,
           {
@@ -512,7 +512,7 @@ router.get('/templates', async (req, res) => {
     const agencyId = req.user.agency_id
 
     const existing = new Set(
-      all('SELECT name FROM automations WHERE agency_id = @aid', { aid: agencyId })
+      await all('SELECT name FROM automations WHERE agency_id = @aid', { aid: agencyId })
         .map(a => a.name)
     )
 
@@ -547,7 +547,7 @@ router.post('/install-template', checkLimit('automations'), async (req, res) => 
     const { name } = req.body
     if (!name) return res.status(400).json({ error: 'name requerido' })
 
-    const existing = get('SELECT id FROM automations WHERE agency_id = @aid AND name = @name', { aid: agencyId, name })
+    const existing = await get('SELECT id FROM automations WHERE agency_id = @aid AND name = @name', { aid: agencyId, name })
     if (existing) return res.status(409).json({ error: 'Ya existe' })
 
     const { N8N_AUTOMATIONS } = await import('../services/seed-automations.js')
@@ -556,7 +556,7 @@ router.post('/install-template', checkLimit('automations'), async (req, res) => 
 
     const id = uuidv4()
     const templateId = name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()
-    run(
+    await run(
       `INSERT INTO automations (id, agency_id, name, description, is_active, active, trigger_type, trigger_event, trigger_config, conditions, actions, run_count, created_at, template_id)
        VALUES (@id, @agency_id, @name, @description, 1, 1, @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, 0, NOW(), @template_id)`,
       {
@@ -570,7 +570,7 @@ router.post('/install-template', checkLimit('automations'), async (req, res) => 
       }
     )
 
-    const created = get('SELECT * FROM automations WHERE id = @id', { id })
+    const created = await get('SELECT * FROM automations WHERE id = @id', { id })
     res.json({
       ...created,
       conditions: JSON.parse(created.conditions || '[]'),
@@ -591,7 +591,7 @@ router.post('/test', async (req, res) => {
       return res.status(400).json({ error: 'automation y lead_id son requeridos' })
     }
 
-    const lead = get('SELECT * FROM leads WHERE id = @id', { id: lead_id })
+    const lead = await get('SELECT * FROM leads WHERE id = @id', { id: lead_id })
     if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' })
 
     const leadContext = {

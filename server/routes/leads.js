@@ -12,8 +12,8 @@ import { WhatsAppService } from '../services/whatsapp.js';
 const router = Router();
 router.use(auth);
 
-function logActivity(agencyId, leadId, userId, type, description, metadata = null) {
-  run(
+async function logActivity(agencyId, leadId, userId, type, description, metadata = null) {
+  await run(
     `INSERT INTO activities (id, agency_id, lead_id, user_id, type, description, metadata, created_at)
      VALUES (@id, @agency_id, @lead_id, @user_id, @type, @description, @metadata, NOW())`,
     {
@@ -29,7 +29,7 @@ function logActivity(agencyId, leadId, userId, type, description, metadata = nul
 }
 
 // GET /api/leads - GET leads with search, stage filters and pagination
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { status, stage, office_id, assigned_to, search, page, limit } = req.query;
     const agencyId = req.user.agency_id;
@@ -56,7 +56,7 @@ router.get('/', (req, res) => {
     }
 
     // Get total count matching criteria for pagination
-    const countRow = get(`SELECT COUNT(*) as count FROM leads l${filterSql}`, params);
+    const countRow = await get(`SELECT COUNT(*) as count FROM leads l${filterSql}`, params);
     const total = countRow ? countRow.count : 0;
 
     let querySql = `SELECT l.*, u.name AS assigned_name FROM leads l LEFT JOIN users u ON l.assigned_to = u.id${filterSql} ORDER BY l.updated_at DESC`;
@@ -93,9 +93,9 @@ router.get('/', (req, res) => {
 });
 
 // GET /api/leads/:id - GET single lead with activities, conversations, and pending tasks
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const lead = get(
+    const lead = await get(
       `SELECT l.*, u.name AS assigned_name, u.email AS assigned_email, u.phone AS assigned_phone
        FROM leads l
        LEFT JOIN users u ON l.assigned_to = u.id
@@ -108,7 +108,7 @@ router.get('/:id', (req, res) => {
     lead.zones = lead.zones ? JSON.parse(lead.zones) : [];
     lead.ia_insights = lead.ia_insights ? JSON.parse(lead.ia_insights) : [];
 
-    const activities = all(
+    const activities = await all(
       'SELECT * FROM activities WHERE lead_id = @lead_id ORDER BY created_at DESC LIMIT 30',
       { lead_id: req.params.id }
     ).map(a => ({
@@ -116,7 +116,7 @@ router.get('/:id', (req, res) => {
       metadata: a.metadata ? JSON.parse(a.metadata) : null,
     }));
 
-    const conversations = all(
+    const conversations = await all(
       'SELECT * FROM conversations WHERE lead_id = @lead_id ORDER BY created_at DESC',
       { lead_id: req.params.id }
     ).map(c => {
@@ -124,12 +124,12 @@ router.get('/:id', (req, res) => {
       return { ...c, messages: messagesList };
     });
 
-    const insights = all(
+    const insights = await all(
       'SELECT * FROM ai_insights WHERE lead_id = @lead_id ORDER BY created_at DESC',
       { lead_id: req.params.id }
     );
 
-    const tasks = all(
+    const tasks = await all(
       'SELECT * FROM tasks WHERE lead_id = @lead_id AND completed = 0 ORDER BY due_date ASC',
       { lead_id: req.params.id }
     );
@@ -149,7 +149,7 @@ router.get('/:id', (req, res) => {
 });
 
 // POST /api/leads - Create lead, verify plan limits, and trigger background workflows
-router.post('/', checkLimit('leads'), validateBody(leadSchema), (req, res) => {
+router.post('/', checkLimit('leads'), validateBody(leadSchema), async (req, res) => {
   try {
     const { name, phone, email, budget, zone, property_interest, source, agency_id, office_id, pipeline_stage } = req.body;
     if (!name) return res.status(400).json({ error: 'El nombre es obligatorio.' });
@@ -161,7 +161,7 @@ router.post('/', checkLimit('leads'), validateBody(leadSchema), (req, res) => {
     // In SQLite leads check status table constraint: default it if not matching
     const sqliteStatus = ['nuevo','contactado','interesado','visita_agendada','negociacion','reserva','cerrado'].includes(initialStage) ? initialStage : 'nuevo';
 
-    run(
+    await run(
       `INSERT INTO leads (id, agency_id, office_id, name, phone, email, budget, zone, property_interest, source, status, pipeline_stage, pipeline_stage_updated_at, created_at, updated_at)
        VALUES (@id, @agency_id, @office_id, @name, @phone, @email, @budget, @zone, @property_interest, @source, @status, @pipeline_stage, NOW(), NOW(), NOW())`,
       {
@@ -182,7 +182,7 @@ router.post('/', checkLimit('leads'), validateBody(leadSchema), (req, res) => {
 
     logActivity(activeAgencyId, id, req.user.id, 'lead_created', `Lead ${name} creado.`);
 
-    const lead = get('SELECT * FROM leads WHERE id = @id', { id });
+    const lead = await get('SELECT * FROM leads WHERE id = @id', { id });
     res.status(201).json(lead);
 
     // Run background qualifications and automation triggers
@@ -226,23 +226,23 @@ router.post('/', checkLimit('leads'), validateBody(leadSchema), (req, res) => {
 });
 
 // PATCH /api/leads/:id/status - Update lead status
-router.patch('/:id/status', (req, res) => {
+router.patch('/:id/status', async (req, res) => {
   try {
-    const existing = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
+    const existing = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!existing) return res.status(404).json({ error: 'Lead no encontrado.' });
 
     const { status } = req.body;
     if (!status) return res.status(400).json({ error: 'El campo status es obligatorio.' });
 
     const isStageValid = ['nuevo','contactado','interesado','visita_agendada','negociacion','reserva','cerrado'].includes(status);
-    const updates = ['pipeline_stage = @status', 'pipeline_stage_updated_at = datetime(\'now\')'];
+    const updates = ['pipeline_stage = @status', 'pipeline_stage_updated_at = NOW()'];
     const params = { status, id: req.params.id };
 
     if (isStageValid) {
       updates.push('status = @status');
     }
 
-    run(`UPDATE leads SET ${updates.join(', ')}, updated_at = NOW() WHERE id = @id`, params);
+    await run(`UPDATE leads SET ${updates.join(', ')}, updated_at = NOW() WHERE id = @id`, params);
 
     if (status !== existing.pipeline_stage) {
       logActivity(req.user.agency_id, req.params.id, req.user.id, 'stage_changed', `Etapa cambiada de ${existing.pipeline_stage || existing.status} a ${status}.`, { from: existing.pipeline_stage || existing.status, to: status });
@@ -256,7 +256,7 @@ router.patch('/:id/status', (req, res) => {
       }).catch(ae => console.error('[Background Trigger PATCH status] Error:', ae));
     }
 
-    const lead = get('SELECT * FROM leads WHERE id = @id', { id: req.params.id });
+    const lead = await get('SELECT * FROM leads WHERE id = @id', { id: req.params.id });
     res.json(lead);
   } catch (error) {
     console.error('Error updating lead status:', error);
@@ -265,9 +265,9 @@ router.patch('/:id/status', (req, res) => {
 });
 
 // PATCH /api/leads/:id - Update lead details and check for pipeline stage triggers
-router.patch('/:id', validateBody(leadSchema.partial()), (req, res) => {
+router.patch('/:id', validateBody(leadSchema.partial()), async (req, res) => {
   try {
-    const existing = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
+    const existing = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!existing) return res.status(404).json({ error: 'Lead no encontrado.' });
 
     const allowed = ['name', 'phone', 'email', 'budget', 'zone', 'property_interest', 'source', 'status', 'pipeline_stage', 'office_id', 'assigned_to', 'ia_score', 'ia_insights', 'ia_insight', 'ia_summary', 'urgency', 'operation_type', 'budget_max', 'zones', 'property_type'];
@@ -296,7 +296,7 @@ router.patch('/:id', validateBody(leadSchema.partial()), (req, res) => {
     if (updates.length === 0) return res.status(400).json({ error: 'No hay campos para actualizar.' });
 
     updates.push("updated_at = NOW()");
-    run(`UPDATE leads SET ${updates.join(', ')} WHERE id = @id`, params);
+    await run(`UPDATE leads SET ${updates.join(', ')} WHERE id = @id`, params);
 
     const oldStage = existing.pipeline_stage || existing.status;
     const newStage = req.body.pipeline_stage || req.body.status;
@@ -315,7 +315,7 @@ router.patch('/:id', validateBody(leadSchema.partial()), (req, res) => {
 
     logActivity(req.user.agency_id, req.params.id, req.user.id, 'lead_updated', 'Lead actualizado.');
 
-    const lead = get('SELECT * FROM leads WHERE id = @id', { id: req.params.id });
+    const lead = await get('SELECT * FROM leads WHERE id = @id', { id: req.params.id });
     res.json(lead);
   } catch (error) {
     console.error('Error updating lead:', error);
@@ -324,9 +324,9 @@ router.patch('/:id', validateBody(leadSchema.partial()), (req, res) => {
 });
 
 // PUT /api/leads/:id - Update lead details with explicit cross-agency guard
-router.put('/:id', validateBody(leadSchema.partial()), (req, res) => {
+router.put('/:id', validateBody(leadSchema.partial()), async (req, res) => {
   try {
-    const existing = get('SELECT * FROM leads WHERE id = @id', { id: req.params.id });
+    const existing = await get('SELECT * FROM leads WHERE id = @id', { id: req.params.id });
     if (!existing) return res.status(404).json({ error: 'Lead no encontrado.' });
     if (existing.agency_id !== req.user.agency_id) return res.status(403).json({ error: 'No autorizado para modificar este lead.' });
 
@@ -355,10 +355,10 @@ router.put('/:id', validateBody(leadSchema.partial()), (req, res) => {
 
     if (updates.length === 0) return res.status(400).json({ error: 'No hay campos para actualizar.' });
 
-    updates.push("updated_at = datetime('now')");
-    run('UPDATE leads SET ' + updates.join(', ') + ' WHERE id = @id', params);
+    updates.push("updated_at = NOW()");
+    await run('UPDATE leads SET ' + updates.join(', ') + ' WHERE id = @id', params);
 
-    const lead = get('SELECT * FROM leads WHERE id = @id', { id: req.params.id });
+    const lead = await get('SELECT * FROM leads WHERE id = @id', { id: req.params.id });
     res.json(lead);
   } catch (error) {
     console.error('Error updating lead:', error);
@@ -367,12 +367,12 @@ router.put('/:id', validateBody(leadSchema.partial()), (req, res) => {
 });
 
 // DELETE /api/leads/:id - Archive lead (soft delete by setting pipeline_stage to 'archivo')
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
-    const existing = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
+    const existing = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!existing) return res.status(404).json({ error: 'Lead no encontrado.' });
 
-    run("UPDATE leads SET pipeline_stage = 'archivo', updated_at = NOW() WHERE id = @id", { id: req.params.id });
+    await run("UPDATE leads SET pipeline_stage = 'archivo', updated_at = NOW() WHERE id = @id", { id: req.params.id });
     logActivity(req.user.agency_id, req.params.id, req.user.id, 'stage_changed', `Lead archivado.`, { from: existing.pipeline_stage || existing.status, to: 'archivo' });
 
     res.json({ ok: true, success: true });
@@ -382,21 +382,21 @@ router.delete('/:id', (req, res) => {
   }
 });
 
-router.post('/:id/assign', (req, res) => {
+router.post('/:id/assign', async (req, res) => {
   try {
     const { agent_id } = req.body;
     if (!agent_id) return res.status(400).json({ error: 'Se requiere agent_id.' });
 
-    const existing = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
+    const existing = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!existing) return res.status(404).json({ error: 'Lead no encontrado.' });
 
-    const agent = get('SELECT * FROM users WHERE id = @id', { id: agent_id });
+    const agent = await get('SELECT * FROM users WHERE id = @id', { id: agent_id });
     if (!agent) return res.status(404).json({ error: 'Usuario no encontrado.' });
 
-    run("UPDATE leads SET assigned_to = @agent_id, updated_at = NOW() WHERE id = @id", { agent_id, id: req.params.id });
+    await run("UPDATE leads SET assigned_to = @agent_id, updated_at = NOW() WHERE id = @id", { agent_id, id: req.params.id });
     logActivity(req.user.agency_id, req.params.id, req.user.id, 'lead_assigned', `Lead asignado a ${agent.name}.`, { agent_id, agent_name: agent.name });
 
-    const lead = get('SELECT * FROM leads WHERE id = @id', { id: req.params.id });
+    const lead = await get('SELECT * FROM leads WHERE id = @id', { id: req.params.id });
     res.json(lead);
   } catch (error) {
     console.error('Error assigning lead:', error);
@@ -404,12 +404,12 @@ router.post('/:id/assign', (req, res) => {
   }
 });
 
-router.get('/:id/activities', (req, res) => {
+router.get('/:id/activities', async (req, res) => {
   try {
-    const lead = get('SELECT id FROM leads WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
+    const lead = await get('SELECT id FROM leads WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' });
 
-    const activities = all(
+    const activities = await all(
       'SELECT a.*, u.name AS user_name FROM activities a LEFT JOIN users u ON a.user_id = u.id WHERE a.lead_id = @lead_id AND a.agency_id = @agency_id ORDER BY a.created_at DESC LIMIT 50',
       { lead_id: req.params.id, agency_id: req.user.agency_id }
     ).map(a => ({
@@ -425,23 +425,23 @@ router.get('/:id/activities', (req, res) => {
 
 router.post('/:id/insights', async (req, res) => {
   try {
-    const lead = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
+    const lead = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' });
 
     const summary = await generateLeadSummary(lead);
 
     const insightId = uuidv4();
-    run(
+    await run(
       `INSERT INTO ai_insights (id, lead_id, agent_type, insight, action, created_at)
        VALUES (@id, @lead_id, @agent_type, @insight, @action, NOW())`,
       { id: insightId, lead_id: req.params.id, agent_type: 'analista', insight: summary, action: 'Revisar y contactar' }
     );
 
-    run("UPDATE leads SET ia_summary = @summary, updated_at = NOW() WHERE id = @id", { summary, id: req.params.id });
+    await run("UPDATE leads SET ia_summary = @summary, updated_at = NOW() WHERE id = @id", { summary, id: req.params.id });
 
     logActivity(req.user.agency_id, req.params.id, null, 'ai_insight', 'Insight de IA generado para lead.');
 
-    const insight = get('SELECT * FROM ai_insights WHERE id = @id', { id: insightId });
+    const insight = await get('SELECT * FROM ai_insights WHERE id = @id', { id: insightId });
     res.json(insight);
   } catch (error) {
     console.error('Error generating insight:', error);
@@ -450,13 +450,13 @@ router.post('/:id/insights', async (req, res) => {
 });
 
 // POST /api/leads/:id/tasks - Create task for lead
-router.post('/:id/tasks', (req, res) => {
+router.post('/:id/tasks', async (req, res) => {
   try {
     const { title, description, due_date } = req.body;
     if (!title) return res.status(400).json({ error: 'El título es obligatorio.' });
 
     const taskId = uuidv4();
-    run(
+    await run(
       `INSERT INTO tasks (id, lead_id, title, description, due_date, completed, created_at)
        VALUES (@id, @lead_id, @title, @description, @due_date, 0, NOW())`,
       {
@@ -470,7 +470,7 @@ router.post('/:id/tasks', (req, res) => {
 
     logActivity(req.user.agency_id, req.params.id, req.user.id, 'task_created', `Tarea creada: "${title}"`);
 
-    const task = get('SELECT * FROM tasks WHERE id = @id', { id: taskId });
+    const task = await get('SELECT * FROM tasks WHERE id = @id', { id: taskId });
     res.status(201).json(task);
   } catch (error) {
     console.error('Error creating task:', error);
@@ -479,12 +479,12 @@ router.post('/:id/tasks', (req, res) => {
 });
 
 // PATCH /api/leads/:id/tasks/:taskId - Toggle or mark task completed status
-router.patch('/:id/tasks/:taskId', (req, res) => {
+router.patch('/:id/tasks/:taskId', async (req, res) => {
   try {
     const { completed } = req.body;
     const isCompleted = completed ? 1 : 0;
 
-    run('UPDATE tasks SET completed = @completed WHERE id = @taskId AND lead_id = @leadId', {
+    await run('UPDATE tasks SET completed = @completed WHERE id = @taskId AND lead_id = @leadId', {
       completed: isCompleted,
       taskId: req.params.taskId,
       leadId: req.params.id
@@ -494,7 +494,7 @@ router.patch('/:id/tasks/:taskId', (req, res) => {
       logActivity(req.user.agency_id, req.params.id, req.user.id, 'task_completed', `Tarea completada.`);
     }
 
-    const task = get('SELECT * FROM tasks WHERE id = @id', { id: req.params.taskId });
+    const task = await get('SELECT * FROM tasks WHERE id = @id', { id: req.params.taskId });
     res.json(task);
   } catch (error) {
     console.error('Error updating task:', error);
@@ -513,13 +513,13 @@ router.post('/:id/email', async (req, res) => {
       return res.status(400).json({ error: 'El asunto y cuerpo del mensaje son obligatorios.' });
     }
 
-    const lead = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
+    const lead = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
     if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' });
 
     const toEmail = recipient || lead.email;
     if (!toEmail) return res.status(400).json({ error: 'El lead no tiene un correo electrónico configurado.' });
 
-    const agency = get('SELECT * FROM agencies WHERE id = @agency_id', { agency_id: agencyId });
+    const agency = await get('SELECT * FROM agencies WHERE id = @agency_id', { agency_id: agencyId });
     const emailService = new EmailService({
       sendgridKey: agency.sendgrid_api_key,
       fromEmail: agency.sendgrid_from_email,
@@ -576,14 +576,14 @@ router.post('/:id/appointments', async (req, res) => {
       return res.status(400).json({ error: 'La fecha de la cita debe ser futura.' });
     }
 
-    const lead = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
+    const lead = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
     if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' });
 
     if (!lead.email && !lead.phone) {
       return res.status(400).json({ error: 'El lead debe tener un correo electrónico o un teléfono para poder programar la cita y enviar confirmación.' });
     }
 
-    const agency = get('SELECT * FROM agencies WHERE id = @agency_id', { agency_id: agencyId });
+    const agency = await get('SELECT * FROM agencies WHERE id = @agency_id', { agency_id: agencyId });
     const finalAttendant = attendant_name || agency.appointment_attendant_name || 'Comercial asignado';
     const finalOnlineUrl = type === 'online' ? (online_url || agency.online_meeting_url || 'https://meet.google.com/') : null;
     const finalLocation = type === 'physical' ? (location || agency.address || 'Oficina principal') : null;
@@ -591,7 +591,7 @@ router.post('/:id/appointments', async (req, res) => {
     const appointmentId = uuidv4();
     const clientToken = uuidv4(); // Unique long random token
 
-    run(
+    await run(
       `INSERT INTO appointments (id, agency_id, lead_id, assigned_user_id, type, status, starts_at, ends_at, timezone, location, online_url, notes, client_token, created_at, updated_at)
        VALUES (@id, @agency_id, @lead_id, @assigned_user_id, @type, 'scheduled', @starts_at, @ends_at, @timezone, @location, @online_url, @notes, @client_token, NOW(), NOW())`,
       {
@@ -610,7 +610,7 @@ router.post('/:id/appointments', async (req, res) => {
       }
     );
 
-    const appointment = get('SELECT * FROM appointments WHERE id = @id', { id: appointmentId });
+    const appointment = await get('SELECT * FROM appointments WHERE id = @id', { id: appointmentId });
     // Keep attendant_name for rendering/templates
     appointment.attendant_name = finalAttendant;
 
@@ -643,7 +643,7 @@ router.post('/:id/appointments', async (req, res) => {
 
     if (lead.email) {
       emailResult = await emailService.sendAppointmentConfirmation(lead, appointment, agency, modifyUrl);
-      run(
+      await run(
         `INSERT INTO appointment_messages (id, appointment_id, channel, type, status, error, sent_at)
          VALUES (@id, @appt_id, 'email', 'confirmation', @status, @error, NOW())`,
         {
@@ -665,7 +665,7 @@ router.post('/:id/appointments', async (req, res) => {
 
     if (lead.phone) {
       waResult = await whatsappService.sendAppointmentConfirmation(lead, appointment, agency, modifyUrl);
-      run(
+      await run(
         `INSERT INTO appointment_messages (id, appointment_id, channel, type, status, error, sent_at)
          VALUES (@id, @appt_id, 'whatsapp', 'confirmation', @status, @error, NOW())`,
         {
@@ -693,15 +693,15 @@ router.post('/:id/appointments', async (req, res) => {
 });
 
 // GET /api/leads/:id/appointments - Fetch all appointments of lead (scoped to agency)
-router.get('/:id/appointments', (req, res) => {
+router.get('/:id/appointments', async (req, res) => {
   try {
     const { id } = req.params;
     const agencyId = req.user.agency_id;
 
-    const lead = get('SELECT id FROM leads WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
+    const lead = await get('SELECT id FROM leads WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
     if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' });
 
-    const appointments = all(
+    const appointments = await all(
       `SELECT a.*, u.name AS assigned_user_name 
        FROM appointments a 
        LEFT JOIN users u ON a.assigned_user_id = u.id 
@@ -724,14 +724,14 @@ router.post('/:id/auto-email', async (req, res) => {
     const { template: templateType, property_id } = req.body;
     const agencyId = req.user.agency_id;
 
-    const lead = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
+    const lead = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
     if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' });
 
-    const agency = get('SELECT * FROM agencies WHERE id = @agency_id', { agency_id: agencyId });
+    const agency = await get('SELECT * FROM agencies WHERE id = @agency_id', { agency_id: agencyId });
 
     // Only fetch property if property_id sent OR auto-detect best property for context
     const property = property_id
-      ? get('SELECT * FROM properties WHERE id = @pid AND agency_id = @aid', { pid: property_id, aid: agencyId })
+      ? await get('SELECT * FROM properties WHERE id = @pid AND agency_id = @aid', { pid: property_id, aid: agencyId })
       : null;
 
     // ── GENERATION MODE (regenerate=false) ──
@@ -766,7 +766,7 @@ router.post('/:id/auto-email', async (req, res) => {
     createFollowUpTask(agencyId, id, req.user.id);
 
     if (lead.status === 'nuevo') {
-      run(`UPDATE leads SET status = 'contactado', updated_at = NOW() WHERE id = @id`, { id });
+      await run(`UPDATE leads SET status = 'contactado', updated_at = NOW() WHERE id = @id`, { id });
     }
 
     res.json({ ...result, subject, body, template, lead_status_updated: lead.status === 'nuevo' });
@@ -783,10 +783,10 @@ router.post('/:id/auto-appointment', async (req, res) => {
     const { id } = req.params;
     const agencyId = req.user.agency_id;
 
-    const lead = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
+    const lead = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
     if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' });
 
-    const agency = get('SELECT * FROM agencies WHERE id = @agency_id', { agency_id: agencyId });
+    const agency = await get('SELECT * FROM agencies WHERE id = @agency_id', { agency_id: agencyId });
 
     if (!req.body.confirm) {
       const { suggestAppointment } = await import('../services/appointment-automation.service.js');
@@ -823,7 +823,7 @@ router.post('/:id/qualify', async (req, res) => {
     const { id } = req.params;
     const agencyId = req.user.agency_id;
 
-    const lead = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
+    const lead = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
     if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' });
 
     const { qualifyLead } = await import('../services/ai-qualifier.service.js');
@@ -842,10 +842,10 @@ router.post('/:id/sales-agent', async (req, res) => {
     const { id } = req.params;
     const agencyId = req.user.agency_id;
 
-    const lead = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
+    const lead = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
     if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' });
 
-    const agency = get('SELECT * FROM agencies WHERE id = @agency_id', { agency_id: agencyId });
+    const agency = await get('SELECT * FROM agencies WHERE id = @agency_id', { agency_id: agencyId });
 
     if (!req.body.execute) {
       const { suggestSalesAction } = await import('../services/sales-agent.service.js');

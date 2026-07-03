@@ -4,8 +4,8 @@ import { callClaude } from './claude.js';
 import { EmailService } from './email.js';
 import { WhatsAppService } from './whatsapp.js';
 
-export function logCommunication({ agencyId, leadId, appointmentId, channel, direction, subject, body, status, providerMessageId, error }) {
-  run(
+export async function logCommunication({ agencyId, leadId, appointmentId, channel, direction, subject, body, status, providerMessageId, error }) {
+  await run(
     `INSERT INTO communication_logs (id, agency_id, lead_id, appointment_id, channel, direction, subject, body, status, provider_message_id, error, sent_at, created_at)
      VALUES (@id, @aid, @lid, @appt_id, @channel, @direction, @subject, @body, @status, @pmid, @err, CASE WHEN @status IN ('sent','failed') THEN NOW() ELSE NULL END, NOW())`,
     {
@@ -16,9 +16,9 @@ export function logCommunication({ agencyId, leadId, appointmentId, channel, dir
   );
 }
 
-export function logLeadAutomation({ agencyId, leadId, type, channel, status, payload, result }) {
+export async function logLeadAutomation({ agencyId, leadId, type, channel, status, payload, result }) {
   const id = uuidv4();
-  run(
+  await run(
     `INSERT INTO lead_automations (id, agency_id, lead_id, type, channel, status, payload, result, created_at)
      VALUES (@id, @aid, @lid, @type, @channel, @status, @payload, @result, NOW())`,
     { id, aid: agencyId, lid: leadId, type, channel: channel || null, status, payload: payload ? JSON.stringify(payload) : null, result: result ? JSON.stringify(result) : null }
@@ -26,8 +26,8 @@ export function logLeadAutomation({ agencyId, leadId, type, channel, status, pay
   return id;
 }
 
-export function logActivity(agencyId, leadId, userId, type, description, metadata = null) {
-  run(
+export async function logActivity(agencyId, leadId, userId, type, description, metadata = null) {
+  await run(
     `INSERT INTO activities (id, agency_id, lead_id, user_id, type, description, metadata, created_at)
      VALUES (@id, @agency_id, @lead_id, @user_id, @type, @description, @metadata, NOW())`,
     {
@@ -37,7 +37,7 @@ export function logActivity(agencyId, leadId, userId, type, description, metadat
   );
 }
 
-export function buildEmailBody({ lead, agency, property, template, subject, body }) {
+export async function buildEmailBody({ lead, agency, property, template, subject, body }) {
   const name = lead.name || 'cliente';
   const agencyName = agency.name || 'PropIA Inmobiliaria';
   const signature = agency.email_signature || `${agencyName}\n${agency.phone || ''}\n${agency.email || ''}`;
@@ -96,7 +96,7 @@ const EMAIL_TEMPLATES = {
   },
 };
 
-export function detectTemplate(lead) {
+export async function detectTemplate(lead) {
   const status = lead.status || 'nuevo';
   const lastActivity = lead.last_activity ? new Date(lead.last_activity) : null;
   const daysSinceActivity = lastActivity ? Math.floor((Date.now() - lastActivity.getTime()) / 86400000) : 999;
@@ -176,7 +176,7 @@ Genera un email mejorado con IA manteniendo el propósito de esta plantilla. Res
   }
 }
 
-function getCtaForTemplate(template) {
+async function getCtaForTemplate(template) {
   const map = {
     first_contact: 'Responder a este email o agendar una llamada',
     follow_up: 'Responder con disponibilidad para una llamada',
@@ -216,7 +216,7 @@ export async function sendAutomatedEmail({ lead, agency, property, subject, body
     { subject, template, status, messageId: result.messageId }
   );
 
-  run(`UPDATE leads SET last_activity = NOW(), last_channel = 'email' WHERE id = @id`, { id: leadId });
+  await run(`UPDATE leads SET last_activity = NOW(), last_channel = 'email' WHERE id = @id`, { id: leadId });
 
   logLeadAutomation({
     agencyId, leadId, type: 'auto_email', channel: 'email', status,
@@ -227,7 +227,7 @@ export async function sendAutomatedEmail({ lead, agency, property, subject, body
   return { success: result.success, messageId: result.messageId, status };
 }
 
-export function getBestPropertyForLead(lead, agencyId) {
+export async function getBestPropertyForLead(lead, agencyId) {
   if (!lead) return null;
   try {
     const budget = lead.budget || lead.budget_max || 0;
@@ -256,7 +256,7 @@ export function getBestPropertyForLead(lead, agencyId) {
     const property = get(sql, params);
     if (property) return property;
 
-    const fallback = get(
+    const fallback = await get(
       `SELECT * FROM properties WHERE agency_id = @aid AND status = 'disponible' ORDER BY price ASC LIMIT 1`,
       { aid: agencyId }
     );
@@ -266,16 +266,16 @@ export function getBestPropertyForLead(lead, agencyId) {
   }
 }
 
-export function enhanceEmailWithPropertyContext(body, lead, property) {
+export async function enhanceEmailWithPropertyContext(body, lead, property) {
   if (!property) return body;
   const propBlock = `\n\n---\n🏠 ${property.title || 'Propiedad recomendada'}\n💰 ${typeof property.price === 'number' ? property.price.toLocaleString('es-ES') + '€' : property.price}\n📍 ${[property.zone, property.city].filter(Boolean).join(', ')}\n🛏 ${property.bedrooms || 'N/A'} hab · ${property.surface || 'N/A'} m²\n🔗 ${property.external_url || property.public_url || 'Consultar disponibilidad'}\n---`;
   return body.includes('---') ? body : body + propBlock;
 }
 
-export function createFollowUpTask(agencyId, leadId, userId, days = 3) {
+export async function createFollowUpTask(agencyId, leadId, userId, days = 3) {
   const dueDate = new Date(Date.now() + days * 86400000).toISOString().split('T')[0];
   const taskId = uuidv4();
-  run(
+  await run(
     `INSERT INTO tasks (id, lead_id, assigned_to, title, description, due_date, completed, created_at)
      VALUES (@id, @lid, @uid, @title, @desc, @due, 0, NOW())`,
     {

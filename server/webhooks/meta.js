@@ -5,8 +5,8 @@ import { defaultQueue } from '../services/queue.js';
 import { realtime } from '../services/realtime.js';
 import { PLANS } from '../services/plans.js';
 
-function checkAgencyMetaAds(agencyId) {
-  const sub = get('SELECT plan_id, status FROM subscriptions WHERE agency_id = @aid ORDER BY created_at DESC LIMIT 1', { aid: agencyId })
+async function checkAgencyMetaAds(agencyId) {
+  const sub = await get('SELECT plan_id, status FROM subscriptions WHERE agency_id = @aid ORDER BY created_at DESC LIMIT 1', { aid: agencyId })
   if (!sub || sub.status !== 'active') return false
   const plan = PLANS[sub.plan_id]
   if (!plan) return false
@@ -17,7 +17,7 @@ const router = Router();
 
 const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN || 'inmobiliaria_webhook_2024';
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
@@ -28,7 +28,7 @@ router.get('/', (req, res) => {
   res.status(403).send('Verification failed.');
 });
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     res.status(200).send('EVENT_RECEIVED');
     const body = req.body;
@@ -66,7 +66,7 @@ async function processMetaLead(leadData, pageId) {
 
     let agency = null;
     if (pageId) {
-      agency = get('SELECT id, name FROM agencies WHERE meta_page_id = @pid', { pid: String(pageId) });
+      agency = await get('SELECT id, name FROM agencies WHERE meta_page_id = @pid', { pid: String(pageId) });
     }
     if (!agency) {
       console.log(`[META] No agency found for page_id: ${pageId}. Lead discarded.`);
@@ -78,10 +78,10 @@ async function processMetaLead(leadData, pageId) {
       return;
     }
 
-    const existingLead = email ? get('SELECT id FROM leads WHERE email = @email', { email }) : null;
+    const existingLead = email ? await get('SELECT id FROM leads WHERE email = @email', { email }) : null;
     if (existingLead) {
-      run("UPDATE leads SET last_activity = NOW(), updated_at = NOW() WHERE id = @id", { id: existingLead.id });
-      run(
+      await run("UPDATE leads SET last_activity = NOW(), updated_at = NOW() WHERE id = @id", { id: existingLead.id });
+      await run(
         `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
          VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, NOW())`,
         {
@@ -95,7 +95,7 @@ async function processMetaLead(leadData, pageId) {
     }
 
     const leadId = uuidv4();
-    run(
+    await run(
       `INSERT INTO leads (id, agency_id, name, phone, email, budget, zone, property_interest, source, status, created_at, updated_at)
        VALUES (@id, @agency_id, @name, @phone, @email, @budget, @zone, @property_interest, @source, @status, NOW(), NOW())`,
       {
@@ -105,7 +105,7 @@ async function processMetaLead(leadData, pageId) {
     );
 
     const utmId = uuidv4();
-    run(
+    await run(
       `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
        VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, NOW())`,
       {
@@ -128,14 +128,14 @@ async function processMetaLead(leadData, pageId) {
     if (message) {
       const convId = uuidv4();
       const msgs = [{ role: 'lead', content: message, timestamp: new Date().toISOString() }];
-      run(
+      await run(
         `INSERT INTO conversations (id, agency_id, lead_id, channel, messages, created_at)
          VALUES (@id, @agency_id, @lead_id, @channel, @messages, NOW())`,
         { id: convId, agency_id: agency.id, lead_id: leadId, channel: 'web', messages: JSON.stringify(msgs) }
       );
     }
 
-    run(
+    await run(
       `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
        VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, NOW())`,
       {

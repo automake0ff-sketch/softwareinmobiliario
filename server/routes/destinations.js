@@ -8,10 +8,10 @@ const router = Router()
 router.use(auth)
 
 // GET /api/destinations — listar destinos de la agencia
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const agencyId = req.user.agency_id
-    const destinations = all(
+    const destinations = await all(
       'SELECT id, type, name, is_active, last_tested_at, last_test_ok, created_at FROM agency_destinations WHERE agency_id = @agency_id ORDER BY created_at DESC',
       { agency_id: agencyId }
     ).map(d => ({ ...d, credentials: undefined }))
@@ -24,7 +24,7 @@ router.get('/', (req, res) => {
 })
 
 // GET /api/destinations/types — tipos disponibles
-router.get('/types', (req, res) => {
+router.get('/types', async (req, res) => {
   res.json([
     { id: 'whatsapp', label: 'WhatsApp Business', icon: 'MessageCircle', color: '#25d366',
       fields: [
@@ -88,20 +88,20 @@ router.get('/types', (req, res) => {
 })
 
 // POST /api/destinations — crear nuevo destino
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const agencyId = req.user.agency_id
     const { type, name, credentials } = req.body
     if (!type || !name) return res.status(400).json({ error: 'type y name son requeridos' })
 
     const id = uuidv4()
-    run(
+    await run(
       `INSERT INTO agency_destinations (id, agency_id, type, name, credentials, is_active, created_at)
        VALUES (@id, @agency_id, @type, @name, @credentials, 1, NOW())`,
       { id, agency_id: agencyId, type, name, credentials: JSON.stringify(credentials || {}) }
     )
 
-    const created = get('SELECT id, type, name, is_active, created_at FROM agency_destinations WHERE id = @id', { id })
+    const created = await get('SELECT id, type, name, is_active, created_at FROM agency_destinations WHERE id = @id', { id })
     res.status(201).json(created)
   } catch (error) {
     console.error('Error creating destination:', error)
@@ -110,19 +110,19 @@ router.post('/', (req, res) => {
 })
 
 // PUT /api/destinations/:id — actualizar destino
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
     const agencyId = req.user.agency_id
-    const dest = get('SELECT * FROM agency_destinations WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: agencyId })
+    const dest = await get('SELECT * FROM agency_destinations WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: agencyId })
     if (!dest) return res.status(404).json({ error: 'Destino no encontrado' })
 
     const { name, credentials, is_active } = req.body
-    run(
+    await run(
       `UPDATE agency_destinations SET name = @name, credentials = @credentials, is_active = @is_active WHERE id = @id`,
       {
         name: name || dest.name,
         credentials: JSON.stringify(credentials || JSON.parse(dest.credentials || '{}')),
-        is_active: is_active !== undefined ? (is_active ? 1 : 0) : dest.is_active,
+        is_active: is_active !== undefined ? (is_active ? true : false) : dest.is_active,
         id: req.params.id,
       }
     )
@@ -135,13 +135,13 @@ router.put('/:id', (req, res) => {
 })
 
 // DELETE /api/destinations/:id
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
     const agencyId = req.user.agency_id
-    const dest = get('SELECT id FROM agency_destinations WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: agencyId })
+    const dest = await get('SELECT id FROM agency_destinations WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: agencyId })
     if (!dest) return res.status(404).json({ error: 'Destino no encontrado' })
 
-    run('DELETE FROM agency_destinations WHERE id = @id', { id: req.params.id })
+    await run('DELETE FROM agency_destinations WHERE id = @id', { id: req.params.id })
     res.json({ message: 'Destino eliminado' })
   } catch (error) {
     console.error('Error deleting destination:', error)
@@ -153,7 +153,7 @@ router.delete('/:id', (req, res) => {
 router.post('/:id/test', async (req, res) => {
   try {
     const agencyId = req.user.agency_id
-    const dest = get('SELECT * FROM agency_destinations WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: agencyId })
+    const dest = await get('SELECT * FROM agency_destinations WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: agencyId })
     if (!dest) return res.status(404).json({ error: 'Destino no encontrado' })
 
     const result = await sendToDestination({
@@ -172,8 +172,8 @@ router.post('/:id/test', async (req, res) => {
       agencyId,
     })
 
-    const testOk = result.ok ? 1 : 0
-    run(`UPDATE agency_destinations SET last_tested_at = NOW(), last_test_ok = @test_ok WHERE id = @id`,
+    const testOk = result.ok  ? true : false
+    await run(`UPDATE agency_destinations SET last_tested_at = NOW(), last_test_ok = @test_ok WHERE id = @id`,
       { test_ok: testOk, id: req.params.id })
 
     res.json({ ok: result.ok, detail: result.detail })

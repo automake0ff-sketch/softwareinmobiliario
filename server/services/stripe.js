@@ -158,7 +158,7 @@ export class BillingService {
       const now = new Date().toISOString();
       const end = new Date(Date.now() + periodDays * 86400000).toISOString();
 
-      run(
+      await run(
         `INSERT OR REPLACE INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, current_period_start, current_period_end, trial_end, payment_method, created_at, updated_at)
          VALUES (@id, @agency_id, @plan_id, @status, @billing_cycle, @period_start, @period_end, @trial_end, @payment_method, @created_at, @updated_at)`,
         {
@@ -240,7 +240,7 @@ export class BillingService {
           if (agencyId && planId) {
             const now = new Date().toISOString();
             const end = new Date(Date.now() + (interval === 'year' ? 365 : 30) * 86400000).toISOString();
-            run(
+            await run(
               `INSERT OR REPLACE INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, stripe_subscription_id, stripe_customer_id, current_period_start, current_period_end, updated_at)
                VALUES (@id, @agency_id, @plan_id, 'active', @billing_cycle, @stripe_sub, @stripe_cus, @period_start, @period_end, @updated_at)`,
               {
@@ -261,10 +261,10 @@ export class BillingService {
         }
         case 'invoice.paid': {
           const invoice = event.data.object;
-          const agencySub = all('SELECT agency_id FROM subscriptions WHERE stripe_subscription_id = @sub_id', { sub_id: invoice.subscription });
+          const agencySub = await all('SELECT agency_id FROM subscriptions WHERE stripe_subscription_id = @sub_id', { sub_id: invoice.subscription });
           const agencyId = agencySub?.[0]?.agency_id;
           if (agencyId) {
-            run(
+            await run(
               `INSERT INTO payment_history (id, agency_id, amount, currency, status, payment_method, stripe_invoice_id, stripe_payment_intent_id, invoice_url, invoice_pdf_url, description, period_start, period_end, created_at)
                VALUES (@id, @agency_id, @amount, @currency, 'succeeded', 'card', @inv_id, @pi_id, @inv_url, @pdf_url, @desc, @p_start, @p_end, NOW())`,
               {
@@ -291,7 +291,7 @@ export class BillingService {
           const agencyId = meta.agency_id;
           if (agencyId) {
             const status = sub.status === 'active' ? 'active' : sub.status === 'past_due' ? 'past_due' : sub.status === 'canceled' ? 'canceled' : sub.status === 'trialing' ? 'trialing' : 'expired';
-            run(
+            await run(
               `UPDATE subscriptions SET status = @status, cancel_at_period_end = @cancel, current_period_end = @period_end, updated_at = NOW() WHERE agency_id = @agency_id`,
               {
                 status,
@@ -301,17 +301,17 @@ export class BillingService {
               }
             )
             if (sub.status === 'canceled' || sub.status === 'expired') {
-              run('UPDATE subscriptions SET canceled_at = datetime(\'now\') WHERE agency_id = @agency_id', { agency_id: agencyId })
+              await run('UPDATE subscriptions SET canceled_at = NOW() WHERE agency_id = @agency_id', { agency_id: agencyId })
             }
           }
           break;
         }
         case 'invoice.payment_failed': {
           const failed = event.data.object;
-          const agencySub = all('SELECT agency_id FROM subscriptions WHERE stripe_subscription_id = @sub_id', { sub_id: failed.subscription });
+          const agencySub = await all('SELECT agency_id FROM subscriptions WHERE stripe_subscription_id = @sub_id', { sub_id: failed.subscription });
           const failAgencyId = agencySub?.[0]?.agency_id;
           if (failAgencyId) {
-            run('UPDATE subscriptions SET status = \'past_due\' WHERE agency_id = @agency_id', { agency_id: failAgencyId })
+            await run('UPDATE subscriptions SET status = \'past_due\' WHERE agency_id = @agency_id', { agency_id: failAgencyId })
           }
           break;
         }
@@ -335,7 +335,7 @@ export class BillingService {
           if (agencyId) {
             const planId = resource.plan_id?.includes('starter') ? 'starter' :
                            resource.plan_id?.includes('profesional') ? 'profesional' : 'agencia';
-            run(
+            await run(
               `INSERT OR REPLACE INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, paypal_subscription_id, paypal_plan_id, updated_at)
                VALUES (@id, @agency_id, @plan_id, 'active', 'monthly', @paypal_sub, @paypal_plan, NOW())`,
               {
@@ -348,13 +348,13 @@ export class BillingService {
         }
         case 'BILLING.SUBSCRIPTION.CANCELLED': {
           if (agencyId) {
-            run('UPDATE subscriptions SET status = \'canceled\', canceled_at = datetime(\'now\') WHERE agency_id = @agency_id', { agency_id: agencyId })
+            await run('UPDATE subscriptions SET status = \'canceled\', canceled_at = NOW() WHERE agency_id = @agency_id', { agency_id: agencyId })
           }
           break;
         }
         case 'PAYMENT.SALE.COMPLETED': {
           if (agencyId) {
-            run(
+            await run(
               `INSERT INTO payment_history (id, agency_id, amount, currency, status, payment_method, paypal_transaction_id, created_at)
                VALUES (@id, @agency_id, @amount, 'EUR', 'succeeded', 'paypal', @txn_id, NOW())`,
               {
@@ -376,7 +376,7 @@ export class BillingService {
 
   async getSubscription(agencyId) {
     const { all } = await this._db();
-    const subs = all('SELECT * FROM subscriptions WHERE agency_id = @agency_id ORDER BY created_at DESC LIMIT 1', { agency_id: agencyId });
+    const subs = await all('SELECT * FROM subscriptions WHERE agency_id = @agency_id ORDER BY created_at DESC LIMIT 1', { agency_id: agencyId });
     const sub = subs?.[0];
     if (!sub) {
       const plan = PLANS.starter;
@@ -414,7 +414,7 @@ export class BillingService {
   async upsertSubscription(data) {
     const { run } = await this._db();
     const now = new Date().toISOString();
-    run(
+    await run(
       `INSERT OR REPLACE INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, current_period_start, current_period_end, trial_end, cancel_at_period_end, payment_method, stripe_customer_id, stripe_subscription_id, paypal_subscription_id, paypal_plan_id, updated_at)
        VALUES (@id, @agency_id, @plan_id, @status, @billing_cycle, @period_start, @period_end, @trial_end, @cancel, @payment_method, @stripe_cus, @stripe_sub, @paypal_sub, @paypal_plan, @updated_at)`,
       {
@@ -439,7 +439,7 @@ export class BillingService {
 
   async cancelSubscription(agencyId) {
     const { run, all } = await this._db();
-    const subs = all('SELECT * FROM subscriptions WHERE agency_id = @agency_id ORDER BY created_at DESC LIMIT 1', { agency_id: agencyId });
+    const subs = await all('SELECT * FROM subscriptions WHERE agency_id = @agency_id ORDER BY created_at DESC LIMIT 1', { agency_id: agencyId });
     const sub = subs?.[0];
 
     if (sub?.stripe_subscription_id && this.config.secretKey) {
@@ -451,13 +451,13 @@ export class BillingService {
       } catch (e) { /* ignore */ }
     }
 
-    run('UPDATE subscriptions SET status = \'canceled\', canceled_at = datetime(\'now\'), updated_at = datetime(\'now\') WHERE agency_id = @agency_id', { agency_id: agencyId });
+    await run('UPDATE subscriptions SET status = \'canceled\', canceled_at = NOW(), updated_at = NOW() WHERE agency_id = @agency_id', { agency_id: agencyId });
     return { success: true, status: 'canceled' };
   }
 
   async getInvoices(agencyId) {
     const { all } = await this._db();
-    const invoices = all('SELECT * FROM payment_history WHERE agency_id = @agency_id ORDER BY created_at DESC LIMIT 50', { agency_id: agencyId });
+    const invoices = await all('SELECT * FROM payment_history WHERE agency_id = @agency_id ORDER BY created_at DESC LIMIT 50', { agency_id: agencyId });
     return { invoices: invoices || [] };
   }
 

@@ -12,8 +12,8 @@ import { AgentOrchestrator } from '../services/agent-orchestrator.js'
 import { ActionExecutor } from '../services/action-executor.js'
 
 // Dynamic schema migrations for AI Agents
-try { await run('ALTER TABLE ai_agents ADD COLUMN IF NOT EXISTS is_active INTEGER DEFAULT 1'); } catch (e) {}
-try { await run('ALTER TABLE ai_agents ADD COLUMN IF NOT EXISTS stats TEXT DEFAULT \'{"leads_today":0,"messages_today":0,"success_rate":100}\''); } catch (e) {}
+try { await run('ALTER TABLE ai_agents ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true'); } catch (e) {}
+try { await run('ALTER TABLE ai_agents ADD COLUMN IF NOT EXISTS stats TEXT DEFAULT \'{__PH54__:0,__PH55__:0,__PH56__:100}\''); } catch (e) {}
 
 const router = Router()
 router.use(auth)
@@ -34,7 +34,7 @@ const DEFAULT_AGENTS = [
 ]
 
 // GET /api/agents - List agents with real metrics from DB
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { type, status } = req.query
     let sql = 'SELECT * FROM ai_agents WHERE agency_id = @agency_id'
@@ -44,7 +44,7 @@ router.get('/', (req, res) => {
     if (status) { sql += ' AND status = @status'; params.status = status }
 
     sql += ' ORDER BY created_at ASC'
-    let agents = all(sql, params)
+    let agents = await all(sql, params)
 
     // Ensure all default agents exist for this agency (dynamic autoseed)
     const existingTypes = new Set((agents || []).map(a => a.type))
@@ -54,7 +54,7 @@ router.get('/', (req, res) => {
     for (const da of DEFAULT_AGENTS) {
       if (!existingTypes.has(da.type)) {
         const id = uuidv4()
-        run(
+        await run(
           `INSERT INTO ai_agents (id, agency_id, type, name, is_active, status, stats, created_at)
            VALUES (@id, @agency_id, @type, @name, 1, 'active', @stats, @created_at)`,
           {
@@ -71,7 +71,7 @@ router.get('/', (req, res) => {
     }
     
     if (seededNew) {
-      agents = all(sql, params)
+      agents = await all(sql, params)
       console.log(`[Agents] Seeded missing agents for agency ${req.user.agency_id}`)
     }
 
@@ -79,11 +79,11 @@ router.get('/', (req, res) => {
     today.setHours(0, 0, 0, 0)
     const todayStr = today.toISOString()
 
-    const enriched = agents.map(a => {
+    const enriched = await Promise.all(agents.map(async a => {
       const rawStats = a.stats ? (() => { try { return JSON.parse(a.stats) } catch { return null } })() : null
 
       // Real metrics from activities table today
-      const todayActivities = all(
+      const todayActivities = await all(
         `SELECT id, type, lead_id, created_at FROM activities
          WHERE agency_id = @agency_id AND agent_type = @agent_type AND created_at >= @today`,
         { agency_id: req.user.agency_id, agent_type: a.type, today: todayStr }
@@ -91,7 +91,7 @@ router.get('/', (req, res) => {
 
       const leadsToday = new Set(todayActivities.map(ta => ta.lead_id).filter(Boolean)).size
 
-      const successLogs = all(
+      const successLogs = await all(
         `SELECT status FROM automation_logs
          WHERE agency_id = @agency_id AND created_at >= @today AND actions_executed IS NOT NULL`,
         { agency_id: req.user.agency_id, today: todayStr }
@@ -119,13 +119,13 @@ router.get('/', (req, res) => {
           last_action: lastActionText,
           last_action_at: lastActionAt,
         },
-        is_active: a.is_active !== undefined ? a.is_active : (a.status === 'active' ? 1 : 0),
+        is_active: a.is_active !== undefined ? a.is_active : (a.status === 'active'  ? true : false),
         display_name: AGENT_META[a.type]?.name || a.name,
         icon: AGENT_META[a.type]?.icon || 'Bot',
         color: AGENT_META[a.type]?.color || '#6366f1',
         description: AGENT_META[a.type]?.description || '',
       }
-    })
+    }))
 
     res.json(enriched)
   } catch (error) {
@@ -149,7 +149,7 @@ const LAST_ACTION_LABELS = {
   notificador: 'Envió notificación al equipo',
 }
 
-function buildLastActionText(agentType, activity) {
+async function buildLastActionText(agentType, activity) {
   if (!activity) return null
   const label = LAST_ACTION_LABELS[agentType]
   if (label) return label
@@ -157,7 +157,7 @@ function buildLastActionText(agentType, activity) {
 }
 
 // GET /api/agents/types - Get agent types with metadata (no DB needed)
-router.get('/types', (req, res) => {
+router.get('/types', async (req, res) => {
   const types = Object.entries(AGENT_META).map(([type, meta]) => ({
     type,
     ...meta,
@@ -166,16 +166,16 @@ router.get('/types', (req, res) => {
 })
 
 // GET /api/agents/:id - Get single agent
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const agent = get('SELECT * FROM ai_agents WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id })
+    const agent = await get('SELECT * FROM ai_agents WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id })
     if (!agent) return res.status(404).json({ error: 'Agente no encontrado.' })
     agent.config = agent.config ? JSON.parse(agent.config) : null
     agent.metrics = agent.metrics ? JSON.parse(agent.metrics) : null
     agent.stats = agent.stats ? JSON.parse(agent.stats) : { leads_today: 0, messages_today: 0, success_rate: null }
     res.json({
       ...agent,
-      is_active: agent.is_active !== undefined ? agent.is_active : (agent.status === 'active' ? 1 : 0),
+      is_active: agent.is_active !== undefined ? agent.is_active : (agent.status === 'active'  ? true : false),
       display_name: AGENT_META[agent.type]?.name || agent.name,
       icon: AGENT_META[agent.type]?.icon || 'Bot',
       color: AGENT_META[agent.type]?.color || '#6366f1',
@@ -187,13 +187,13 @@ router.get('/:id', (req, res) => {
 })
 
 // POST /api/agents/:id/toggle - Toggle active/inactive
-router.post('/:id/toggle', (req, res) => {
+router.post('/:id/toggle', async (req, res) => {
   try {
-    const agent = get('SELECT * FROM ai_agents WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id })
+    const agent = await get('SELECT * FROM ai_agents WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id })
     if (!agent) return res.status(404).json({ error: 'Agente no encontrado.' })
 
-    const newActive = agent.is_active === 1 ? 0 : 1
-    const newStatus = newActive === 1 ? 'active' : 'inactive'
+    const newActive = agent.is_active === true ? false : true
+    const newStatus = newActive === true ? 'active' : 'inactive'
 
     const PLAN_AGENTS = {
       starter:     ['captador', 'vendedor', 'coordinador'],
@@ -202,7 +202,7 @@ router.post('/:id/toggle', (req, res) => {
     }
     const userPlan = req.user.plan_id || 'starter'
     const allowed = PLAN_AGENTS[userPlan] || PLAN_AGENTS.starter
-    if (newActive === 1 && !allowed.includes(agent.type)) {
+    if (newActive === true && !allowed.includes(agent.type)) {
       const needed = Object.entries(PLAN_AGENTS).find(([_, agents]) => agents.includes(agent.type))?.[0] || 'agencia'
       return res.status(402).json({
         error: `El agente ${agent.name} no está disponible en tu plan actual`,
@@ -211,13 +211,13 @@ router.post('/:id/toggle', (req, res) => {
       })
     }
 
-    run('UPDATE ai_agents SET status = @status, is_active = @is_active, last_action = datetime(\'now\') WHERE id = @id', { status: newStatus, is_active: newActive, id: req.params.id })
+    await run('UPDATE ai_agents SET status = @status, is_active = @is_active, last_action = NOW() WHERE id = @id', { status: newStatus, is_active: newActive, id: req.params.id })
 
     // Log activity and broadcast
     const actId = uuidv4()
     const title = `Agente ${agent.name} ${newStatus === 'active' ? 'activado' : 'desactivado'}`
     const description = `El estado del agente ${agent.name} cambió a ${newStatus === 'active' ? 'activo' : 'inactivo'}.`
-    run(
+    await run(
       `INSERT INTO activities (id, agency_id, type, title, description, agent_type, created_at)
        VALUES (@id, @agency_id, 'ia_action', @title, @description, @agent_type, NOW())`,
       {
@@ -241,11 +241,11 @@ router.post('/:id/toggle', (req, res) => {
       })
     }
 
-    const updated = get('SELECT * FROM ai_agents WHERE id = @id', { id: req.params.id })
+    const updated = await get('SELECT * FROM ai_agents WHERE id = @id', { id: req.params.id })
     updated.config = updated.config ? JSON.parse(updated.config) : null
     updated.metrics = updated.metrics ? JSON.parse(updated.metrics) : null
     updated.stats = updated.stats ? JSON.parse(updated.stats) : { leads_today: 0, messages_today: 0, success_rate: null }
-    updated.is_active = updated.is_active !== undefined ? updated.is_active : (updated.status === 'active' ? 1 : 0)
+    updated.is_active = updated.is_active !== undefined ? updated.is_active : (updated.status === 'active'  ? true : false)
     res.json(updated)
   } catch (error) {
     console.error('Error toggling agent:', error)
@@ -254,14 +254,14 @@ router.post('/:id/toggle', (req, res) => {
 })
 
 // PATCH /api/agents/:id/toggle - Toggle active/inactive with is_active body
-router.patch('/:id/toggle', (req, res) => {
+router.patch('/:id/toggle', async (req, res) => {
   try {
-    const agent = get('SELECT * FROM ai_agents WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id })
+    const agent = await get('SELECT * FROM ai_agents WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id })
     if (!agent) return res.status(404).json({ error: 'Agente no encontrado.' })
 
     const { is_active } = req.body
-    const newActive = is_active !== undefined ? (is_active ? 1 : 0) : (agent.is_active === 1 ? 0 : 1)
-    const newStatus = newActive === 1 ? 'active' : 'inactive'
+    const newActive = is_active !== undefined ? (is_active ? true : false) : (agent.is_active === true ? false : true)
+    const newStatus = newActive === true ? 'active' : 'inactive'
 
     const PLAN_AGENTS = {
       starter:     ['captador', 'vendedor', 'coordinador'],
@@ -270,7 +270,7 @@ router.patch('/:id/toggle', (req, res) => {
     }
     const userPlan = req.user.plan_id || 'starter'
     const allowed = PLAN_AGENTS[userPlan] || PLAN_AGENTS.starter
-    if (newActive === 1 && !allowed.includes(agent.type)) {
+    if (newActive === true && !allowed.includes(agent.type)) {
       const needed = Object.entries(PLAN_AGENTS).find(([_, agents]) => agents.includes(agent.type))?.[0] || 'agencia'
       return res.status(402).json({
         error: `El agente ${agent.name} no está disponible en tu plan actual`,
@@ -279,13 +279,13 @@ router.patch('/:id/toggle', (req, res) => {
       })
     }
 
-    run('UPDATE ai_agents SET status = @status, is_active = @is_active, last_action = datetime(\'now\') WHERE id = @id', { status: newStatus, is_active: newActive, id: req.params.id })
+    await run('UPDATE ai_agents SET status = @status, is_active = @is_active, last_action = NOW() WHERE id = @id', { status: newStatus, is_active: newActive, id: req.params.id })
 
     // Log activity and broadcast
     const actId = uuidv4()
     const title = `Agente ${agent.name} ${newStatus === 'active' ? 'activado' : 'desactivado'}`
     const description = `El estado del agente ${agent.name} cambió a ${newStatus === 'active' ? 'activo' : 'inactivo'}.`
-    run(
+    await run(
       `INSERT INTO activities (id, agency_id, type, title, description, agent_type, created_at)
        VALUES (@id, @agency_id, 'ia_action', @title, @description, @agent_type, NOW())`,
       {
@@ -309,11 +309,11 @@ router.patch('/:id/toggle', (req, res) => {
       })
     }
 
-    const updated = get('SELECT * FROM ai_agents WHERE id = @id', { id: req.params.id })
+    const updated = await get('SELECT * FROM ai_agents WHERE id = @id', { id: req.params.id })
     updated.config = updated.config ? JSON.parse(updated.config) : null
     updated.metrics = updated.metrics ? JSON.parse(updated.metrics) : null
     updated.stats = updated.stats ? JSON.parse(updated.stats) : { leads_today: 0, messages_today: 0, success_rate: null }
-    updated.is_active = updated.is_active !== undefined ? updated.is_active : (updated.status === 'active' ? 1 : 0)
+    updated.is_active = updated.is_active !== undefined ? updated.is_active : (updated.status === 'active'  ? true : false)
     res.json(updated)
   } catch (error) {
     console.error('Error toggling agent patch:', error)
@@ -324,7 +324,7 @@ router.patch('/:id/toggle', (req, res) => {
 // POST /api/agents/:id/execute - Execute agent with OpenRouter
 router.post('/:id/execute', checkAgentAccessMiddleware, async (req, res) => {
   try {
-    const agent = get('SELECT * FROM ai_agents WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id })
+    const agent = await get('SELECT * FROM ai_agents WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id })
     if (!agent) return res.status(404).json({ error: 'Agente no encontrado.' })
 
     const { context, message, lead_id } = req.body
@@ -335,7 +335,7 @@ router.post('/:id/execute', checkAgentAccessMiddleware, async (req, res) => {
 
     let lead = null
     if (lead_id) {
-      lead = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: lead_id, agency_id: agencyId })
+      lead = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: lead_id, agency_id: agencyId })
     }
 
     if (!lead) {
@@ -385,7 +385,7 @@ router.post('/:id/execute', checkAgentAccessMiddleware, async (req, res) => {
 // POST /api/agents/:id/chat - Chat with agent via OpenRouter (with streaming support)
 router.post('/:id/chat', async (req, res) => {
   try {
-    const agent = get('SELECT * FROM ai_agents WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id })
+    const agent = await get('SELECT * FROM ai_agents WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id })
     if (!agent) return res.status(404).json({ error: 'Agente no encontrado.' })
 
     const { message, conversation_history = [], lead_context = {}, stream = false } = req.body
@@ -402,7 +402,7 @@ router.post('/:id/chat', async (req, res) => {
     let contextStr = ''
     let lead = null
     if (lead_context.lead_id) {
-      lead = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: lead_context.lead_id, agency_id: agencyId })
+      lead = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: lead_context.lead_id, agency_id: agencyId })
       if (lead) {
         contextStr += `\nLead: ${lead.name}`
         contextStr += ` | Score: ${lead.ia_score || 0}/100`
@@ -505,13 +505,13 @@ router.post('/:id/chat', async (req, res) => {
 })
 
 // GET /api/agents/:id/metrics - Get agent metrics
-router.get('/:id/metrics', (req, res) => {
+router.get('/:id/metrics', async (req, res) => {
   try {
-    const agent = get('SELECT * FROM ai_agents WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id })
+    const agent = await get('SELECT * FROM ai_agents WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id })
     if (!agent) return res.status(404).json({ error: 'Agente no encontrado.' })
 
     const metrics = agent.metrics ? JSON.parse(agent.metrics) : {}
-    const activities = all(
+    const activities = await all(
       'SELECT * FROM activities WHERE agent_id = @agent_id ORDER BY created_at DESC LIMIT 20',
       { agent_id: req.params.id }
     )
@@ -539,7 +539,7 @@ router.post('/captador', async (req, res) => {
     const aid = agency_id || req.user?.agency_id
     if (!lead_id) return res.status(400).json({ error: 'lead_id es obligatorio.' })
 
-    const lead = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: lead_id, agency_id: aid })
+    const lead = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: lead_id, agency_id: aid })
     if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' })
 
     const leadData = {
@@ -571,10 +571,10 @@ router.post('/captador', async (req, res) => {
       }
 
       const setClauses = Object.keys(updates).map(k => `${k} = @${k}`).join(', ')
-      run(`UPDATE leads SET ${setClauses} WHERE id = @id`, { ...updates, id: lead_id })
+      await run(`UPDATE leads SET ${setClauses} WHERE id = @id`, { ...updates, id: lead_id })
 
       // Log activity
-      run(
+      await run(
         `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
          VALUES (@id, @agency_id, @lead_id, 'ia_action', @description, @metadata, NOW())`,
         {

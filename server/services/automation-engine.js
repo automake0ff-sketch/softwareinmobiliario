@@ -4,7 +4,7 @@ import { callOpenRouter, parseAgentReply, interpolate } from './openrouter.js'
 import { getAgentSystemPrompt } from '../agents/index.js'
 import { realtime } from './realtime.js'
 
-export function evaluateConditions(conditions, leadData) {
+export async function evaluateConditions(conditions, leadData) {
   if (!conditions || !Array.isArray(conditions) || conditions.length === 0) return true
   return conditions.every(cond => {
     const val = leadData[cond.field]
@@ -33,8 +33,8 @@ async function sendWhatsApp(phone, message, agencyId, ctx = {}) {
     // Try context credentials first (from full-context-builder), then DB
     const waToken = ctx?.wa_token || null
     const waPhoneId = ctx?.wa_phone_id || null
-    const agencyToken = waToken || get('SELECT whatsapp_token FROM agencies WHERE id = @id', { id: agencyId })?.whatsapp_token
-    const agencyPhoneId = waPhoneId || get('SELECT whatsapp_phone_id FROM agencies WHERE id = @id', { id: agencyId })?.whatsapp_phone_id
+    const agencyToken = waToken || await get('SELECT whatsapp_token FROM agencies WHERE id = @id', { id: agencyId })?.whatsapp_token
+    const agencyPhoneId = waPhoneId || await get('SELECT whatsapp_phone_id FROM agencies WHERE id = @id', { id: agencyId })?.whatsapp_phone_id
 
     if (agencyToken && agencyPhoneId) {
       const res = await fetch(`https://graph.facebook.com/v18.0/${agencyPhoneId}/messages`, {
@@ -79,12 +79,12 @@ async function sendWhatsApp(phone, message, agencyId, ctx = {}) {
   }
 }
 
-function saveMessageToConversation(leadId, agencyId, content, senderType, senderId) {
+async function saveMessageToConversation(leadId, agencyId, content, senderType, senderId) {
   if (!leadId || !content) return
-  let conv = get('SELECT id, messages FROM conversations WHERE lead_id = @lead_id ORDER BY created_at DESC LIMIT 1', { lead_id: leadId })
+  let conv = await get('SELECT id, messages FROM conversations WHERE lead_id = @lead_id ORDER BY created_at DESC LIMIT 1', { lead_id: leadId })
   if (!conv) {
     const convId = uuidv4()
-    run(
+    await run(
       `INSERT INTO conversations (id, agency_id, lead_id, channel, messages, created_at)
        VALUES (@id, @agency_id, @lead_id, @channel, @messages, NOW())`,
       { id: convId, agency_id: agencyId, lead_id: leadId, channel: 'whatsapp', messages: '[]' }
@@ -105,9 +105,9 @@ function saveMessageToConversation(leadId, agencyId, content, senderType, sender
   }
   const msgs = JSON.parse(conv.messages || '[]')
   msgs.push(newMessage)
-  run(`UPDATE conversations SET messages = @messages, updated_at = NOW() WHERE id = @id`, { messages: JSON.stringify(msgs), id: conv.id })
+  await run(`UPDATE conversations SET messages = @messages, updated_at = NOW() WHERE id = @id`, { messages: JSON.stringify(msgs), id: conv.id })
 
-  run(
+  await run(
     `INSERT INTO messages (id, conversation_id, author, content, message_type, created_at)
      VALUES (@id, @conversation_id, @author, @content, @message_type, NOW())`,
     {
@@ -127,10 +127,10 @@ function saveMessageToConversation(leadId, agencyId, content, senderType, sender
   }
 }
 
-function logActivity(agencyId, leadId, type, title, description, metadata, agentType) {
+async function logActivity(agencyId, leadId, type, title, description, metadata, agentType) {
   const id = uuidv4()
   const created_at = new Date().toISOString()
-  run(
+  await run(
     `INSERT INTO activities (id, agency_id, lead_id, type, title, description, agent_type, metadata, created_at)
      VALUES (@id, @agency_id, @lead_id, @type, @title, @description, @agent_type, @metadata, NOW())`,
     {
@@ -159,9 +159,9 @@ function logActivity(agencyId, leadId, type, title, description, metadata, agent
   }
 }
 
-export function incrementAgentStats(agentType, agencyId, isNewLead = false) {
+export async function incrementAgentStats(agentType, agencyId, isNewLead = false) {
   if (!agentType || !agencyId) return
-  const agent = get('SELECT id, stats FROM ai_agents WHERE type = @type AND agency_id = @agency_id', { type: agentType, agency_id: agencyId })
+  const agent = await get('SELECT id, stats FROM ai_agents WHERE type = @type AND agency_id = @agency_id', { type: agentType, agency_id: agencyId })
   if (agent) {
     let parsed = { leads_today: 0, messages_today: 0, success_rate: null }
     if (agent.stats) {
@@ -173,12 +173,12 @@ export function incrementAgentStats(agentType, agencyId, isNewLead = false) {
     }
     parsed.success_rate = null
 
-    run('UPDATE ai_agents SET stats = @stats, last_action = datetime(\'now\') WHERE id = @id', { stats: JSON.stringify(parsed), id: agent.id })
+    await run('UPDATE ai_agents SET stats = @stats, last_action = NOW() WHERE id = @id', { stats: JSON.stringify(parsed), id: agent.id })
   }
 }
 
-function createNotification(agencyId, userId, leadId, title, message, level) {
-  run(
+async function createNotification(agencyId, userId, leadId, title, message, level) {
+  await run(
     `INSERT INTO notifications (id, agency_id, user_id, lead_id, title, message, level, is_read, created_at)
      VALUES (@id, @agency_id, @user_id, @lead_id, @title, @message, @level, 0, NOW())`,
     {
@@ -193,19 +193,19 @@ function createNotification(agencyId, userId, leadId, title, message, level) {
   )
 }
 
-function findLeastLoadedUser(agencyId, role) {
-  const users = all(
+async function findLeastLoadedUser(agencyId, role) {
+  const users = await all(
     'SELECT id, name FROM users WHERE agency_id = @agency_id AND role = @role AND active = 1',
     { agency_id: agencyId, role: role || 'comercial' }
   )
   if (!users.length) return null
-  const counts = users.map(u => {
-    const c = get(
+  const counts = await Promise.all(users.map(async u => {
+    const c = await get(
       'SELECT COUNT(*) as count FROM leads WHERE assigned_to = @assigned_to AND status NOT IN (\'cerrado\',\'perdido\')',
       { assigned_to: u.id }
     )
     return { ...u, count: c?.count || 0 }
-  })
+  }))
   return counts.sort((a, b) => a.count - b.count)[0]
 }
 
@@ -271,7 +271,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
             whatsappSent = await sendWhatsApp(leadContext.phone, finalMessage, agencyId, leadContext)
           }
 
-          run(
+          await run(
             `UPDATE leads SET last_contact_at = NOW(), updated_at = NOW() WHERE id = @id`,
             { id: leadId }
           )
@@ -289,7 +289,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
             const updates = { updated_at: new Date().toISOString(), last_contact_at: new Date().toISOString() }
             if (agentData.score !== undefined) { updates.ia_score = agentData.score; updates.ia_score_label = agentData.score > 75 ? 'caliente' : agentData.score > 40 ? 'templado' : 'frio' }
             if (agentData.score_change) {
-              const lead = get('SELECT ia_score FROM leads WHERE id = @id', { id: leadId })
+              const lead = await get('SELECT ia_score FROM leads WHERE id = @id', { id: leadId })
               if (lead) {
                 const ns = Math.max(0, Math.min(100, (lead.ia_score ?? 50) + Number(agentData.score_change)))
                 updates.ia_score = ns; updates.ia_score_label = ns > 75 ? 'caliente' : ns > 40 ? 'templado' : 'frio'
@@ -308,7 +308,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
             }
             if (Object.keys(updates).length > 2) {
               const k = Object.keys(updates).map(k => `${k} = @${k}`).join(', ')
-              run(`UPDATE leads SET ${k} WHERE id = @id`, { ...updates, id: leadId })
+              await run(`UPDATE leads SET ${k} WHERE id = @id`, { ...updates, id: leadId })
             }
           }
 
@@ -367,7 +367,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
         if (!newStage) throw new Error('new_stage requerido')
         const oldStage = leadContext.stage || leadContext.status
         if (!testMode && leadId) {
-          run("UPDATE leads SET status = @status, pipeline_stage = @status, pipeline_stage_updated_at = NOW(), updated_at = NOW() WHERE id = @id",
+          await run("UPDATE leads SET status = @status, pipeline_stage = @status, pipeline_stage_updated_at = NOW(), updated_at = NOW() WHERE id = @id",
             { status: newStage, id: leadId })
           if (agencyId) {
             logActivity(agencyId, leadId, 'stage_changed', `🔄 Etapa: ${oldStage} → ${newStage}`,
@@ -387,7 +387,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
         }
 
         if (!testMode && leadId && assignedUserId) {
-          run("UPDATE leads SET assigned_to = @assigned_to, updated_at = NOW() WHERE id = @id",
+          await run("UPDATE leads SET assigned_to = @assigned_to, updated_at = NOW() WHERE id = @id",
             { assigned_to: assignedUserId, id: leadId })
           if (agencyId) {
             logActivity(agencyId, leadId, 'ia_action', `👤 Lead asignado a ${assignedName}`,
@@ -412,12 +412,12 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
         if (!testMode && leadId && agencyId) {
           let assignToUserId = null
           if (config.assign_to === 'manager' || config.assign_to === 'comercial') {
-            const u = get('SELECT id FROM users WHERE agency_id = @agency_id AND role = @role AND active = 1 LIMIT 1',
+            const u = await get('SELECT id FROM users WHERE agency_id = @agency_id AND role = @role AND active = 1 LIMIT 1',
               { agency_id: agencyId, role: config.assign_to })
             if (u) assignToUserId = u.id
           }
 
-          run(
+          await run(
             `INSERT INTO tasks (id, agency_id, lead_id, assigned_to, title, description, due_at, priority, status, created_at)
              VALUES (@id, @agency_id, @lead_id, @assigned_to, @title, @description, @due_at, @priority, 'pending', NOW())`,
             {
@@ -448,12 +448,12 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
         const level = config.level || 'importante'
 
         if (!testMode && agencyId) {
-          let users = all(
+          let users = await all(
             'SELECT id FROM users WHERE agency_id = @agency_id AND active = 1',
             { agency_id: agencyId }
           )
           if (forRole !== 'all') {
-            users = all(
+            users = await all(
               'SELECT id FROM users WHERE agency_id = @agency_id AND role = @role AND active = 1',
               { agency_id: agencyId, role: forRole }
             )
@@ -474,15 +474,15 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
       case 'add_tag': {
         const tagName = fill(config.tag_name || config.tag || '')
         if (!testMode && tagName && leadId) {
-          let tag = get('SELECT * FROM tags WHERE name = @name AND agency_id = @agency_id',
+          let tag = await get('SELECT * FROM tags WHERE name = @name AND agency_id = @agency_id',
             { name: tagName, agency_id: agencyId })
           if (!tag) {
             const tagId = uuidv4()
-            run('INSERT INTO tags (id, name, color, agency_id) VALUES (@id, @name, @color, @agency_id)',
+            await run('INSERT INTO tags (id, name, color, agency_id) VALUES (@id, @name, @color, @agency_id)',
               { id: tagId, name: tagName, color: config.tag_color || '#6366F1', agency_id: agencyId })
             tag = { id: tagId }
           }
-          run('INSERT INTO lead_tags (lead_id, tag_id) VALUES (@lead_id, @tag_id) ON CONFLICT DO NOTHING',
+          await run('INSERT INTO lead_tags (lead_id, tag_id) VALUES (@lead_id, @tag_id) ON CONFLICT DO NOTHING',
             { lead_id: leadId, tag_id: tag.id })
         }
         return { success: true, result: `Etiqueta "${tagName}" añadida`, aiUsed: false }
@@ -491,10 +491,10 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
       case 'remove_tag': {
         const tagName = fill(config.tag || '')
         if (!testMode && tagName && leadId) {
-          const tag = get('SELECT id FROM tags WHERE name = @name AND agency_id = @agency_id',
+          const tag = await get('SELECT id FROM tags WHERE name = @name AND agency_id = @agency_id',
             { name: tagName, agency_id: agencyId })
           if (tag) {
-            run('DELETE FROM lead_tags WHERE lead_id = @lead_id AND tag_id = @tag_id',
+            await run('DELETE FROM lead_tags WHERE lead_id = @lead_id AND tag_id = @tag_id',
               { lead_id: leadId, tag_id: tag.id })
           }
         }
@@ -504,14 +504,14 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
       case 'update_score': {
         let newScore
         if (config.score_change !== undefined) {
-          const lead = get('SELECT ia_score FROM leads WHERE id = @id', { id: leadId })
+          const lead = await get('SELECT ia_score FROM leads WHERE id = @id', { id: leadId })
           newScore = Math.max(0, Math.min(100, (lead?.ia_score ?? 50) + Number(config.score_change)))
         } else {
           newScore = Math.max(0, Math.min(100, config.score ?? 50))
         }
         const label = newScore > 75 ? 'caliente' : newScore > 40 ? 'templado' : 'frio'
         if (!testMode && leadId) {
-          run("UPDATE leads SET ia_score = @score, ia_score_label = @label, updated_at = NOW() WHERE id = @id",
+          await run("UPDATE leads SET ia_score = @score, ia_score_label = @label, updated_at = NOW() WHERE id = @id",
             { score: newScore, label, id: leadId })
         }
         return { success: true, result: `Score actualizado a ${newScore}/100 (${label})`, aiUsed: false }
@@ -522,7 +522,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
         const value = config.value
         if (!field) throw new Error('field requerido')
         if (!testMode && leadId) {
-          run(`UPDATE leads SET ${field} = @value, updated_at = NOW() WHERE id = @id`,
+          await run(`UPDATE leads SET ${field} = @value, updated_at = NOW() WHERE id = @id`,
             { value, id: leadId })
         }
         return { success: true, result: `Campo "${field}" actualizado`, aiUsed: false }
@@ -534,8 +534,8 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
         visitDate.setHours(10, 0, 0, 0)
 
         if (!testMode && leadId && agencyId) {
-          const lead = get('SELECT assigned_to FROM leads WHERE id = @id', { id: leadId })
-          run(
+          const lead = await get('SELECT assigned_to FROM leads WHERE id = @id', { id: leadId })
+          await run(
             `INSERT INTO visits (id, lead_id, property_id, assigned_to, scheduled_at, status, notes, created_at)
              VALUES (@id, @lead_id, @property_id, @assigned_to, @scheduled_at, 'scheduled', @notes, NOW())`,
             {
@@ -549,7 +549,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
           logActivity(agencyId, leadId, 'visit_scheduled', `📅 Visita agendada para ${visitDate.toLocaleDateString('es-ES')}`,
             `Visita creada automáticamente para dentro de ${daysAhead} días`,
             { scheduled_at: visitDate.toISOString(), days_ahead: daysAhead }, null)
-          run("UPDATE leads SET status = 'visita_agendada', pipeline_stage = 'visita_agendada', updated_at = NOW() WHERE id = @id",
+          await run("UPDATE leads SET status = 'visita_agendada', pipeline_stage = 'visita_agendada', updated_at = NOW() WHERE id = @id",
             { id: leadId })
         }
         return { success: true, result: `Visita agendada para ${visitDate.toLocaleDateString('es-ES')}`, aiUsed: false }
@@ -560,7 +560,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
 
         if (!testMode && leadId && agencyId) {
           for (const type of docTypes) {
-            run(
+            await run(
               `INSERT INTO documents (id, lead_id, type, name, status, requested_at, created_at)
                VALUES (@id, @lead_id, @type, @name, 'pending', NOW(), NOW())`,
               { id: uuidv4(), lead_id: leadId, type, name: type.toUpperCase() }
@@ -602,7 +602,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
 
       case 'send_property_match': {
         if (!testMode && leadId && agencyId) {
-          const props = all(
+          const props = await all(
             `SELECT id, title, price, zone, bedrooms, surface FROM properties
              WHERE agency_id = @agency_id AND status = 'disponible'
              ORDER BY created_at DESC LIMIT 3`,
@@ -637,7 +637,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
   }
 }
 
-export function checkTrigger(automation, leadContext) {
+export async function checkTrigger(automation, leadContext) {
   const conditionsMet = evaluateConditions(automation.conditions || [], leadContext)
   if (!conditionsMet) return false
 
@@ -681,7 +681,7 @@ export async function triggerAutomations({ trigger_type, lead_id, agency_id, tri
     }
 
     // Get lead data from DB
-    const lead = get('SELECT * FROM leads WHERE id = @id', { id: lead_id })
+    const lead = await get('SELECT * FROM leads WHERE id = @id', { id: lead_id })
     if (!lead) throw new Error('Lead no encontrado.')
 
     // Build lead context
@@ -703,8 +703,8 @@ export async function triggerAutomations({ trigger_type, lead_id, agency_id, tri
     }
 
     // Find matching automations
-    const automations = all(
-      'SELECT * FROM automations WHERE agency_id = @agency_id AND is_active = 1 AND trigger_type = @trigger_type',
+    const automations = await all(
+      'SELECT * FROM automations WHERE agency_id = @agency_id AND is_active = true AND trigger_type = @trigger_type',
       { agency_id: aid, trigger_type }
     )
 
@@ -744,11 +744,11 @@ export async function triggerAutomations({ trigger_type, lead_id, agency_id, tri
       }
 
       // Update run count
-      run('UPDATE automations SET run_count = COALESCE(run_count, 0) + 1, last_run_at = datetime(\'now\') WHERE id = @id',
+      await run('UPDATE automations SET run_count = COALESCE(run_count, 0) + 1, last_run_at = NOW() WHERE id = @id',
         { id: auto.id })
 
       // Log activity
-      run(
+      await run(
         `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
          VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, NOW())`,
         {
@@ -763,7 +763,7 @@ export async function triggerAutomations({ trigger_type, lead_id, agency_id, tri
 
       // Log in automation_logs table if it exists (try/catch)
       try {
-        run(
+        await run(
           `INSERT INTO automation_logs (id, automation_id, lead_id, agency_id, status, actions_executed, created_at)
            VALUES (@id, @automation_id, @lead_id, @agency_id, @status, @actions_executed, NOW())`,
           {

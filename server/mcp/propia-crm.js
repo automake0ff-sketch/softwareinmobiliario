@@ -6,7 +6,7 @@ const server = new MCPServer('propia-crm', '1.0.0');
 
 server
   .resource('crm://leads/hot', 'Leads calientes', 'Leads con score > 75 sin asignar', async (agencyId) => {
-    return all(
+    return await all(
       `SELECT id, name, phone, email, budget, zone, property_interest, ia_score, status, last_activity, created_at
        FROM leads WHERE ia_score > 75 AND assigned_to IS NULL
        ${agencyId ? 'AND agency_id = @aid' : ''}
@@ -15,7 +15,7 @@ server
     );
   })
   .resource('crm://pipeline/overview', 'Vista del pipeline', 'Conteo de leads por etapa', async (agencyId) => {
-    const rows = all(
+    const rows = await all(
       `SELECT status, COUNT(*) as count FROM leads
        ${agencyId ? 'WHERE agency_id = @aid' : ''}
        GROUP BY status ORDER BY count DESC`,
@@ -25,7 +25,7 @@ server
     return { stages: rows, total };
   })
   .resource('crm://properties/available', 'Propiedades disponibles', 'Listado de propiedades activas', async (agencyId) => {
-    return all(
+    return await all(
       `SELECT id, title, description, price, type, city, zone, bedrooms, bathrooms, surface, status, created_at
        FROM properties WHERE status = 'disponible'
        ${agencyId ? 'AND agency_id = @aid' : ''}
@@ -40,18 +40,18 @@ server
     properties: { lead_id: { type: 'string' } },
     required: ['lead_id'],
   }, async (args) => {
-    const lead = get('SELECT l.*, u.name AS assigned_name FROM leads l LEFT JOIN users u ON l.assigned_to = u.id WHERE l.id = @id', { id: args.lead_id });
+    const lead = await get('SELECT l.*, u.name AS assigned_name FROM leads l LEFT JOIN users u ON l.assigned_to = u.id WHERE l.id = @id', { id: args.lead_id });
     if (!lead) throw new Error('Lead no encontrado');
 
-    const messages = all(
+    const messages = await all(
       'SELECT * FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE lead_id = @lid) ORDER BY created_at DESC LIMIT 20',
       { lid: args.lead_id }
     );
-    const activities = all(
+    const activities = await all(
       'SELECT * FROM activities WHERE lead_id = @lid ORDER BY created_at DESC LIMIT 10',
       { lid: args.lead_id }
     );
-    const matchings = all(
+    const matchings = await all(
       `SELECT m.*, p.title, p.price, p.type, p.zone, p.city, p.surface, p.bedrooms
        FROM matchings m JOIN properties p ON p.id = m.property_id
        WHERE m.lead_id = @lid ORDER BY m.score DESC LIMIT 5`,
@@ -72,7 +72,7 @@ server
     required: ['lead_id', 'score'],
   }, async (args, context) => {
     const scoreLabel = args.score > 75 ? 'caliente' : args.score > 40 ? 'templado' : 'frio';
-    run(
+    await run(
       `UPDATE leads SET ia_score = @score, ia_insight = @label, ia_summary = @summary, updated_at = NOW() WHERE id = @id`,
       { score: args.score, label: scoreLabel, summary: args.summary || null, id: args.lead_id }
     );
@@ -92,9 +92,9 @@ server
     },
     required: ['lead_id', 'new_stage'],
   }, async (args, context) => {
-    const existing = get('SELECT status FROM leads WHERE id = @id', { id: args.lead_id });
+    const existing = await get('SELECT status FROM leads WHERE id = @id', { id: args.lead_id });
     if (!existing) throw new Error('Lead no encontrado');
-    run("UPDATE leads SET status = @status, updated_at = NOW() WHERE id = @id", { status: args.new_stage, id: args.lead_id });
+    await run("UPDATE leads SET status = @status, updated_at = NOW() WHERE id = @id", { status: args.new_stage, id: args.lead_id });
     logActivity(context.agencyId, args.lead_id, context.userId, 'status_change',
       `Pipeline: ${existing.status} → ${args.new_stage}${args.reason ? ': ' + args.reason : ''}`);
     return { success: true, from: existing.status, to: args.new_stage };
@@ -108,10 +108,10 @@ server
     },
     required: ['lead_id'],
   }, async (args) => {
-    const lead = get('SELECT * FROM leads WHERE id = @id', { id: args.lead_id });
+    const lead = await get('SELECT * FROM leads WHERE id = @id', { id: args.lead_id });
     if (!lead) throw new Error('Lead no encontrado');
 
-    const properties = all(
+    const properties = await all(
       `SELECT * FROM properties WHERE status = 'disponible'
        ${lead.agency_id ? 'AND agency_id = @aid' : ''}
        ${lead.budget ? 'AND price <= @budget' : ''}
@@ -131,9 +131,9 @@ server
     })).sort((a, b) => b.compatibility_score - a.compatibility_score).slice(0, args.limit || 5);
 
     for (const p of scored) {
-      const existing = get('SELECT id FROM matchings WHERE lead_id = @lid AND property_id = @pid', { lid: args.lead_id, pid: p.id });
+      const existing = await get('SELECT id FROM matchings WHERE lead_id = @lid AND property_id = @pid', { lid: args.lead_id, pid: p.id });
       if (!existing) {
-        run(
+        await run(
           `INSERT INTO matchings (id, lead_id, property_id, score, reason, created_at)
            VALUES (@id, @lid, @pid, @score, @reason, NOW())`,
           { id: uuidv4(), lid: args.lead_id, pid: p.id, score: p.compatibility_score, reason: p.match_reasons?.join(', ') || '' }

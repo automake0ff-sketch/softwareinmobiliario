@@ -5,23 +5,23 @@ import { EmailService } from './email.js';
 import { WhatsAppService } from './whatsapp.js';
 import { logActivity, logCommunication, logLeadAutomation, getBestPropertyForLead } from './lead-automation.service.js';
 
-export function getConsentForLead(leadId, channel) {
-  const prefs = get('SELECT * FROM lead_preferences WHERE lead_id = @lid', { lid: leadId });
+export async function getConsentForLead(leadId, channel) {
+  const prefs = await get('SELECT * FROM lead_preferences WHERE lead_id = @lid', { lid: leadId });
   if (!prefs) return true;
   if (channel === 'email') return prefs.consent_email === 1;
   if (channel === 'whatsapp') return prefs.consent_whatsapp === 1;
   return true;
 }
 
-export function getLeadPreferences(leadId) {
-  let prefs = get('SELECT * FROM lead_preferences WHERE lead_id = @lid', { lid: leadId });
+export async function getLeadPreferences(leadId) {
+  let prefs = await get('SELECT * FROM lead_preferences WHERE lead_id = @lid', { lid: leadId });
   if (!prefs) {
-    run(
+    await run(
       `INSERT INTO lead_preferences (lead_id, preferred_channel, consent_email, consent_whatsapp, consent_calls)
        VALUES (@lid, 'whatsapp', 1, 1, 0)`,
       { lid: leadId }
     );
-    prefs = get('SELECT * FROM lead_preferences WHERE lead_id = @lid', { lid: leadId });
+    prefs = await get('SELECT * FROM lead_preferences WHERE lead_id = @lid', { lid: leadId });
   }
   return prefs;
 }
@@ -65,7 +65,7 @@ Preferencia: ${lead.property_interest || 'No especificada'}`;
 
   const endDate = new Date(startDate.getTime() + suggestion.duration * 60000);
 
-  const availableUsers = all(
+  const availableUsers = await all(
     `SELECT u.id, u.name FROM users u
      WHERE u.agency_id = @aid AND u.role IN ('admin','manager','comercial')
      ORDER BY u.name LIMIT 5`,
@@ -97,7 +97,7 @@ export async function createAppointment({ lead, agency, type, starts_at, ends_at
   const property = getBestPropertyForLead(lead, agency.id);
   const propertyId = property?.id || null;
 
-  run(
+  await run(
     `INSERT INTO appointments (id, agency_id, lead_id, assigned_user_id, type, status, starts_at, ends_at, timezone, location, online_url, notes, client_token, property_id, created_at, updated_at)
      VALUES (@id, @aid, @lid, @auid, @type, 'scheduled', @starts, @ends, @tz, @loc, @ourl, @notes, @token, @pid, NOW(), NOW())`,
     {
@@ -107,7 +107,7 @@ export async function createAppointment({ lead, agency, type, starts_at, ends_at
     }
   );
 
-  const appointment = get('SELECT * FROM appointments WHERE id = @id', { id: appointmentId });
+  const appointment = await get('SELECT * FROM appointments WHERE id = @id', { id: appointmentId });
   appointment.attendant_name = attendant_name;
 
   logActivity(
@@ -147,7 +147,7 @@ export async function createAppointment({ lead, agency, type, starts_at, ends_at
     });
   }
 
-  run(`UPDATE leads SET last_activity = NOW(), last_channel = 'appointment' WHERE id = @id`, { id: lead.id });
+  await run(`UPDATE leads SET last_activity = NOW(), last_channel = 'appointment' WHERE id = @id`, { id: lead.id });
 
   logLeadAutomation({
     agencyId: agency.id, leadId: lead.id, type: 'auto_appointment', channel: type,

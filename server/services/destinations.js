@@ -31,17 +31,17 @@ function buildCredsFromContext(type, ctx) {
 
 async function saveMessageToConversation(leadId, agencyId, content) {
   if (!leadId || !content) return
-  let conv = get('SELECT id FROM conversations WHERE lead_id = @lead_id ORDER BY created_at DESC LIMIT 1', { lead_id: leadId })
+  let conv = await get('SELECT id FROM conversations WHERE lead_id = @lead_id ORDER BY created_at DESC LIMIT 1', { lead_id: leadId })
   if (!conv) {
     const convId = uuidv4()
-    run(
+    await run(
       `INSERT INTO conversations (id, lead_id, agent_id, channel, messages, created_at)
        VALUES (@id, @lead_id, @agent_id, @channel, @messages, NOW())`,
       { id: convId, lead_id: leadId, agent_id: null, channel: 'whatsapp', messages: '[]' }
     )
     conv = { id: convId }
   }
-  run(
+  await run(
     `INSERT INTO messages (id, conversation_id, author, content, message_type, created_at)
      VALUES (@id, @conversation_id, @author, @content, @message_type, NOW())`,
     {
@@ -61,7 +61,7 @@ export async function sendToDestination({ destConfig, content, ctx, subject, age
   // Build credentials from context (full-context-builder) OR from stored destination
   let creds = {}
   if (destination_id) {
-    const dest = get(
+    const dest = await get(
       'SELECT credentials, type, is_active FROM agency_destinations WHERE id = @id AND agency_id = @agency_id',
       { id: destination_id, agency_id: agencyId }
     )
@@ -250,14 +250,14 @@ export async function sendToDestination({ destConfig, content, ctx, subject, age
       case 'crm_field': {
         const field = destConfig.crm_field
         if (!field || !ctx.lead_id) return { ok: false, detail: 'crm_field o lead_id no especificado' }
-        run(`UPDATE leads SET ${field} = @value, updated_at = NOW() WHERE id = @id`, { value: content, id: ctx.lead_id })
+        await run(`UPDATE leads SET ${field} = @value, updated_at = NOW() WHERE id = @id`, { value: content, id: ctx.lead_id })
         return { ok: true, detail: `Campo "${field}" actualizado en el lead` }
       }
 
       case 'internal_notification': {
-        const users = all('SELECT id FROM users WHERE agency_id = @agency_id AND active = 1', { agency_id: agencyId })
+        const users = await all('SELECT id FROM users WHERE agency_id = @agency_id AND active = 1', { agency_id: agencyId })
         for (const u of users) {
-          run(
+          await run(
             `INSERT INTO notifications (id, agency_id, user_id, lead_id, title, body, type, created_at)
              VALUES (@id, @agency_id, @user_id, @lead_id, @title, @body, @type, NOW())`,
             {

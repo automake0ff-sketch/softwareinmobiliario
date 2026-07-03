@@ -222,16 +222,16 @@ async function handleIncomingMessage(message, metadata, contacts) {
     const contactName = contacts?.[0]?.profile?.name || from;
     const phoneNumber = from;
 
-    let existingLead = get('SELECT * FROM leads WHERE phone = @phone', { phone: phoneNumber });
+    let existingLead = await get('SELECT * FROM leads WHERE phone = @phone', { phone: phoneNumber });
 
     const phoneNumberId = metadata?.phone_number_id;
     const displayPhoneNumber = metadata?.display_phone_number;
     let agency = null;
     if (phoneNumberId) {
-      agency = get('SELECT id, name FROM agencies WHERE whatsapp_phone_id = @pid', { pid: String(phoneNumberId) });
+      agency = await get('SELECT id, name FROM agencies WHERE whatsapp_phone_id = @pid', { pid: String(phoneNumberId) });
     }
     if (!agency && displayPhoneNumber) {
-      agency = get('SELECT id, name FROM agencies WHERE whatsapp_number = @wnum', { wnum: displayPhoneNumber });
+      agency = await get('SELECT id, name FROM agencies WHERE whatsapp_number = @wnum', { wnum: displayPhoneNumber });
     }
     if (!agency) {
       console.log('[WHATSAPP] No agency found for phone_number_id:', phoneNumberId, '/ number:', displayPhoneNumber);
@@ -241,21 +241,21 @@ async function handleIncomingMessage(message, metadata, contacts) {
     let leadId;
     if (existingLead) {
       leadId = existingLead.id;
-      run("UPDATE leads SET last_activity = NOW(), updated_at = NOW() WHERE id = @id", { id: leadId });
+      await run("UPDATE leads SET last_activity = NOW(), updated_at = NOW() WHERE id = @id", { id: leadId });
     } else {
       leadId = uuidv4();
-      run(
+      await run(
         `INSERT INTO leads (id, agency_id, name, phone, source, status, created_at, updated_at)
          VALUES (@id, @agency_id, @name, @phone, @source, @status, NOW(), NOW())`,
         { id: leadId, agency_id: agency.id, name: contactName, phone: phoneNumber, source: 'whatsapp', status: 'nuevo' }
       );
-      existingLead = get('SELECT * FROM leads WHERE id = @id', { id: leadId });
+      existingLead = await get('SELECT * FROM leads WHERE id = @id', { id: leadId });
     }
 
     const messageId = uuidv4();
     const newMessage = { role: 'lead', content: text, timestamp: new Date().toISOString(), message_id: message.id };
 
-    let existingConv = get(
+    let existingConv = await get(
       'SELECT id, messages FROM conversations WHERE lead_id = @lead_id AND channel = \'whatsapp\' ORDER BY created_at DESC LIMIT 1',
       { lead_id: leadId }
     );
@@ -263,13 +263,13 @@ async function handleIncomingMessage(message, metadata, contacts) {
     if (existingConv) {
       const msgs = JSON.parse(existingConv.messages || '[]');
       msgs.push(newMessage);
-      run(
+      await run(
         `UPDATE conversations SET messages = @messages WHERE id = @id`,
         { messages: JSON.stringify(msgs), id: existingConv.id }
       );
     } else {
       existingConv = { id: uuidv4() };
-      run(
+      await run(
         `INSERT INTO conversations (id, agency_id, lead_id, channel, messages, created_at)
          VALUES (@id, @agency_id, @lead_id, @channel, @messages, NOW())`,
         { id: existingConv.id, agency_id: agency.id, lead_id: leadId, channel: 'whatsapp', messages: JSON.stringify([newMessage]) }
@@ -277,7 +277,7 @@ async function handleIncomingMessage(message, metadata, contacts) {
     }
 
     const mappedType = ({ text: 'text', interactive: 'text', audio: 'audio', image: 'image', document: 'document' })[msgType] || 'text';
-    run(
+    await run(
       `INSERT INTO messages (id, conversation_id, author, content, message_type, created_at)
        VALUES (@id, @conversation_id, @author, @content, @message_type, NOW())`,
       {
@@ -293,7 +293,7 @@ async function handleIncomingMessage(message, metadata, contacts) {
     const activityDesc = existingLead
       ? `Mensaje de WhatsApp recibido: "${text.substring(0, 100)}"`
       : `Nuevo lead creado desde WhatsApp: ${contactName}`;
-    run(
+    await run(
       `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
        VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, NOW())`,
       {

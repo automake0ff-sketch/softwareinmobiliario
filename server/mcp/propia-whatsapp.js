@@ -5,7 +5,7 @@ const server = new MCPServer('propia-whatsapp', '1.0.0');
 
 server
   .resource('whatsapp://conversations/active', 'Conversaciones activas', 'Conversaciones abiertas con leads', async (agencyId) => {
-    return all(
+    return await all(
       `SELECT c.id, c.lead_id, l.name, l.phone, l.status, l.ia_score,
               c.created_at as last_message_at
        FROM conversations c
@@ -39,7 +39,7 @@ server
     },
     required: ['phone', 'message'],
   }, async (args, context) => {
-    const leadName = args.lead_id ? get('SELECT name FROM leads WHERE id = @id', { id: args.lead_id })?.name : 'desconocido';
+    const leadName = args.lead_id ? await get('SELECT name FROM leads WHERE id = @id', { id: args.lead_id })?.name : 'desconocido';
     logActivity(context.agencyId, args.lead_id, context.userId, 'whatsapp_sent',
       `WhatsApp enviado a ${args.phone}`, { message: args.message?.substring(0, 100) });
 
@@ -94,7 +94,7 @@ server
     },
     required: ['phone', 'property_id'],
   }, async (args) => {
-    const property = get('SELECT * FROM properties WHERE id = @id', { id: args.property_id });
+    const property = await get('SELECT * FROM properties WHERE id = @id', { id: args.property_id });
     if (!property) throw new Error('Propiedad no encontrada');
 
     const message =
@@ -116,7 +116,7 @@ server
     },
     required: ['lead_id'],
   }, async (args) => {
-    const conv = get('SELECT * FROM conversations WHERE lead_id = @lid ORDER BY created_at DESC LIMIT 1', { lid: args.lead_id });
+    const conv = await get('SELECT * FROM conversations WHERE lead_id = @lid ORDER BY created_at DESC LIMIT 1', { lid: args.lead_id });
     if (!conv) return [];
 
     let messages = [];
@@ -130,7 +130,7 @@ server
     properties: { agency_id: { type: 'string' } },
     required: ['agency_id'],
   }, async (args) => {
-    const count = get(
+    const count = await get(
       `SELECT COUNT(*) as count FROM messages m
        JOIN conversations c ON c.id = m.conversation_id
        JOIN leads l ON l.id = c.lead_id

@@ -19,7 +19,7 @@ const router = Router();
 router.use(auth);
 
 // POST /api/conversations - Create a new conversation for a lead
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { lead_id, channel = 'whatsapp', content = 'Chat iniciado' } = req.body;
     const agencyId = req.user.agency_id;
@@ -27,19 +27,19 @@ router.post('/', (req, res) => {
     if (!lead_id) return res.status(400).json({ error: 'lead_id es obligatorio.' });
 
     // Verify lead belongs to agency
-    const lead = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: lead_id, agency_id: agencyId });
+    const lead = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: lead_id, agency_id: agencyId });
     if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' });
 
     // Check if a conversation already exists for this lead+channel
     let existing = null;
     try {
-      existing = get(
+      existing = await get(
         'SELECT * FROM conversations WHERE lead_id = @lead_id AND channel = @channel AND agency_id = @agency_id',
         { lead_id, channel, agency_id: agencyId }
       );
     } catch (e) {
       // agency_id column might not exist yet, fallback without it
-      existing = get(
+      existing = await get(
         'SELECT * FROM conversations WHERE lead_id = @lead_id AND channel = @channel',
         { lead_id, channel }
       );
@@ -73,14 +73,14 @@ router.post('/', (req, res) => {
     const messages = [firstMsg];
 
     // Insert using only the guaranteed base columns
-    run(
+    await run(
       `INSERT INTO conversations (id, lead_id, channel, messages, created_at)
        VALUES (@id, @lead_id, @channel, @messages, NOW())`,
       { id: convId, lead_id, channel, messages: JSON.stringify(messages) }
     );
     // Update optional columns separately (safe even if they were just migrated)
     try {
-      run(
+      await run(
         `UPDATE conversations SET agency_id = @agency_id, status = 'active', ia_handling = 1, updated_at = NOW() WHERE id = @id`,
         { agency_id: agencyId, id: convId }
       );
@@ -103,7 +103,7 @@ router.post('/', (req, res) => {
 });
 
 // GET /api/conversations - List conversations with lead details, last message, and unread counts
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const agencyId = req.user.agency_id;
 
@@ -148,9 +148,9 @@ router.get('/', (req, res) => {
 });
 
 // GET /api/conversations/:id/messages - GET messages and mark as read
-router.get('/:id/messages', (req, res) => {
+router.get('/:id/messages', async (req, res) => {
   try {
-    const conv = get('SELECT * FROM conversations WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
+    const conv = await get('SELECT * FROM conversations WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!conv) return res.status(404).json({ error: 'Conversación no encontrada.' });
 
     const messagesList = conv.messages ? JSON.parse(conv.messages) : [];
@@ -166,10 +166,10 @@ router.get('/:id/messages', (req, res) => {
     });
 
     if (updated) {
-      run('UPDATE conversations SET messages = @messages WHERE id = @id', { messages: JSON.stringify(markedList), id: req.params.id });
+      await run('UPDATE conversations SET messages = @messages WHERE id = @id', { messages: JSON.stringify(markedList), id: req.params.id });
       // update DB messages table too if active
       try {
-        run('UPDATE messages SET is_read = 1 WHERE conversation_id = @id AND author = \'lead\'', { id: req.params.id });
+        await run('UPDATE messages SET is_read = 1 WHERE conversation_id = @id AND author = \'lead\'', { id: req.params.id });
       } catch (me) {}
     }
 
@@ -181,7 +181,7 @@ router.get('/:id/messages', (req, res) => {
 });
 
 // POST /api/conversations/:id/messages - POST a message, sync via Meta WhatsApp API, and broadcast
-router.post('/:id/messages', (req, res) => {
+router.post('/:id/messages', async (req, res) => {
   try {
     const { content } = req.body;
     const conversationId = req.params.id;
@@ -190,7 +190,7 @@ router.post('/:id/messages', (req, res) => {
 
     if (!content) return res.status(400).json({ error: 'El contenido es obligatorio.' });
 
-    const conv = get('SELECT * FROM conversations WHERE id = @id AND agency_id = @agency_id', { id: conversationId, agency_id: agencyId });
+    const conv = await get('SELECT * FROM conversations WHERE id = @id AND agency_id = @agency_id', { id: conversationId, agency_id: agencyId });
     if (!conv) return res.status(404).json({ error: 'Conversación no encontrada.' });
 
     const messagesList = conv.messages ? JSON.parse(conv.messages) : [];
@@ -206,7 +206,7 @@ router.post('/:id/messages', (req, res) => {
     };
     messagesList.push(newMsg);
 
-    run(
+    await run(
       `UPDATE conversations
        SET messages = @messages, updated_at = NOW()
        WHERE id = @id`,
@@ -214,7 +214,7 @@ router.post('/:id/messages', (req, res) => {
     );
 
     // Save to messages table
-    run(
+    await run(
       `INSERT INTO messages (id, conversation_id, author, content, message_type, created_at)
        VALUES (@id, @conversation_id, @author, @content, 'text', NOW())`,
       {
@@ -226,10 +226,10 @@ router.post('/:id/messages', (req, res) => {
     );
 
     // Fetch lead details
-    const lead = get('SELECT * FROM leads WHERE id = @id', { id: conv.lead_id });
+    const lead = await get('SELECT * FROM leads WHERE id = @id', { id: conv.lead_id });
 
     // WhatsApp config Meta Graph API check
-    const agency = get('SELECT wa_token, wa_phone_id FROM agencies WHERE id = @aid', { aid: agencyId });
+    const agency = await get('SELECT wa_token, wa_phone_id FROM agencies WHERE id = @aid', { aid: agencyId });
     if (agency?.wa_token && agency?.wa_phone_id && lead?.phone) {
       const phone = String(lead.phone).replace(/[\s\-\(\)\+]/g, '');
       const fullPhone = phone.startsWith('34') ? phone : `34${phone}`;
@@ -264,17 +264,17 @@ router.post('/:id/messages', (req, res) => {
 });
 
 // PATCH /api/conversations/:id - Toggle ia_handling
-router.patch('/:id', (req, res) => {
+router.patch('/:id', async (req, res) => {
   try {
     const { ia_handling } = req.body;
     const agencyId = req.user.agency_id;
     const conversationId = req.params.id;
 
-    const conv = get('SELECT * FROM conversations WHERE id = @id AND agency_id = @agency_id', { id: conversationId, agency_id: agencyId });
+    const conv = await get('SELECT * FROM conversations WHERE id = @id AND agency_id = @agency_id', { id: conversationId, agency_id: agencyId });
     if (!conv) return res.status(404).json({ error: 'Conversación no encontrada.' });
 
     const val = ia_handling ? 1 : 0;
-    run('UPDATE conversations SET ia_handling = @val, updated_at = datetime(\'now\') WHERE id = @id AND agency_id = @agency_id', {
+    await run('UPDATE conversations SET ia_handling = @val, updated_at = NOW() WHERE id = @id AND agency_id = @agency_id', {
       val,
       id: conversationId,
       agency_id: agencyId

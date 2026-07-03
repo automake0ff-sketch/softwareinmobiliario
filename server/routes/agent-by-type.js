@@ -92,7 +92,7 @@ router.post('/type/:type/chat', async (req, res) => {
 
     let lead = null
     if (lead_context.lead_id) {
-      lead = get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', {
+      lead = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', {
         id: lead_context.lead_id, agency_id: agencyId
       })
       if (lead) {
@@ -139,7 +139,7 @@ router.post('/type/:type/chat', async (req, res) => {
 
     // Log activity (fire and forget)
     const activityId = uuidv4()
-    run(
+    await run(
       `INSERT INTO activities (id, agency_id, lead_id, type, title, description, agent_type, created_at)
        VALUES (@id, @agency_id, @lead_id, 'ia_action', @title, @description, @agent_type, NOW())`,
       {

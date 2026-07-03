@@ -214,7 +214,7 @@ Fecha y hora: ${now.toLocaleString('es-ES', { timeZone: 'Europe/Madrid' })}`;
     }
 
     if (agentType === 'vendedor' && data.score_change) {
-      const lead = get('SELECT ia_score FROM leads WHERE id = @id', { id: leadId });
+      const lead = await get('SELECT ia_score FROM leads WHERE id = @id', { id: leadId });
       const newScore = Math.max(0, Math.min(100,
         (lead?.ia_score ?? 50) + Number(data.score_change)
       ));
@@ -225,7 +225,7 @@ Fecha y hora: ${now.toLocaleString('es-ES', { timeZone: 'Europe/Madrid' })}`;
 
     if (Object.keys(updates).length > 2) {
       const setClauses = Object.keys(updates).map(k => `${k} = @${k}`).join(', ');
-      const res = run(`UPDATE leads SET ${setClauses} WHERE id = @id AND agency_id = @agency_id`, {
+      const res = await run(`UPDATE leads SET ${setClauses} WHERE id = @id AND agency_id = @agency_id`, {
         ...updates,
         id: leadId,
         agency_id: this.agencyId,
@@ -237,7 +237,7 @@ Fecha y hora: ${now.toLocaleString('es-ES', { timeZone: 'Europe/Madrid' })}`;
 
   async logActivity(leadId, agentType, message, data) {
     const name = AGENT_META[agentType]?.name || agentType;
-    run(
+    await run(
       `INSERT INTO activities (id, agency_id, lead_id, type, title, description, agent_type, metadata, created_at)
        VALUES (@id, @agency_id, @lead_id, 'ia_action', @title, @description, @agent_type, @metadata, NOW())`,
       {
@@ -254,14 +254,14 @@ Fecha y hora: ${now.toLocaleString('es-ES', { timeZone: 'Europe/Madrid' })}`;
 
   async updateAgentStats(agentType) {
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const countRow = get(
+    const countRow = await get(
       `SELECT COUNT(*) as count FROM activities
        WHERE agency_id = @agency_id AND agent_type = @agent_type AND created_at >= @today`,
       { agency_id: this.agencyId, agent_type: agentType, today: today.toISOString() }
     );
     const count = countRow?.count || 0;
 
-    const agent = get('SELECT id, stats FROM ai_agents WHERE agency_id = @agency_id AND type = @type', {
+    const agent = await get('SELECT id, stats FROM ai_agents WHERE agency_id = @agency_id AND type = @type', {
       agency_id: this.agencyId,
       type: agentType
     });
@@ -276,7 +276,7 @@ Fecha y hora: ${now.toLocaleString('es-ES', { timeZone: 'Europe/Madrid' })}`;
       stats.last_action = new Date().toISOString();
       stats.last_action_text = `${AGENT_META[agentType]?.name || agentType} ejecutado`;
 
-      run('UPDATE ai_agents SET stats = @stats, last_action = datetime(\'now\') WHERE id = @id', {
+      await run('UPDATE ai_agents SET stats = @stats, last_action = NOW() WHERE id = @id', {
         stats: JSON.stringify(stats),
         id: agent.id,
       });
@@ -284,14 +284,14 @@ Fecha y hora: ${now.toLocaleString('es-ES', { timeZone: 'Europe/Madrid' })}`;
   }
 
   async loadLead(leadId) {
-    return get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', {
+    return await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', {
       id: leadId,
       agency_id: this.agencyId,
     });
   }
 
   async loadAgency() {
-    return get('SELECT * FROM agency_full_context WHERE agency_id = @id', {
+    return await get('SELECT * FROM agency_full_context WHERE agency_id = @id', {
       id: this.agencyId,
     });
   }

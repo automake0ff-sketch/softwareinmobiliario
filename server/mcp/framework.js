@@ -46,7 +46,7 @@ export class MCPServer {
   }
 }
 
-export function calculateCompatibility(lead, property) {
+export async function calculateCompatibility(lead, property) {
   let score = 0;
   if (!lead || !property) return 0;
   if (property.price <= (lead.budget || 999999999)) score += 30;
@@ -56,7 +56,7 @@ export function calculateCompatibility(lead, property) {
   return Math.min(score, 100);
 }
 
-export function getMatchReasons(lead, property) {
+export async function getMatchReasons(lead, property) {
   const reasons = [];
   if (property.price <= (lead.budget || 999999999)) reasons.push('Dentro del presupuesto');
   if (lead.zone && property.zone && lead.zone.toLowerCase() === property.zone.toLowerCase()) reasons.push('Misma zona');
@@ -65,8 +65,8 @@ export function getMatchReasons(lead, property) {
   return reasons;
 }
 
-function logActivity(agencyId, leadId, userId, type, description, metadata) {
-  run(
+async function logActivity(agencyId, leadId, userId, type, description, metadata) {
+  await run(
     `INSERT INTO activities (id, agency_id, lead_id, user_id, type, description, metadata, created_at)
      VALUES (@id, @aid, @lid, @uid, @type, @desc, @meta, NOW())`,
     {

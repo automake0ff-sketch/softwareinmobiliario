@@ -6,13 +6,13 @@ const server = new MCPServer('propia-calendar', '1.0.0');
 
 server
   .resource('calendar://today/agenda', 'Agenda del día', 'Visitas y tareas programadas para hoy', async (agencyId) => {
-    const visits = all(
+    const visits = await all(
       `SELECT t.*, l.name AS lead_name, l.phone AS lead_phone, p.title AS property_title
        FROM tasks t
        JOIN leads l ON l.id = t.lead_id
        LEFT JOIN properties p ON p.id = t.property_id
-       WHERE t.due_date >= datetime('now', 'start of day')
-       AND t.due_date < datetime('now', 'start of day', '+1 day')
+       WHERE t.due_date >= DATE_TRUNC('day', NOW())
+       AND t.due_date < DATE_TRUNC('day', NOW()) + INTERVAL '1 day'
        AND t.completed = 0
        ${agencyId ? 'AND l.agency_id = @aid' : ''}
        ORDER BY t.due_date ASC`,
@@ -21,7 +21,7 @@ server
     return { date: new Date().toISOString().split('T')[0], visits, total: visits.length };
   })
   .resource('calendar://agents/availability', 'Disponibilidad de comerciales', 'Huecos libres de todos los comerciales', async (agencyId) => {
-    const agents = all(
+    const agents = await all(
       `SELECT u.id, u.name, u.email, u.phone,
               (SELECT COUNT(*) FROM tasks WHERE assigned_to = u.id AND completed = 0 AND due_date >= NOW()) as pending_tasks,
               (SELECT COUNT(*) FROM leads WHERE assigned_to = u.id AND status NOT IN ('cerrado', 'reserva')) as active_leads
@@ -43,14 +43,14 @@ server
     },
     required: ['user_id'],
   }, async (args) => {
-    const user = get('SELECT id, name FROM users WHERE id = @id', { id: args.user_id });
+    const user = await get('SELECT id, name FROM users WHERE id = @id', { id: args.user_id });
     if (!user) throw new Error('Usuario no encontrado');
 
     const daysAhead = args.days_ahead || 5;
     const duration = args.duration_minutes || 60;
     const slots = [];
 
-    const existingTasks = all(
+    const existingTasks = await all(
       `SELECT due_date FROM tasks WHERE assigned_to = @uid AND completed = 0 AND due_date IS NOT NULL`,
       { uid: args.user_id }
     );
@@ -92,12 +92,12 @@ server
     },
     required: ['user_id', 'lead_id', 'scheduled_at'],
   }, async (args, context) => {
-    const lead = get('SELECT * FROM leads WHERE id = @id', { id: args.lead_id });
+    const lead = await get('SELECT * FROM leads WHERE id = @id', { id: args.lead_id });
     if (!lead) throw new Error('Lead no encontrado');
-    const commercial = get('SELECT name FROM users WHERE id = @id', { id: args.user_id });
+    const commercial = await get('SELECT name FROM users WHERE id = @id', { id: args.user_id });
 
     const taskId = uuidv4();
-    run(
+    await run(
       `INSERT INTO tasks (id, lead_id, assigned_to, title, description, due_date, created_at)
        VALUES (@id, @lid, @uid, @title, @desc, @due, NOW())`,
       {
@@ -108,12 +108,12 @@ server
       }
     );
 
-    run("UPDATE leads SET status = 'visita_agendada', updated_at = NOW() WHERE id = @id", { id: args.lead_id });
+    await run("UPDATE leads SET status = 'visita_agendada', updated_at = NOW() WHERE id = @id", { id: args.lead_id });
 
     logActivity(context.agencyId, args.lead_id, args.user_id, 'visita_creada',
       `Visita creada para ${args.scheduled_at} con ${commercial?.name || 'comercial'}`, { taskId, scheduled_at: args.scheduled_at });
 
-    const propertyTitle = args.property_id ? get('SELECT title FROM properties WHERE id = @id', { id: args.property_id })?.title : null;
+    const propertyTitle = args.property_id ? await get('SELECT title FROM properties WHERE id = @id', { id: args.property_id })?.title : null;
 
     return {
       success: true,
@@ -134,10 +134,10 @@ server
     },
     required: ['task_id'],
   }, async (args, context) => {
-    const task = get('SELECT * FROM tasks WHERE id = @id', { id: args.task_id });
+    const task = await get('SELECT * FROM tasks WHERE id = @id', { id: args.task_id });
     if (!task) throw new Error('Tarea no encontrada');
 
-    run('UPDATE tasks SET completed = 1 WHERE id = @id', { id: args.task_id });
+    await run('UPDATE tasks SET completed = 1 WHERE id = @id', { id: args.task_id });
     logActivity(context.agencyId, task.lead_id, context.userId, 'visita_cancelada',
       `Visita cancelada${args.reason ? ': ' + args.reason : ''}`, { taskId: args.task_id });
 
@@ -151,13 +151,13 @@ server
     },
     required: ['user_id'],
   }, async (args) => {
-    const tasks = all(
+    const tasks = await all(
       `SELECT t.*, l.name AS lead_name, l.phone AS lead_phone
        FROM tasks t
        JOIN leads l ON l.id = t.lead_id
        WHERE t.assigned_to = @uid AND t.completed = 0
-       AND t.due_date >= datetime('now', 'start of day')
-       AND t.due_date < datetime('now', 'start of day', '+1 day')
+       AND t.due_date >= DATE_TRUNC('day', NOW())
+       AND t.due_date < DATE_TRUNC('day', NOW()) + INTERVAL '1 day'
        ORDER BY t.due_date ASC`,
       { uid: args.user_id }
     );

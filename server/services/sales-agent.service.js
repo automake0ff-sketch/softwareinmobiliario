@@ -28,14 +28,14 @@ const SUGGESTED_ACTIONS = {
 };
 
 export async function suggestSalesAction(lead, agency, userId) {
-  const availableProperties = all(
+  const availableProperties = await all(
     `SELECT p.* FROM properties p
      WHERE p.agency_id = @aid AND p.status = 'disponible'
      ORDER BY p.created_at DESC LIMIT 5`,
     { aid: agency.id }
   );
 
-  const recentActivities = all(
+  const recentActivities = await all(
     `SELECT type, description, created_at FROM activities
      WHERE lead_id = @lid AND agency_id = @aid
      ORDER BY created_at DESC LIMIT 10`,
@@ -120,14 +120,14 @@ export async function executeSalesAction({ lead, agency, action, channel, messag
   }
 
   if (action === 'propose_appointment') {
-    const property = propertyId ? get('SELECT * FROM properties WHERE id = @id AND agency_id = @aid', { id: propertyId, aid: agency.id }) : null;
+    const property = propertyId ? await get('SELECT * FROM properties WHERE id = @id AND agency_id = @aid', { id: propertyId, aid: agency.id }) : null;
     const suggestion = await suggestAppointment({ lead, agency, property, userId });
     result.appointment_suggestion = suggestion;
   }
 
   if (channel === 'email' && lead.email) {
     try {
-      const property = propertyId ? get('SELECT * FROM properties WHERE id = @id AND agency_id = @aid', { id: propertyId, aid: agency.id }) : null;
+      const property = propertyId ? await get('SELECT * FROM properties WHERE id = @id AND agency_id = @aid', { id: propertyId, aid: agency.id }) : null;
       const sendResult = await sendAutomatedEmail({
         lead, agency, property,
         subject: action === 'reactivate' ? `Hola ${lead.name}, ¿sigues buscando?` :
@@ -154,7 +154,7 @@ export async function executeSalesAction({ lead, agency, action, channel, messag
     result.sent = waResult.success || waResult.mock;
   }
 
-  const updatedLead = get('SELECT * FROM leads WHERE id = @id', { id: lead.id });
+  const updatedLead = await get('SELECT * FROM leads WHERE id = @id', { id: lead.id });
   logActivity(agency.id, lead.id, userId, 'ia_action',
     `Vendedor IA: Acción "${action}" por canal "${channel}". ${result.sent ? 'Mensaje enviado.' : ''}`,
     result
@@ -166,7 +166,7 @@ export async function executeSalesAction({ lead, agency, action, channel, messag
     result,
   });
 
-  run(`UPDATE leads SET last_activity = NOW(), last_channel = @channel WHERE id = @id`,
+  await run(`UPDATE leads SET last_activity = NOW(), last_channel = @channel WHERE id = @id`,
     { id: lead.id, channel }
   );
 

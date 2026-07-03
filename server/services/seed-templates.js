@@ -328,20 +328,20 @@ const TEMPLATES = [
   },
 ]
 
-export function seedAutomationTemplates() {
+export async function seedAutomationTemplates() {
   let count = 0
   for (const t of TEMPLATES) {
     try {
-      const existing = get('SELECT id FROM automation_templates WHERE name = @name', { name: t.name })
+      const existing = await get('SELECT id FROM automation_templates WHERE name = @name', { name: t.name })
       if (existing) continue
 
-      run(
+      await run(
         `INSERT INTO automation_templates (id, name, description, category, difficulty,
           trigger_type, trigger_config, conditions, actions, min_plan, requires,
           installs, rating, is_active, is_featured, sort_order, created_at)
          VALUES (@id, @name, @description, @category, @difficulty,
           @trigger_type, @trigger_config, @conditions, @actions, @min_plan, @requires,
-          @installs, @rating, 1, @is_featured, @sort_order, NOW())`,
+          @installs, @rating, true, @is_featured, @sort_order, NOW())`,
         {
           id: uuidv4(),
           name: t.name,
@@ -356,7 +356,7 @@ export function seedAutomationTemplates() {
           requires: t.requires,
           installs: t.installs || 0,
           rating: 0,
-          is_featured: t.is_featured ? 1 : 0,
+          is_featured: t.is_featured ? true : false,
           sort_order: t.sort_order || 0,
         }
       )
@@ -367,6 +367,6 @@ export function seedAutomationTemplates() {
   }
 
   if (count > 0) console.log(`[Seed Templates] ${count} plantillas globales insertadas`)
-  const total = get('SELECT COUNT(*) as c FROM automation_templates')
+  const total = await get('SELECT COUNT(*) as c FROM automation_templates')
   console.log(`[Seed Templates] Total en DB: ${total?.c || 0} plantillas`)
 }

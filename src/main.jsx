@@ -33,9 +33,9 @@ try {
   console.warn('localStorage no disponible, iniciando sin sesión previa')
 }
 
-if (storedUser) {
+if (storedUser && storedUser.token) {
   api.setAuth(
-    storedUser.token || 'demo-token-dev',
+    storedUser.token,
     storedUser.id,
     storedUser.role || 'manager',
     storedUser.agency_id,

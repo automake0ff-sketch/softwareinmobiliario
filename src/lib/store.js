@@ -3,9 +3,9 @@ import { persist } from 'zustand/middleware'
 import api from './api'
 
 function syncAuth(user) {
-  if (user) {
+  if (user && user.token) {
     api.setAuth(
-      user.token || 'demo-token-dev',
+      user.token,
       user.id,
       user.role || 'manager',
       user.agency_id,

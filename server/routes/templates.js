@@ -22,19 +22,19 @@ const REQUIRES_ICONS = {
   sheets: '📊', webhook: '🔗',
 };
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const agencyId = req.user.agency_id;
     const category = req.query.category;
 
-    const agency = get('SELECT plan FROM agencies WHERE id = @id', { id: agencyId });
+    const agency = await get('SELECT plan FROM agencies WHERE id = @id', { id: agencyId });
     if (!agency) return res.status(404).json({ error: 'Agencia no encontrada' });
 
     const agencyPlanLevel = PLAN_ORDER[agency.plan] || 1;
 
     let query = `
       SELECT * FROM automation_templates
-      WHERE is_active = 1
+      WHERE is_active = true
     `;
     const params = {};
     if (category) {
@@ -45,7 +45,7 @@ router.get('/', (req, res) => {
 
     const templates = all(query, params);
 
-    const agencyAutomations = all(
+    const agencyAutomations = await all(
       'SELECT template_id FROM automations WHERE agency_id = @aid AND template_id IS NOT NULL',
       { aid: agencyId }
     );
@@ -71,14 +71,14 @@ router.get('/', (req, res) => {
   }
 });
 
-router.post('/:id/install', checkLimit('automations'), (req, res) => {
+router.post('/:id/install', checkLimit('automations'), async (req, res) => {
   try {
     const agencyId = req.user.agency_id;
     const templateId = req.params.id;
 
     // 1. Carga la plantilla de automation_templates
-    const template = get(
-      'SELECT * FROM automation_templates WHERE id = @id AND is_active = 1',
+    const template = await get(
+      'SELECT * FROM automation_templates WHERE id = @id AND is_active = true',
       { id: templateId }
     );
     if (!template) {
@@ -86,7 +86,7 @@ router.post('/:id/install', checkLimit('automations'), (req, res) => {
     }
 
     // 2. Verifica que el plan de la agencia permite esta plantilla (comparar min_plan con plan actual)
-    const agency = get('SELECT plan FROM agencies WHERE id = @id', { id: agencyId });
+    const agency = await get('SELECT plan FROM agencies WHERE id = @id', { id: agencyId });
     if (!agency) return res.status(404).json({ error: 'Agencia no encontrada' });
 
     const agencyPlanLevel = PLAN_ORDER[agency.plan] || 1;
@@ -102,7 +102,7 @@ router.post('/:id/install', checkLimit('automations'), (req, res) => {
     }
 
     // 3. Comprueba si ya está instalada (busca en automations WHERE template_id=X AND agency_id=Y)
-    const existing = get(
+    const existing = await get(
       'SELECT id FROM automations WHERE agency_id = @aid AND template_id = @template_id',
       { aid: agencyId, template_id: templateId }
     );
@@ -112,7 +112,7 @@ router.post('/:id/install', checkLimit('automations'), (req, res) => {
 
     // 4. Si no está instalada, hace INSERT en automations con is_active=false y template_id referenciando la plantilla
     const automationId = uuidv4();
-    run(
+    await run(
       `INSERT INTO automations (id, agency_id, name, description, is_active, active,
         trigger_type, trigger_event, trigger_config, conditions, actions, run_count, created_at, template_id)
        VALUES (@id, @agency_id, @name, @description, 0, 0,
@@ -131,7 +131,7 @@ router.post('/:id/install', checkLimit('automations'), (req, res) => {
     );
 
     // 5. Incrementa automation_templates.installs en +1
-    run('UPDATE automation_templates SET installs = installs + 1 WHERE id = @id', { id: templateId });
+    await run('UPDATE automation_templates SET installs = installs + 1 WHERE id = @id', { id: templateId });
 
     console.log(`[TEMPLATES] Installed template "${template.name}" (ID: ${templateId}) for agency ${agencyId}`);
 
@@ -148,9 +148,9 @@ router.post('/:id/install', checkLimit('automations'), (req, res) => {
   }
 });
 
-router.get('/categories', (req, res) => {
-  const categories = all(
-    'SELECT category, COUNT(*) as count FROM automation_templates WHERE is_active = 1 GROUP BY category ORDER BY count DESC'
+router.get('/categories', async (req, res) => {
+  const categories = await all(
+    'SELECT category, COUNT(*) as count FROM automation_templates WHERE is_active = true GROUP BY category ORDER BY count DESC'
   );
   res.json(categories);
 });

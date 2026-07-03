@@ -130,7 +130,7 @@ export class ActionExecutor {
           });
           if (eventCreated) actions.push('Evento creado en Google Calendar ✓');
 
-          run("UPDATE leads SET pipeline_stage = 'visita_agendada', status = 'visita_agendada', pipeline_stage_updated_at = NOW() WHERE id = @id", { id: leadId });
+          await run("UPDATE leads SET pipeline_stage = 'visita_agendada', status = 'visita_agendada', pipeline_stage_updated_at = NOW() WHERE id = @id", { id: leadId });
           actions.push('Lead movido a Visita agendada');
         }
 
@@ -141,13 +141,13 @@ export class ActionExecutor {
 
       case 'documentador': {
         const docTypes = ['dni', 'nomina', 'extracto', 'vida_laboral'];
-        const existingDocs = all('SELECT type FROM documents WHERE lead_id = @lead_id', { lead_id: leadId });
+        const existingDocs = await all('SELECT type FROM documents WHERE lead_id = @lead_id', { lead_id: leadId });
         const existingTypes = new Set(existingDocs?.map(d => d.type));
         const newDocs = docTypes.filter(t => !existingTypes.has(t));
 
         if (newDocs.length > 0) {
           for (const type of newDocs) {
-            run(
+            await run(
               `INSERT INTO documents (id, lead_id, type, name, status, requested_at, created_at)
                VALUES (@id, @lead_id, @type, @name, 'pending', NOW(), NOW())`,
               {
@@ -195,7 +195,7 @@ export class ActionExecutor {
       }
 
       case 'tasador': {
-        run("UPDATE leads SET ia_summary = @msg, updated_at = NOW() WHERE id = @id", { msg: message.slice(0, 1000), id: leadId });
+        await run("UPDATE leads SET ia_summary = @msg, updated_at = NOW() WHERE id = @id", { msg: message.slice(0, 1000), id: leadId });
         actions.push('Valoración guardada en el perfil del lead');
 
         if (ctx.email && ctx.sg_key && ctx.sg_from_email) {
@@ -244,7 +244,7 @@ export class ActionExecutor {
           actions.push('Reactivación detectada — Vendedor IA alertado');
         }
         if (nurData?.archive_after_this) {
-          run("UPDATE leads SET pipeline_stage = 'archivo', status = 'cerrado', updated_at = NOW() WHERE id = @id", { id: leadId });
+          await run("UPDATE leads SET pipeline_stage = 'archivo', status = 'cerrado', updated_at = NOW() WHERE id = @id", { id: leadId });
           actions.push('Lead archivado después del último intento');
         }
         break;
@@ -252,7 +252,7 @@ export class ActionExecutor {
 
       case 'seo':
       case 'copywriter': {
-        run(
+        await run(
           `INSERT INTO activities (id, agency_id, lead_id, type, title, description, agent_type, created_at)
            VALUES (@id, @agency_id, @lead_id, 'ia_action', @title, @description, @agent_type, NOW())`,
           {
@@ -273,11 +273,11 @@ export class ActionExecutor {
   }
 
   async saveMessageToConversation(leadId, agentType, message) {
-    let conv = get("SELECT id FROM conversations WHERE lead_id = @id AND channel = 'whatsapp' LIMIT 1", { id: leadId });
+    let conv = await get("SELECT id FROM conversations WHERE lead_id = @id AND channel = 'whatsapp' LIMIT 1", { id: leadId });
 
     if (!conv) {
       const newId = uuidv4();
-      run(
+      await run(
         `INSERT INTO conversations (id, lead_id, agency_id, channel, created_at)
          VALUES (@id, @lead_id, @agency_id, 'whatsapp', NOW())`,
         { id: newId, lead_id: leadId, agency_id: this.agencyId }
@@ -286,7 +286,7 @@ export class ActionExecutor {
     }
 
     if (conv?.id) {
-      run(
+      await run(
         `INSERT INTO messages (id, conversation_id, author, content, message_type, created_at)
          VALUES (@id, @conversation_id, 'ia_agent', @content, 'text', NOW())`,
         {
@@ -301,14 +301,14 @@ export class ActionExecutor {
   async createTask(leadId, task) {
     let assignedTo = null;
     if (task.assign_to_role) {
-      const user = get("SELECT id FROM users WHERE agency_id = @agency_id AND role = @role AND active = 1 LIMIT 1", {
+      const user = await get("SELECT id FROM users WHERE agency_id = @agency_id AND role = @role AND active = 1 LIMIT 1", {
         agency_id: this.agencyId,
         role: task.assign_to_role,
       });
       assignedTo = user?.id || null;
     }
 
-    run(
+    await run(
       `INSERT INTO tasks (id, lead_id, assigned_to, title, description, due_date, completed, created_at)
        VALUES (@id, @lead_id, @assigned_to, @title, @description, @due, 0, NOW())`,
       {
@@ -325,14 +325,14 @@ export class ActionExecutor {
   async notifyTeam(message, level, ctx) {
     const roles = level === 'urgente' ? ['admin', 'manager'] : ['admin', 'manager', 'comercial'];
     const placeholders = roles.map(() => '?').join(',');
-    const users = all(`SELECT id FROM users WHERE agency_id = ? AND active = 1 AND role IN (${placeholders})`, [
+    const users = await all(`SELECT id FROM users WHERE agency_id = ? AND active = 1 AND role IN (${placeholders})`, [
       this.agencyId, ...roles
     ]);
 
     if (!users?.length) return;
 
     for (const u of users) {
-      run(
+      await run(
         `INSERT INTO notifications (id, agency_id, user_id, lead_id, title, body, type, read, created_at)
          VALUES (@id, @agency_id, @user_id, @lead_id, @title, @body, @type, 0, NOW())`,
         {

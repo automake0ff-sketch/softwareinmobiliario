@@ -436,12 +436,12 @@ export const N8N_AUTOMATIONS = [
   },
 ]
 
-function seedAutomationList(agency, list, label) {
+async function seedAutomationList(agency, list, label) {
   let count = 0
   for (const auto of list) {
-    const existing = get('SELECT id FROM automations WHERE agency_id = @aid AND name = @name', { aid: agency.id, name: auto.name })
+    const existing = await get('SELECT id FROM automations WHERE agency_id = @aid AND name = @name', { aid: agency.id, name: auto.name })
     if (existing) continue
-    run(
+    await run(
       `INSERT INTO automations (id, agency_id, name, description, is_active, trigger_type, trigger_event, trigger_config, conditions, actions, run_count, created_at)
        VALUES (@id, @agency_id, @name, @description, 1, @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, 0, NOW())`,
       {
@@ -459,13 +459,13 @@ function seedAutomationList(agency, list, label) {
   return count
 }
 
-export function seedDestinationsAutomations() {
-  const agencies = all('SELECT id FROM agencies')
+export async function seedDestinationsAutomations() {
+  const agencies = await all('SELECT id FROM agencies')
   let total = 0
 
   for (const agency of agencies) {
-    total += seedAutomationList(agency, N8N_AUTOMATIONS, 'automatizaciones n8n')
-    total += seedAutomationList(agency, FULL_N8N_TEMPLATES, 'plantillas n8n completas')
+    total += await seedAutomationList(agency, N8N_AUTOMATIONS, 'automatizaciones n8n')
+    total += await seedAutomationList(agency, FULL_N8N_TEMPLATES, 'plantillas n8n completas')
   }
 
   if (total > 0) console.log(`[Seed] Total: ${total} nuevas automatizaciones insertadas`)

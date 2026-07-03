@@ -10,14 +10,14 @@ export class CalendarManager {
       // Intentar obtener token de Google Calendar si el usuario asignado lo tiene
       let user = null;
       if (opts.assignedUserId) {
-        user = get('SELECT id, google_sheets_id as google_calendar_token, name FROM users WHERE id = @id', {
+        user = await get('SELECT id, google_sheets_id as google_calendar_token, name FROM users WHERE id = @id', {
           id: opts.assignedUserId
         });
       }
 
       if (!user || !user.google_calendar_token) {
         // Sin token de calendar, solo guardar visita en base de datos local SQLite
-        run(
+        await run(
           `INSERT INTO visits (id, lead_id, assigned_to, scheduled_at, notes, status, created_at)
            VALUES (@id, @lead_id, @assigned_to, @scheduled_at, @notes, 'scheduled', NOW())`,
           {
@@ -62,7 +62,7 @@ export class CalendarManager {
 
       if (res.ok) {
         const event = await res.json();
-        run(
+        await run(
           `INSERT INTO visits (id, lead_id, assigned_to, scheduled_at, notes, status, created_at)
            VALUES (@id, @lead_id, @assigned_to, @scheduled_at, @notes, 'scheduled', NOW())`,
           {

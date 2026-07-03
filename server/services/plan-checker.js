@@ -67,19 +67,19 @@ export function checkLimit(type) {
       let currentCount = 0
 
       if (type === 'leads') {
-        const row = get("SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND created_at >= date('now', 'start of month')", { aid: agencyId })
+        const row = await get("SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND created_at >= date('now', 'start of month')", { aid: agencyId })
         currentCount = row?.count || 0
       } else if (type === 'users') {
-        const row = get("SELECT COUNT(*) as count FROM users WHERE agency_id = @aid AND active = 1", { aid: agencyId })
+        const row = await get("SELECT COUNT(*) as count FROM users WHERE agency_id = @aid AND active = 1", { aid: agencyId })
         currentCount = row?.count || 0
       } else if (type === 'offices') {
-        const row = get("SELECT COUNT(*) as count FROM offices WHERE agency_id = @aid", { aid: agencyId })
+        const row = await get("SELECT COUNT(*) as count FROM offices WHERE agency_id = @aid", { aid: agencyId })
         currentCount = row?.count || 0
       } else if (type === 'agents') {
-        const row = get("SELECT COUNT(*) as count FROM ai_agents WHERE agency_id = @aid AND status = 'active'", { aid: agencyId })
+        const row = await get("SELECT COUNT(*) as count FROM ai_agents WHERE agency_id = @aid AND status = 'active'", { aid: agencyId })
         currentCount = row?.count || 0
       } else if (type === 'automations') {
-        const row = get("SELECT COUNT(*) as count FROM automations WHERE agency_id = @aid AND is_active = 1", { aid: agencyId })
+        const row = await get("SELECT COUNT(*) as count FROM automations WHERE agency_id = @aid AND is_active = 1", { aid: agencyId })
         currentCount = row?.count || 0
       }
 

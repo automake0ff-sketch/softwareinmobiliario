@@ -696,14 +696,14 @@ const AUTOMATIONS = [
   },
 ]
 
-export function seedN8nAutomations() {
-  const existing = get('SELECT COUNT(*) as c FROM automations WHERE name LIKE \'[N8N]%\'')
+export async function seedN8nAutomations() {
+  const existing = await get('SELECT COUNT(*) as c FROM automations WHERE name LIKE \'[N8N]%\'')
   if (existing && existing.c >= 35) {
     console.log(`[Seed N8N] Ya existen ${existing.c} automatizaciones. Saltando.`)
     return
   }
 
-  const allAgencies = all('SELECT id FROM agencies')
+  const allAgencies = await all('SELECT id FROM agencies')
   if (!allAgencies || allAgencies.length === 0) {
     console.log('[Seed N8N] No hay agencias. Se insertarán cuando exista una.')
     return
@@ -715,7 +715,7 @@ export function seedN8nAutomations() {
 
     for (const auto of AUTOMATIONS) {
       try {
-        run(
+        await run(
           `INSERT INTO automations (id, agency_id, name, description, trigger_type, trigger_config, conditions, actions, is_active, run_count, created_at)
            VALUES (@id, @agency_id, @name, @description, @trigger_type, @trigger_config, @conditions, @actions, 1, 0, NOW())`,
           {

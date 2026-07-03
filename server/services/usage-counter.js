@@ -1,25 +1,25 @@
 import { v4 as uuidv4 } from 'uuid'
 import { get, run } from '../db/db.js'
 
-function currentPeriod() {
+async function currentPeriod() {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
-export function incrementUsage(agencyId, counter, amount = 1) {
+export async function incrementUsage(agencyId, counter, amount = 1) {
   const period = currentPeriod()
-  const existing = get(
+  const existing = await get(
     'SELECT id, value FROM usage_monthly WHERE agency_id = @aid AND period = @period AND counter = @counter',
     { aid: agencyId, period, counter }
   )
   if (existing) {
-    run(
+    await run(
       `UPDATE usage_monthly SET value = value + @amount, updated_at = NOW()
        WHERE id = @id`,
       { id: existing.id, amount }
     )
   } else {
-    run(
+    await run(
       `INSERT INTO usage_monthly (id, agency_id, period, counter, value, created_at, updated_at)
        VALUES (@id, @aid, @period, @counter, @amount, NOW(), NOW())`,
       { id: uuidv4(), aid: agencyId, period, counter, amount }
@@ -27,9 +27,9 @@ export function incrementUsage(agencyId, counter, amount = 1) {
   }
 }
 
-export function getUsage(agencyId, counter) {
+export async function getUsage(agencyId, counter) {
   const period = currentPeriod()
-  const row = get(
+  const row = await get(
     'SELECT value FROM usage_monthly WHERE agency_id = @aid AND period = @period AND counter = @counter',
     { aid: agencyId, period, counter }
   )

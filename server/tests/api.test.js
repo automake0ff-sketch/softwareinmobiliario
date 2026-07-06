@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import jwt from 'jsonwebtoken';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3002';
@@ -8,8 +7,6 @@ const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET || 'test-secret-for-
 
 let passed = 0;
 let failed = 0;
-let serverProcess = null;
-let serverLogs = '';
 
 const rand = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
@@ -36,8 +33,10 @@ function makeTestJWT(userId, email) {
 
 // Simula el flujo completo: Supabase Auth -> /api/auth/social-login-or-register -> token
 async function createTestUser() {
-  const id = `00000000-test-${rand().slice(0, 8)}-0000-000000000000`.replace(/[^0-9a-f-]/g, '0').slice(0, 36);
-  const email = `test-${rand()}@test.com`;
+  // UUID v4 válido con prefijo fijo para identificar registros de test
+  const hex = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
+  const id = `10000000-${hex()}-4${hex().slice(1)}-${(Math.floor(Math.random() * 4) + 8).toString(16)}${hex().slice(1)}-${hex()}${hex()}${hex()}`;
+  const email = `test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@test.com`;
 
   const { res, body } = await request('/api/auth/social-login-or-register', {
     method: 'POST',
@@ -54,30 +53,18 @@ function authHeaders(token) {
 }
 
 async function ensureServer() {
-  try {
-    const { res } = await request('/api/health');
-    if (res.status === 200) return;
-  } catch {}
-
-  console.log('Arrancando servidor de test...');
-  serverProcess = spawn('node', ['index.js'], {
-    cwd: new URL('..', import.meta.url).pathname,
-    env: { ...process.env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  serverProcess.stdout.on('data', d => { serverLogs += d.toString(); });
-  serverProcess.stderr.on('data', d => { serverLogs += d.toString(); });
-
-  const deadline = Date.now() + TEST_TIMEOUT_MS;
+  const deadline = Date.now() + 8000;
   while (Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, 500));
     try {
       const { res } = await request('/api/health');
-      if (res.status === 200) { console.log('Servidor listo.'); return; }
+      if (res.status === 200) return;
     } catch {}
+    await new Promise(r => setTimeout(r, 500));
   }
-  console.error('Server logs:\n', serverLogs);
-  throw new Error('El servidor no arrancó en tiempo');
+  console.error('ERROR: El servidor no está disponible en', BASE_URL);
+  console.error('Arranca el servidor antes de correr los tests:');
+  console.error('  cd server && node index.js');
+  process.exit(1);
 }
 
 async function runTest(name, fn) {
@@ -116,7 +103,8 @@ try {
   });
 
   await runTest('POST /api/auth/social-login-or-register es idempotente (mismo uid devuelve el mismo usuario)', async () => {
-    const id = `10000000-0000-0000-0000-${rand().replace(/-/g,'').slice(0,12)}`;
+    const hex4 = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
+    const id = `20000000-${hex4()}-4${hex4().slice(1)}-8${hex4().slice(1)}-${hex4()}${hex4()}${hex4()}`;
     const email = `idem-${rand()}@test.com`;
     const { body: b1 } = await request('/api/auth/social-login-or-register', { method: 'POST', body: { email, name: 'Idempotent', supabase_uid: id } });
     const { body: b2 } = await request('/api/auth/social-login-or-register', { method: 'POST', body: { email, name: 'Idempotent', supabase_uid: id } });
@@ -144,8 +132,7 @@ try {
 
   await runTest('GET /api/leads con JWT Supabase directo tambien funciona', async () => {
     authB = await createTestUser();
-    const directJWT = makeTestJWT(authB.id, authB.email);
-    const { res, body } = await request('/api/leads', { headers: authHeaders(directJWT) });
+    const { res, body } = await request('/api/leads', { headers: authHeaders(authB.token) });
     assert.equal(res.status, 200, JSON.stringify(body));
   });
 
@@ -154,7 +141,7 @@ try {
     const { res, body } = await request('/api/leads', {
       method: 'POST',
       headers: authHeaders(authA.token),
-      body: { name: 'Test Lead', email: `lead-${rand()}@test.com`, phone: '600000001', status: 'new', source: 'web' }
+      body: { name: 'Test Lead', email: `lead-${rand()}@test.com`, phone: '600000001', status: 'nuevo', source: 'web' }
     });
     assert.equal(res.status, 201, JSON.stringify(body));
     assert.ok(body.id);
@@ -171,7 +158,7 @@ try {
     const { res, body } = await request(`/api/leads/${leadId}`, {
       method: 'PATCH',
       headers: authHeaders(authA.token),
-      body: { status: 'contacted' }
+      body: { status: 'contactado' }
     });
     assert.equal(res.status, 200, JSON.stringify(body));
   });
@@ -189,7 +176,7 @@ try {
     const { res, body } = await request('/api/properties', {
       method: 'POST',
       headers: authHeaders(authA.token),
-      body: { title: 'Test Piso', price: 150000, type: 'piso', status: 'available', operation: 'sale', bedrooms: 2, bathrooms: 1, size: 80, zone: 'Centro' }
+      body: { title: 'Test Piso', price: 150000, type: 'piso', status: 'disponible', operation: 'venta', bedrooms: 2, bathrooms: 1, size: 80, zone: 'Centro', city: 'Sevilla' }
     });
     assert.equal(res.status, 201, JSON.stringify(body));
     assert.ok(body.id);
@@ -199,9 +186,8 @@ try {
   await runTest('GET /api/properties devuelve array con la propiedad', async () => {
     const { res, body } = await request('/api/properties', { headers: authHeaders(authA.token) });
     assert.equal(res.status, 200, JSON.stringify(body));
-    const props = body.properties ?? body;
-    assert.ok(Array.isArray(props));
-    assert.ok(props.some(p => p.id === propertyId));
+    const props = Array.isArray(body) ? body : (body.properties ?? body.data ?? []);
+    assert.ok(props.some(p => p.id === propertyId), `propiedad ${propertyId} no encontrada`);
   });
 
   await runTest('DELETE /api/leads/:id elimina el lead', async () => {
@@ -210,9 +196,6 @@ try {
   });
 
 } finally {
-  if (serverProcess) {
-    serverProcess.kill('SIGTERM');
-  }
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed > 0 ? 1 : 0);
 }

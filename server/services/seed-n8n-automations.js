@@ -717,7 +717,7 @@ export async function seedN8nAutomations() {
       try {
         await run(
           `INSERT INTO automations (id, agency_id, name, description, trigger_type, trigger_config, conditions, actions, is_active, run_count, created_at)
-           VALUES (@id, @agency_id, @name, @description, @trigger_type, @trigger_config, @conditions, @actions, 1, 0, NOW())`,
+           VALUES (@id, @agency_id, @name, @description, @trigger_type, @trigger_config, @conditions, @actions, true, 0, NOW())`,
           {
             id: uuidv4(),
             agency_id: agencyId,

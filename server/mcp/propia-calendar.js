@@ -13,7 +13,7 @@ server
        LEFT JOIN properties p ON p.id = t.property_id
        WHERE t.due_date >= DATE_TRUNC('day', NOW())
        AND t.due_date < DATE_TRUNC('day', NOW()) + INTERVAL '1 day'
-       AND t.completed = 0
+       AND t.completed = false
        ${agencyId ? 'AND l.agency_id = @aid' : ''}
        ORDER BY t.due_date ASC`,
       agencyId ? { aid: agencyId } : {}
@@ -23,7 +23,7 @@ server
   .resource('calendar://agents/availability', 'Disponibilidad de comerciales', 'Huecos libres de todos los comerciales', async (agencyId) => {
     const agents = await all(
       `SELECT u.id, u.name, u.email, u.phone,
-              (SELECT COUNT(*) FROM tasks WHERE assigned_to = u.id AND completed = 0 AND due_date >= NOW()) as pending_tasks,
+              (SELECT COUNT(*) FROM tasks WHERE assigned_to = u.id AND completed = false AND due_date >= NOW()) as pending_tasks,
               (SELECT COUNT(*) FROM leads WHERE assigned_to = u.id AND status NOT IN ('cerrado', 'reserva')) as active_leads
        FROM users u WHERE u.role = 'comercial' AND u.active = 1
        ${agencyId ? 'AND u.agency_id = @aid' : ''}
@@ -51,7 +51,7 @@ server
     const slots = [];
 
     const existingTasks = await all(
-      `SELECT due_date FROM tasks WHERE assigned_to = @uid AND completed = 0 AND due_date IS NOT NULL`,
+      `SELECT due_date FROM tasks WHERE assigned_to = @uid AND completed = false AND due_date IS NOT NULL`,
       { uid: args.user_id }
     );
     const busyTimes = new Set(existingTasks.map(t => t.due_date?.substring(0, 16)));
@@ -137,7 +137,7 @@ server
     const task = await get('SELECT * FROM tasks WHERE id = @id', { id: args.task_id });
     if (!task) throw new Error('Tarea no encontrada');
 
-    await run('UPDATE tasks SET completed = 1 WHERE id = @id', { id: args.task_id });
+    await run('UPDATE tasks SET completed = true WHERE id = @id', { id: args.task_id });
     logActivity(context.agencyId, task.lead_id, context.userId, 'visita_cancelada',
       `Visita cancelada${args.reason ? ': ' + args.reason : ''}`, { taskId: args.task_id });
 
@@ -155,7 +155,7 @@ server
       `SELECT t.*, l.name AS lead_name, l.phone AS lead_phone
        FROM tasks t
        JOIN leads l ON l.id = t.lead_id
-       WHERE t.assigned_to = @uid AND t.completed = 0
+       WHERE t.assigned_to = @uid AND t.completed = false
        AND t.due_date >= DATE_TRUNC('day', NOW())
        AND t.due_date < DATE_TRUNC('day', NOW()) + INTERVAL '1 day'
        ORDER BY t.due_date ASC`,

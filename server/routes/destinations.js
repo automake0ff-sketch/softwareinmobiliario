@@ -11,10 +11,11 @@ router.use(auth)
 router.get('/', async (req, res) => {
   try {
     const agencyId = req.user.agency_id
-    const destinations = await all(
+    const rawDests = await all(
       'SELECT id, type, name, is_active, last_tested_at, last_test_ok, created_at FROM agency_destinations WHERE agency_id = @agency_id ORDER BY created_at DESC',
       { agency_id: agencyId }
-    ).map(d => ({ ...d, credentials: undefined }))
+    )
+    const destinations = rawDests.map(d => ({ ...d, credentials: undefined }))
 
     res.json(destinations)
   } catch (error) {

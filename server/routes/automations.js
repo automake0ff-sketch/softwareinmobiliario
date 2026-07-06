@@ -17,10 +17,11 @@ router.get('/', async (req, res) => {
     const agencyId = req.user.agency_id
     if (!agencyId) return res.status(400).json({ error: 'agency_id requerido' })
 
-    const automations = await all(
+    const rawAutomations = await all(
       'SELECT * FROM automations WHERE agency_id = @agency_id ORDER BY created_at DESC',
       { agency_id: agencyId }
-    ).map(a => ({
+    )
+    const automations = rawAutomations.map(a => ({
       ...a,
       conditions: a.conditions ? JSON.parse(a.conditions) : [],
       actions: a.actions ? JSON.parse(a.actions) : [],

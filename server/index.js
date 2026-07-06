@@ -180,11 +180,12 @@ async function start() {
   app.use('/api/automations', (await import('./routes/automations.js')).default);
   app.use('/api/automations', (await import('./routes/automations-execute-realtime.js')).default);
   app.use('/api/destinations', (await import('./routes/destinations.js')).default);
-  app.use('/api/auth/register', authLimiter, (await import('./routes/register.js')).default);
-  app.use('/api/login', authLimiter, (await import('./routes/login.js')).default);
-  // Endpoint para sincronizar sesión social y obtener JWT propio
+  // Auth routes — el router general DEBE montarse antes que las rutas específicas
+  // que comparten el mismo prefijo /api/auth, o Express las intercepta
   const authSyncRouter = (await import('./routes/auth-sync.js')).default;
   app.use('/api/auth', authSyncRouter);
+  app.use('/api/auth/register', authLimiter, (await import('./routes/register.js')).default);
+  app.use('/api/login', authLimiter, (await import('./routes/login.js')).default);
   app.use('/api/templates', (await import('./routes/templates.js')).default);
   app.use('/api/admin', (await import('./routes/admin.js')).default);
   app.use('/api/leads', (await import('./routes/lead-preferences.js')).default);
@@ -333,7 +334,7 @@ async function start() {
       if (type === 'daily_briefing') {
         const managers = all('SELECT * FROM users WHERE agency_id = @agency_id AND role = \'manager\'', { agency_id: agencyId });
         const leads = all('SELECT * FROM leads WHERE agency_id = @agency_id');
-        const tasks = all('SELECT * FROM tasks WHERE completed = 0');
+        const tasks = all('SELECT * FROM tasks WHERE completed = false');
         const visits = await all(`SELECT * FROM activities WHERE type = 'visita' AND created_at >= NOW() - INTERVAL '1 day'`);
         const properties = all('SELECT * FROM properties WHERE agency_id = @agency_id AND status = \'disponible\'', { agency_id: agencyId });
 
@@ -723,14 +724,14 @@ async function start() {
 
   try {
     const { seedDestinationsAutomations } = await import('./services/seed-automations.js');
-    seedDestinationsAutomations();
+    await seedDestinationsAutomations().catch(e => console.log('[Seed] Error seeding destination automations:', e.message));
   } catch (e) {
     console.log('[Seed] Error seeding destination automations:', e.message);
   }
 
   try {
     const { seedN8nAutomations } = await import('./services/seed-n8n-automations.js');
-    seedN8nAutomations();
+    await seedN8nAutomations().catch(e => console.log('[Seed] Error seeding n8n automations:', e.message));
   } catch (e) {
     console.log('[Seed] Error seeding n8n automations:', e.message);
   }

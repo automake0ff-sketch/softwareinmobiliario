@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "test": "node tests/api.test.js"
+    "test": "node tests/run-tests.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",

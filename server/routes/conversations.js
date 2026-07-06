@@ -116,7 +116,8 @@ router.get('/', async (req, res) => {
     `;
     const params = { agency_id: agencyId };
 
-    const conversations = all(sql, params).map(c => {
+    const rawConversations = await all(sql, params);
+    const conversations = rawConversations.map(c => {
       const messagesList = c.messages ? JSON.parse(c.messages) : [];
       const unreadCount = messagesList.filter(m => (m.role === 'lead' || m.sender_type === 'lead') && !m.is_read).length;
 

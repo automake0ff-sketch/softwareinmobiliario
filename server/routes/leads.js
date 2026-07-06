@@ -71,14 +71,12 @@ router.get('/', async (req, res) => {
       params.offset = offsetNum;
     }
 
-    const leads = all(querySql, params).map(l => {
-      // Ensure compatible fields
-      return {
-        ...l,
-        zones: l.zones ? JSON.parse(l.zones) : [],
-        ia_insights: l.ia_insights ? JSON.parse(l.ia_insights) : [],
-      };
-    });
+    const rawLeads = await all(querySql, params);
+    const leads = rawLeads.map(l => ({
+      ...l,
+      zones: l.zones ? JSON.parse(l.zones) : [],
+      ia_insights: l.ia_insights ? JSON.parse(l.ia_insights) : [],
+    }));
 
     res.json({
       leads,
@@ -108,18 +106,20 @@ router.get('/:id', async (req, res) => {
     lead.zones = lead.zones ? JSON.parse(lead.zones) : [];
     lead.ia_insights = lead.ia_insights ? JSON.parse(lead.ia_insights) : [];
 
-    const activities = await all(
+    const rawActivities = await all(
       'SELECT * FROM activities WHERE lead_id = @lead_id ORDER BY created_at DESC LIMIT 30',
       { lead_id: req.params.id }
-    ).map(a => ({
+    );
+    const activities = rawActivities.map(a => ({
       ...a,
       metadata: a.metadata ? JSON.parse(a.metadata) : null,
     }));
 
-    const conversations = await all(
+    const rawConversations = await all(
       'SELECT * FROM conversations WHERE lead_id = @lead_id ORDER BY created_at DESC',
       { lead_id: req.params.id }
-    ).map(c => {
+    );
+    const conversations = rawConversations.map(c => {
       const messagesList = c.messages ? JSON.parse(c.messages) : [];
       return { ...c, messages: messagesList };
     });
@@ -130,7 +130,7 @@ router.get('/:id', async (req, res) => {
     );
 
     const tasks = await all(
-      'SELECT * FROM tasks WHERE lead_id = @lead_id AND completed = 0 ORDER BY due_date ASC',
+      'SELECT * FROM tasks WHERE lead_id = @lead_id AND completed = false ORDER BY due_date ASC',
       { lead_id: req.params.id }
     );
 
@@ -409,10 +409,11 @@ router.get('/:id/activities', async (req, res) => {
     const lead = await get('SELECT id FROM leads WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' });
 
-    const activities = await all(
+    const rawActivities2 = await all(
       'SELECT a.*, u.name AS user_name FROM activities a LEFT JOIN users u ON a.user_id = u.id WHERE a.lead_id = @lead_id AND a.agency_id = @agency_id ORDER BY a.created_at DESC LIMIT 50',
       { lead_id: req.params.id, agency_id: req.user.agency_id }
-    ).map(a => ({
+    );
+    const activities = rawActivities2.map(a => ({
       ...a,
       metadata: a.metadata ? JSON.parse(a.metadata) : null,
     }));

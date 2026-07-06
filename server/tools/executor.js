@@ -240,12 +240,12 @@ export async function executeTool(toolName, toolInput, context) {
 
       case 'reagendar_visita': {
         const existingTasks = await all(
-          'SELECT * FROM tasks WHERE lead_id = @lid AND completed = 0 ORDER BY created_at DESC LIMIT 1',
+          'SELECT * FROM tasks WHERE lead_id = @lid AND completed = false ORDER BY created_at DESC LIMIT 1',
           { lid: toolInput.lead_id }
         );
 
         if (existingTasks.length) {
-          await run('UPDATE tasks SET completed = 1 WHERE id = @id', { id: existingTasks[0].id });
+          await run('UPDATE tasks SET completed = true WHERE id = @id', { id: existingTasks[0].id });
         }
 
         const newTaskId = uuidv4();

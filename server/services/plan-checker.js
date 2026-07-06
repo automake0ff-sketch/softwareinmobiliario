@@ -67,7 +67,7 @@ export function checkLimit(type) {
       let currentCount = 0
 
       if (type === 'leads') {
-        const row = await get("SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND created_at >= date('now', 'start of month')", { aid: agencyId })
+        const row = await get("SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND created_at >= DATE_TRUNC('month', NOW())", { aid: agencyId })
         currentCount = row?.count || 0
       } else if (type === 'users') {
         const row = await get("SELECT COUNT(*) as count FROM users WHERE agency_id = @aid AND active = 1", { aid: agencyId })

@@ -89,7 +89,7 @@ async function qualityScore(data) {
     data.description,
     data.city || data.zone || data.address,
     Number(data.surface) > 0,
-    parseImages(data.images),
+    await parseImages(data.images),
   ];
   return Math.round((checks.filter(Boolean).length / checks.length) * 100);
 }
@@ -104,21 +104,21 @@ async function normalizeProperty(body, req, defaults = {}) {
   data.office_id = body.office_id || req.user.office_id || null;
   data.title = data.title || body.name || 'Propiedad importada';
   data.type = data.type || 'apartment';
-  data.operation_type = normalizeOperation(data.operation_type);
+  data.operation_type = await normalizeOperation(data.operation_type);
   data.price = Number(data.price || 0);
   data.city = data.city || 'Pendiente';
-  data.status = normalizeStatus(data.status);
+  data.status = await normalizeStatus(data.status);
   data.source = data.source || 'manual';
   data.external_source = data.external_source || data.source;
-  data.images = parseImages(data.images);
-  data.features = parseFeatures(data.features);
+  data.images = await parseImages(data.images);
+  data.features = await parseFeatures(data.features);
   data.bedrooms = Number(data.bedrooms || 0);
   data.bathrooms = Number(data.bathrooms || 0);
   data.surface = Number(data.surface || 0);
   data.has_elevator = data.has_elevator ? 1 : 0;
   data.has_terrace = data.has_terrace ? 1 : 0;
   data.has_garage = data.has_garage ? 1 : 0;
-  data.quality_score = qualityScore(data);
+  data.quality_score = await qualityScore(data);
   return data;
 }
 
@@ -569,10 +569,10 @@ router.get('/', async (req, res) => {
     let sql = 'SELECT * FROM properties WHERE agency_id = @agency_id';
     const params = { agency_id: req.user.agency_id };
 
-    if (status) { sql += ' AND status = @status'; params.status = normalizeStatus(status); }
+    if (status) { sql += ' AND status = @status'; params.status = await normalizeStatus(status); }
     if (type) { sql += ' AND type = @type'; params.type = type; }
     if (source) { sql += ' AND source = @source'; params.source = source; }
-    if (operation_type) { sql += ' AND operation_type = @operation_type'; params.operation_type = normalizeOperation(operation_type); }
+    if (operation_type) { sql += ' AND operation_type = @operation_type'; params.operation_type = await normalizeOperation(operation_type); }
     if (city) { sql += ' AND city LIKE @city'; params.city = `%${city}%`; }
     if (zone) { sql += ' AND zone LIKE @zone'; params.zone = `%${zone}%`; }
     if (min_price) { sql += ' AND price >= @min_price'; params.min_price = Number(min_price); }
@@ -585,7 +585,7 @@ router.get('/', async (req, res) => {
     }
 
     sql += ' ORDER BY updated_at DESC, created_at DESC';
-    res.json(all(sql, params));
+    res.json(await all(sql, params));
   } catch (error) {
     console.error('Error listing properties:', error);
     res.status(500).json({ error: 'Error al obtener propiedades.' });
@@ -594,12 +594,12 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const data = normalizeProperty(req.body, req, { source: 'manual', external_source: 'manual' });
+    const data = await normalizeProperty(req.body, req, { source: 'manual', external_source: 'manual' });
     if (!data.title || !data.type || !data.city) {
       return res.status(400).json({ error: 'Faltan campos obligatorios: title, type, city.' });
     }
-    const property = insertProperty(data);
-    logActivity(req, property, 'property_created', `Propiedad creada manualmente: ${property.title}`);
+    const property = await insertProperty(data);
+    await logActivity(req, property, 'property_created', `Propiedad creada manualmente: ${property.title}`);
     res.status(201).json(property);
   } catch (error) {
     console.error('Error creating property:', error);
@@ -610,7 +610,7 @@ router.post('/', async (req, res) => {
 router.post('/scrape-url', async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: 'Incluye una URL.' });
-  const portal = normalizePortal(url);
+  const portal = await normalizePortal(url);
   const scraped = await scrapePortal(url);
   res.json({ portal, url, ...scraped });
 });
@@ -627,7 +627,7 @@ router.post('/import/url', async (req, res) => {
     const updated = [];
     const skipped = [];
     for (const url of urls) {
-      const externalSource = normalizePortal(url);
+      const externalSource = await normalizePortal(url);
       const duplicate = await get(
         'SELECT * FROM properties WHERE agency_id = @agency_id AND external_url = @external_url',
         { agency_id: req.user.agency_id, external_url: url }
@@ -658,18 +658,18 @@ router.post('/import/url', async (req, res) => {
       };
 
       if (duplicate) {
-        const property = updateProperty(
+        const property = await updateProperty(
           duplicate.id,
           req.user.agency_id,
-          normalizeProperty(importedFields, req, duplicate)
+          await normalizeProperty(importedFields, req, duplicate)
         );
-        logActivity(req, property, 'property_imported', `Propiedad actualizada desde ${externalSource}`, { url, refreshed: true });
+        await logActivity(req, property, 'property_imported', `Propiedad actualizada desde ${externalSource}`, { url, refreshed: true });
         updated.push(property);
         continue;
       }
 
-      const property = insertProperty(normalizeProperty(importedFields, req));
-      logActivity(req, property, 'property_imported', `Propiedad importada desde ${externalSource}`, { url });
+      const property = await insertProperty(await normalizeProperty(importedFields, req));
+      await logActivity(req, property, 'property_imported', `Propiedad importada desde ${externalSource}`, { url });
       created.push(property);
     }
     res.status(201).json({ created, updated, skipped });
@@ -685,7 +685,7 @@ router.post('/:id/marketing', async (req, res) => {
     if (!property) return res.status(404).json({ error: 'Propiedad no encontrada.' });
     const type = req.body.type || 'general';
     const content = marketingCopy(property, type);
-    logActivity(req, property, 'property_marketing_generated', `Marketing generado para ${property.title}`, { type });
+    await logActivity(req, property, 'property_marketing_generated', `Marketing generado para ${property.title}`, { type });
     res.json({ type, title: property.title, content });
   } catch (error) {
     res.status(500).json({ error: 'Error al generar marketing.' });
@@ -706,7 +706,7 @@ router.post('/:id/improve-ai', async (req, res) => {
       ],
       next_actions: ['Completar imagen principal', 'Enviar a leads compatibles', 'Publicar copy optimizado en portal'],
     };
-    logActivity(req, property, 'property_ai_improved', `Mejora IA generada para ${property.title}`);
+    await logActivity(req, property, 'property_ai_improved', `Mejora IA generada para ${property.title}`);
     res.json({ property_id: property.id, improved });
   } catch (error) {
     res.status(500).json({ error: 'Error al generar mejora IA.' });
@@ -732,8 +732,8 @@ router.post('/import/csv', async (req, res) => {
           continue;
         }
       }
-      const source = row.source || normalizePortal(url) || 'csv';
-      const property = insertProperty(normalizeProperty(
+      const source = row.source || await normalizePortal(url) || 'csv';
+      const property = await insertProperty(await normalizeProperty(
         {
           ...row,
           source,
@@ -743,7 +743,7 @@ router.post('/import/csv', async (req, res) => {
         },
         req
       ));
-      logActivity(req, property, 'property_imported', `Propiedad importada desde CSV`, { url });
+      await logActivity(req, property, 'property_imported', `Propiedad importada desde CSV`, { url });
       created.push(property);
     }
     res.status(201).json({ created, skipped });
@@ -769,7 +769,7 @@ router.patch('/:id', async (req, res) => {
     const existing = await get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!existing) return res.status(404).json({ error: 'Propiedad no encontrada.' });
 
-    const data = normalizeProperty(req.body, req, existing);
+    const data = await normalizeProperty(req.body, req, existing);
     const updates = Object.values(FIELD_MAP)
       .filter((field, index, arr) => arr.indexOf(field) === index)
       .filter(field => data[field] !== undefined)
@@ -778,7 +778,7 @@ router.patch('/:id', async (req, res) => {
     updates.push("updated_at = NOW()");
     await run(`UPDATE properties SET ${updates.join(', ')} WHERE id = @id AND agency_id = @agency_id`, { ...data, id: req.params.id, agency_id: req.user.agency_id });
     const property = await get('SELECT * FROM properties WHERE id = @id', { id: req.params.id });
-    logActivity(req, property, 'property_updated', `Propiedad actualizada: ${property.title}`);
+    await logActivity(req, property, 'property_updated', `Propiedad actualizada: ${property.title}`);
     res.json(property);
   } catch (error) {
     console.error('Error updating property:', error);
@@ -788,12 +788,12 @@ router.patch('/:id', async (req, res) => {
 
 router.patch('/:id/status', async (req, res) => {
   try {
-    const status = normalizeStatus(req.body.status);
+    const status = await normalizeStatus(req.body.status);
     const existing = await get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!existing) return res.status(404).json({ error: 'Propiedad no encontrada.' });
     await run("UPDATE properties SET status = @status, updated_at = NOW() WHERE id = @id", { id: req.params.id, status });
     const property = await get('SELECT * FROM properties WHERE id = @id', { id: req.params.id });
-    logActivity(req, property, 'property_status_changed', `Estado cambiado a ${status}`);
+    await logActivity(req, property, 'property_status_changed', `Estado cambiado a ${status}`);
     res.json(property);
   } catch (error) {
     console.error('Error updating property status:', error);
@@ -806,7 +806,7 @@ router.delete('/:id', async (req, res) => {
     const existing = await get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!existing) return res.status(404).json({ error: 'Propiedad no encontrada.' });
     await run('DELETE FROM properties WHERE id = @id', { id: req.params.id });
-    logActivity(req, existing, 'property_deleted', `Propiedad eliminada: ${existing.title}`);
+    await logActivity(req, existing, 'property_deleted', `Propiedad eliminada: ${existing.title}`);
     res.json({ success: true });
   } catch (error) {
     console.error('Error deleting property:', error);
@@ -819,13 +819,14 @@ router.post('/:id/match-leads', async (req, res) => {
     const property = await get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!property) return res.status(404).json({ error: 'Propiedad no encontrada.' });
 
-    const leads = await all(
+    const rawLeadsMatch = await all(
       `SELECT * FROM leads
        WHERE agency_id = @agency_id
        AND status NOT IN ('cerrado', 'reserva')
        ORDER BY updated_at DESC LIMIT 20`,
       { agency_id: req.user.agency_id }
-    ).map(lead => {
+    );
+    const leads = rawLeadsMatch.map(lead => {
       let score = 20;
       const reasons = [];
       if (lead.zone && `${property.zone || ''} ${property.city || ''}`.toLowerCase().includes(lead.zone.toLowerCase())) {

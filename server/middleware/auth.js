@@ -77,19 +77,25 @@ export async function auth(req, res, next) {
       const agencyId = userId; // usamos el mismo UUID como agencyId para el alta inicial
       const email = decoded.email || '';
       const name = email ? email.split('@')[0] : 'Usuario';
-      const slug = 'inmo-' + userId.slice(0, 8);
+      const slug = 'inmo-' + userId.replace(/-/g, '').slice(0, 12);
+
+      // En producción (Supabase), auth.users ya existe. En dev local, lo creamos como stub.
+      await run(
+        `INSERT INTO auth.users (id, email) VALUES (@id, @email) ON CONFLICT (id) DO NOTHING`,
+        { id: userId, email }
+      );
 
       await run(
         `INSERT INTO agencies (id, name, slug, plan, plan_status)
          VALUES (@id, @name, @slug, 'starter', 'active')
-         ON CONFLICT DO NOTHING`,
+         ON CONFLICT (id) DO NOTHING`,
         { id: agencyId, name: 'Mi Inmobiliaria', slug }
       );
 
       await run(
         `INSERT INTO users (id, email, name, role, agency_id, active)
          VALUES (@id, @email, @name, 'admin', @agency_id, true)
-         ON CONFLICT DO NOTHING`,
+         ON CONFLICT (id) DO NOTHING`,
         { id: userId, email, name, agency_id: agencyId }
       );
 

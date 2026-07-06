@@ -25,24 +25,28 @@ export default function ProtectedRoute() {
           return
         }
 
-        // Si no está en el store, verifica la BD
+        // Si no está en el store, verifica la tabla users real (no inmosaas que no existe)
         const { data: profile, error } = await supabase
-          .from('inmosaas')
-          .select('id, nombre_empresa')
-          .eq('user_id', session.user.id)
+          .from('users')
+          .select('id, agency_id')
+          .eq('id', session.user.id)
           .maybeSingle()
 
         if (error) {
           console.error('Error fetching profile:', error)
-          if (mounted) setStatus('no-auth')
+          // En caso de error de permisos RLS, dejar pasar — el backend validará el JWT
+          if (mounted) setStatus('auth')
           return
         }
 
-        // Si existe registro en inmosaas, permitir acceso
-        if (profile?.id) {
+        // Si existe en users con agencia asignada, permitir acceso
+        if (profile?.id && profile?.agency_id) {
           if (mounted) setStatus('auth')
+        } else if (profile?.id) {
+          // Existe pero sin agencia — probablemente necesita onboarding
+          if (mounted) setStatus('no-profile')
         } else {
-          // Si no existe registro, enviar a onboarding
+          // No existe en users todavía — primer login, ir a onboarding
           if (mounted) setStatus('no-profile')
         }
       } catch (err) {

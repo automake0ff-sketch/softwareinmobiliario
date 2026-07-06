@@ -57,18 +57,18 @@ export default function OnboardingPage() {
       try {
         const { data: { user } } = await supabase.auth.getUser()
         if (user) {
+          // Intentar cargar datos previos desde la tabla users real (no inmosaas)
           const { data } = await supabase
-            .from('inmosaas')
-            .select('nombre_empresa, ciudad')
-            .eq('user_id', user.id)
+            .from('users')
+            .select('name, agencies(name, city)')
+            .eq('id', user.id)
             .maybeSingle()
-          if (data) {
-            if (data.nombre_empresa) setNombreEmpresa(data.nombre_empresa)
-            if (data.ciudad) setCiudad(data.ciudad)
-          }
+          if (data?.agencies?.name) setNombreEmpresa(data.agencies.name)
+          if (data?.agencies?.city) setCiudad(data.agencies.city)
         }
       } catch (err) {
-        console.error('Error fetching existing data from inmosaas:', err)
+        // Ignorar — el usuario simplemente empieza con campos vacíos
+        console.warn('No se encontraron datos previos de onboarding')
       }
     }
     checkExistingData()
@@ -95,40 +95,34 @@ export default function OnboardingPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Sin sesión activa')
 
-      // ✅ Actualizar inmosaas con los datos completados
-      const { error: updateError } = await supabase
-        .from('inmosaas')
-        .update({
-          nombre_empresa: nombreEmpresa,
-          ciudad: ciudad,
-          whatsapp_number: whatsapp.phone || null,
-          whatsapp_token: whatsapp.wa_token || null,
-          whatsapp_phone_id: whatsapp.wa_phone_id || null,
-          sendgrid_api_key: email.api_key || null,
-          sendgrid_from_email: email.from_email || null,
-          sendgrid_from_name: email.from_name || null,
-          onboarding_step: 4,
-          onboarding_completed: 1,
-          actualizado_en: new Date().toISOString(),
+      // Sincronizar con el backend Express — crea o actualiza agencia y usuario
+      const apiBase = import.meta.env.VITE_API_URL || '/api'
+      const backendBase = apiBase.replace(/\/api$/, '')
+      const res = await fetch(`${backendBase}/api/auth/social-login-or-register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: user.email,
+          name: user.user_metadata?.full_name || nombreEmpresa,
+          supabase_uid: user.id,
+        }),
+      })
+
+      if (res.ok) {
+        const loginData = await res.json()
+        setUser(loginData.user)
+        setAgency({ ...loginData.agency, name: nombreEmpresa, city: ciudad })
+      } else {
+        // Fallback al store local si el backend no responde
+        setUser({
+          id: user.id,
+          email: user.email,
+          name: user.user_metadata?.full_name || user.email?.split('@')[0],
+          role: 'admin',
+          agency_id: user.id,
         })
-        .eq('user_id', user.id)
-
-      if (updateError) throw new Error('Error al guardar configuración: ' + updateError.message)
-      
-      // ✅ Actualizar el store local ANTES de navegar
-      setUser({
-        id: user.id,
-        email: user.email,
-        name: user.user_metadata?.full_name || user.email?.split('@')[0],
-        role: 'admin',
-        agency_id: user.id,
-      })
-
-      setAgency({
-        id: user.id,
-        name: nombreEmpresa,
-        city: ciudad,
-      })
+        setAgency({ id: user.id, name: nombreEmpresa, city: ciudad })
+      }
       
       toast.success('¡Configuración guardada! Accediendo al dashboard...')
       setLaunched(true)

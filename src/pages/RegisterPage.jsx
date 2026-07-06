@@ -89,24 +89,9 @@ export default function RegisterPage() {
       }
 
       if (authData?.user) {
-        // FIX: Insertar inmosaas CON datos iniciales (nombre_empresa, ciudad)
-        const { error: tablaError } = await supabase
-          .from('inmosaas')
-          .insert([
-            {
-              user_id: authData.user.id,
-              nombre_completo: form.name,
-              email: form.email,
-              telefono: form.phone,
-              nombre_empresa: form.agencyName,
-              ciudad: form.agencyCity,
-              telefono_corporativo: form.agencyPhone,
-              api_whatsapp: form.apiWhatsapp || null,
-              api_correo: form.apiCorreo || null,
-            }
-          ])
-
-        if (tablaError) throw tablaError
+        // El aprovisionamiento de agencia/usuario se hace en el backend Express
+        // a través de /api/auth/social-login-or-register (ver Layout.jsx y LoginPage.jsx)
+        // No se usa la tabla inmosaas — fue eliminada del schema.
       }
 
       // 2. Registrar en la base de datos local SQLite (servidor Express)

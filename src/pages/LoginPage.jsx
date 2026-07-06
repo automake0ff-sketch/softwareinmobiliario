@@ -39,31 +39,35 @@ export default function LoginPage() {
     try {
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password })
       if (authError) throw authError
-      
-      // FIX: Cargar perfil completo desde inmosaas
-      const { data: profile, error: profileError } = await supabase
-        .from('inmosaas')
-        .select('*')
-        .eq('user_id', authData.user.id)
-        .maybeSingle()
 
-      if (profileError) {
-        console.warn('No profile found:', profileError)
+      // Sincronizar con el backend Express para obtener el JWT propio y los datos de agencia
+      const apiBase = import.meta.env.VITE_API_URL || '/api'
+      const backendUrl = apiBase.endsWith('/api') ? apiBase : `${apiBase}/api`
+      const res = await fetch(`${backendUrl.replace(/\/api$/, '')}/api/auth/social-login-or-register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: authData.user.email,
+          name: authData.user.user_metadata?.full_name || authData.user.email?.split('@')[0],
+          supabase_uid: authData.user.id,
+        }),
+      })
+
+      if (res.ok) {
+        const loginData = await res.json()
+        setUser(loginData.user)
+        setAgency(loginData.agency)
+        // api.setAuth se llama automáticamente a través del store.subscribe
+      } else {
+        // Fallback: establecer usuario sin token de backend (funcionalidad reducida)
+        setUser({
+          id: authData.user.id,
+          email: authData.user.email,
+          name: authData.user.email?.split('@')[0],
+          role: 'admin',
+          agency_id: authData.user.id,
+        })
       }
-
-      setUser({
-        id: authData.user.id,
-        email: authData.user.email,
-        name: profile?.nombre_completo || authData.user.email?.split('@')[0],
-        role: 'admin',
-        agency_id: authData.user.id,
-      })
-
-      setAgency({
-        id: authData.user.id,
-        name: profile?.nombre_empresa || 'Mi Agencia',
-        city: profile?.ciudad || '',
-      })
 
       toast.success('¡Bienvenido de nuevo!')
       navigate('/dashboard')

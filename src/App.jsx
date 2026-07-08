@@ -59,96 +59,49 @@ const PageLoader = () => (
 )
 
 export default function App() {
-  const { setUser, setAgency } = useStore()
+  const { setUser, setAgency, user: storeUser } = useStore()
 
   useEffect(() => {
+    const BACKEND = (import.meta.env.VITE_API_URL || '').replace(/\/api$/, '').replace(/\/$/, '')
+
+    async function syncWithBackend(authUser) {
+      try {
+        const res = await fetch(`${BACKEND}/api/auth/social-login-or-register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: authUser.email,
+            name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0],
+            supabase_uid: authUser.id,
+          }),
+        })
+        if (res.ok) {
+          const loginData = await res.json()
+          setUser(loginData.user)
+          setAgency(loginData.agency)
+        }
+      } catch (err) {
+        console.error('[App] Error sincronizando con backend:', err)
+      }
+    }
+
+    // Al arrancar: si Supabase tiene sesión activa, sincronizar con el backend
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        loadUserProfile(session.user)
+      if (session?.user && !storeUser?.token) {
+        syncWithBackend(session.user)
       }
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        loadUserProfile(session.user)
-      } else if (_event === 'SIGNED_OUT') {
-        // Evitar que el estado inicial deslogueado de Supabase limpie la sesión local
-        if (useStore.getState().user) {
-          return
-        }
+      if (_event === 'SIGNED_OUT') {
         setUser(null)
         setAgency(null)
       }
+      // SIGNED_IN lo gestiona Layout.jsx para evitar doble llamada
     })
 
-    async function loadUserProfile(authUser) {
-      try {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('*, agencies(*)')
-          .eq('id', authUser.id)
-          .single()
-
-        if (userData) {
-          // Si el usuario no tiene una agencia en Supabase (ej: registro de Google por primera vez)
-          if (!userData.agency_id) {
-            const slug = 'agencia-' + authUser.id.substring(0, 8);
-            
-            // 1. Insertar la agencia directamente
-            const { data: agencyData, error: agencyError } = await supabase
-              .from('agencies')
-              .insert([
-                {
-                  name: 'Mi Inmobiliaria',
-                  slug: slug,
-                  plan: 'starter',
-                  plan_status: 'active'
-                }
-              ])
-              .select()
-              .single();
-
-            if (!agencyError && agencyData) {
-              // 2. Asociar la agencia al usuario
-              const { error: userError } = await supabase
-                .from('users')
-                .update({
-                  agency_id: agencyData.id,
-                  role: 'admin'
-                })
-                .eq('id', authUser.id);
-
-              if (!userError) {
-                // 3. Volver a cargar el perfil
-                const { data: updatedUserData } = await supabase
-                  .from('users')
-                  .select('*, agencies(*)')
-                  .eq('id', authUser.id)
-                  .single();
-                
-                if (updatedUserData) {
-                  setUser(updatedUserData);
-                  setAgency(updatedUserData.agencies || null);
-                  return;
-                }
-              } else {
-                console.error('Error al asociar agencia al usuario:', userError);
-              }
-            } else {
-              console.error('Error al crear la agencia en Supabase:', agencyError);
-            }
-          }
-
-          setUser(userData)
-          setAgency(userData.agencies || null)
-        }
-      } catch (err) {
-        console.error('Error al cargar perfil de usuario en App:', err)
-      }
-    }
-
     return () => subscription.unsubscribe()
-  }, [setUser, setAgency])
+  }, [setUser, setAgency, storeUser])
 
   return (
     <AnimatePresence mode="wait">

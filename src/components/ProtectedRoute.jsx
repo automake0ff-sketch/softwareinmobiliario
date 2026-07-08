@@ -3,10 +3,11 @@ import { Navigate, Outlet } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useStore } from '../lib/store'
 
-// Used as layout wrapper: <Route element={<ProtectedRoute />}>
+const BACKEND = (import.meta.env.VITE_API_URL || '').replace(/\/api$/, '').replace(/\/$/, '')
+
 export default function ProtectedRoute() {
   const [status, setStatus] = useState('loading')
-  const { user: storeUser } = useStore()
+  const { user: storeUser, setUser, setAgency } = useStore()
 
   useEffect(() => {
     let mounted = true
@@ -14,64 +15,68 @@ export default function ProtectedRoute() {
     async function check() {
       try {
         const { data: { session } } = await supabase.auth.getSession()
+
         if (!session?.user) {
           if (mounted) setStatus('no-auth')
           return
         }
 
-        // FIX: Primero verifica el store (que ya fue actualizado en OnboardingPage)
-        if (storeUser?.id === session.user.id) {
+        // Si el store ya tiene al usuario con token válido, dejar pasar directamente
+        if (storeUser?.id === session.user.id && storeUser?.token) {
           if (mounted) setStatus('auth')
           return
         }
 
-        // Si no está en el store, verifica la tabla users real (no inmosaas que no existe)
-        const { data: profile, error } = await supabase
-          .from('users')
-          .select('id, agency_id')
-          .eq('id', session.user.id)
-          .maybeSingle()
+        // Si hay sesión de Supabase pero no hay token en el store,
+        // sincronizar con el backend para obtenerlo
+        try {
+          const res = await fetch(`${BACKEND}/api/auth/social-login-or-register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: session.user.email,
+              name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0],
+              supabase_uid: session.user.id,
+            }),
+          })
 
-        if (error) {
-          console.error('Error fetching profile:', error)
-          // En caso de error de permisos RLS, dejar pasar — el backend validará el JWT
-          if (mounted) setStatus('auth')
-          return
-        }
-
-        // Si existe en users con agencia asignada, permitir acceso
-        if (profile?.id && profile?.agency_id) {
-          if (mounted) setStatus('auth')
-        } else if (profile?.id) {
-          // Existe pero sin agencia — probablemente necesita onboarding
-          if (mounted) setStatus('no-profile')
-        } else {
-          // No existe en users todavía — primer login, ir a onboarding
-          if (mounted) setStatus('no-profile')
+          if (res.ok) {
+            const loginData = await res.json()
+            if (mounted) {
+              setUser(loginData.user)
+              setAgency(loginData.agency)
+              setStatus(loginData.user?.agency_id ? 'auth' : 'no-profile')
+            }
+          } else {
+            // Backend no responde correctamente — si hay sesión de Supabase, dejamos pasar
+            // El backend validará el JWT en cada request
+            if (mounted) setStatus('auth')
+          }
+        } catch {
+          // Sin conexión al backend — si hay sesión Supabase, dejar pasar
+          if (mounted) setStatus(storeUser?.id ? 'auth' : 'no-auth')
         }
       } catch (err) {
-        console.error('Auth check error:', err)
+        console.error('[ProtectedRoute] Error:', err)
         if (mounted) setStatus('no-auth')
       }
     }
 
     check()
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (!session) {
-          if (mounted) setStatus('no-auth')
-        } else {
-          check()
-        }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        if (mounted) setStatus('no-auth')
+      } else {
+        check()
       }
-    )
+    })
 
     return () => {
       mounted = false
       subscription.unsubscribe()
     }
-  }, [storeUser])
+  }, [storeUser?.id, storeUser?.token])
 
   if (status === 'loading') {
     return (
@@ -94,11 +99,9 @@ export default function ProtectedRoute() {
   if (status === 'no-auth') return <Navigate to="/login" replace />
   if (status === 'no-profile') return <Navigate to="/onboarding" replace />
 
-  // Outlet renders the nested child routes
   return <Outlet />
 }
 
-// Named export for public routes (redirect to dashboard if already logged in)
 export function PublicRoute({ children }) {
   const [status, setStatus] = useState('loading')
 

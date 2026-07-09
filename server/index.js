@@ -71,17 +71,21 @@ const API_TOKEN = process.env.API_TOKEN || 'demo-token-dev';
 
 // Configuración de CORS restringido a dominios permitidos
 const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',')
-  : ['http://localhost:5173', 'http://localhost:3002', '*'];
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  : ['http://localhost:5173', 'http://localhost:3002'];
+
+if (!process.env.ALLOWED_ORIGINS && process.env.NODE_ENV === 'production') {
+  console.warn('⚠️  ALLOWED_ORIGINS no configurado en producción — CORS solo permite localhost');
+}
 
 app.use(cors({
   origin: (origin, callback) => {
+    // Permitir requests sin origin (curl, Postman, server-to-server)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1 || allowedOrigins.includes('*')) {
+    if (allowedOrigins.includes(origin)) {
       return callback(null, true);
-    } else {
-      return callback(new Error('No permitido por CORS.'));
     }
+    return callback(new Error(`Origin ${origin} no permitido por CORS.`));
   },
   credentials: true
 }));
@@ -172,8 +176,8 @@ async function start() {
   app.use('/api/agency', agencyRouter);
   app.use('/api/conversations', conversationsRouter);
   app.use('/api', appointmentsRouter);
-  app.use('/webhooks/meta', webhookLimiter, metaWebhook);
-  app.use('/webhooks/whatsapp', webhookLimiter, whatsappWebhook);
+  app.use("/webhooks/meta", webhookLimiter, express.raw({ type: "application/json" }), metaWebhook);
+  app.use("/webhooks/whatsapp", webhookLimiter, express.raw({ type: "application/json" }), whatsappWebhook);
   app.use('/api/rag', (await import('./routes/rag.js')).default);
   app.use('/api/tools', (await import('./routes/tools.js')).default);
   app.use('/api/mcp', (await import('./routes/mcp.js')).default);
@@ -604,38 +608,102 @@ async function start() {
     res.json(invoices);
   });
 
-  app.get('/api/billing/paypal-return', async (req, res) => {
-    const { plan, agency, subscription_id, ba_token } = req.query;
-    if (subscription_id && agency) {
+  app.get('/api/billing/paypal-return', auth, async (req, res) => {
+    const { plan, subscription_id } = req.query;
+    // El agency_id SIEMPRE del JWT — nunca del query param
+    const agencyId = req.user.agency_id;
+
+    if (!subscription_id) {
+      return res.redirect(`${process.env.APP_URL || 'http://localhost:5173'}/pricing?error=missing_subscription`);
+    }
+
+    try {
+      // Verificar que la suscripción realmente existe en PayPal y está activa
+      const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
+      const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET;
+      const PAYPAL_BASE = process.env.NODE_ENV === 'production'
+        ? 'https://api-m.paypal.com'
+        : 'https://api-m.sandbox.paypal.com';
+
+      if (!PAYPAL_CLIENT_ID || !PAYPAL_CLIENT_SECRET) {
+        console.error('[PayPal] Credenciales no configuradas');
+        return res.redirect(`${process.env.APP_URL || 'http://localhost:5173'}/pricing?error=config`);
+      }
+
+      // Obtener token de acceso de PayPal
+      const tokenRes = await fetch(`${PAYPAL_BASE}/v1/oauth2/token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': `Basic ${Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`).toString('base64')}`
+        },
+        body: 'grant_type=client_credentials'
+      });
+      const tokenData = await tokenRes.json();
+
+      if (!tokenData.access_token) {
+        console.error('[PayPal] No se pudo obtener access token:', tokenData);
+        return res.redirect(`${process.env.APP_URL || 'http://localhost:5173'}/pricing?error=paypal_auth`);
+      }
+
+      // Verificar la suscripción contra la API de PayPal
+      const subRes = await fetch(`${PAYPAL_BASE}/v1/billing/subscriptions/${subscription_id}`, {
+        headers: { 'Authorization': `Bearer ${tokenData.access_token}` }
+      });
+      const subData = await subRes.json();
+
+      // Solo activar si PayPal confirma que la suscripción está activa
+      if (subData.status !== 'ACTIVE') {
+        console.warn('[PayPal] Suscripción no activa:', subData.status, subscription_id);
+        return res.redirect(`${process.env.APP_URL || 'http://localhost:5173'}/pricing?error=subscription_not_active`);
+      }
+
       await stripe.upsertSubscription({
-        agency_id: agency,
+        agency_id: agencyId,
         plan_id: plan || 'starter',
         status: 'active',
         billing_cycle: 'monthly',
         paypal_subscription_id: subscription_id,
         payment_method: 'paypal',
       });
+
+      res.redirect(`${process.env.APP_URL || 'http://localhost:5173'}/pricing?success=true`);
+    } catch (err) {
+      console.error('[PayPal] Error verificando suscripción:', err.message);
+      res.redirect(`${process.env.APP_URL || 'http://localhost:5173'}/pricing?error=verification_failed`);
     }
-    res.redirect(`${process.env.APP_URL || 'http://localhost:5173'}/pricing?success=true`);
   });
 
-  app.get('/api/calendar/auth-url', (req, res) => {
-    const userId = req.headers['x-auth-user'] || 'default';
-    calendar.getAuthUrl(userId).then(r => res.json(r));
+  app.get('/api/calendar/auth-url', auth, (req, res) => {
+    const userId = req.user.id;
+    calendar.getAuthUrl(userId).then(r => res.json(r)).catch(err => {
+      console.error('[Calendar] Error generando auth URL:', err.message);
+      res.status(500).json({ error: 'Error generando URL de autorización.' });
+    });
   });
 
-  app.get('/api/calendar/events', (req, res) => {
-    const userId = req.headers['x-auth-user'] || 'default';
+  app.get('/api/calendar/events', auth, (req, res) => {
+    const userId = req.user.id;
     const { dateFrom, dateTo } = req.query;
-    calendar.getEvents(userId, dateFrom, dateTo).then(r => res.json(r));
+    calendar.getEvents(userId, dateFrom, dateTo).then(r => res.json(r)).catch(err => {
+      console.error('[Calendar] Error obteniendo eventos:', err.message);
+      res.status(500).json({ error: 'Error obteniendo eventos del calendario.' });
+    });
   });
 
-  app.post('/api/email/test', async (req, res) => {
-    const { to, subject, html } = req.body;
+  // Rate limit muy agresivo para evitar abuso como relay de spam
+  const emailTestLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 3,
+    message: { error: 'Máximo 3 emails de prueba por hora.' }
+  });
+  app.post('/api/email/test', auth, emailTestLimiter, async (req, res) => {
+    // Solo permitir enviar al email del propio usuario autenticado
+    const to = req.user.email;
+    if (!to) return res.status(400).json({ error: 'Sin email de usuario.' });
+    const { subject, html } = req.body;
     const result = await emailService.sendEmail({
-      to: to || 'test@example.com',
-      subject: subject || 'Test email',
-      html: html || '<p>Test from CRM Inmobiliario</p>',
+      to,
+      subject: subject || 'Test email CRM Inmobiliario',
+      html: html || '<p>Test desde CRM Inmobiliario</p>',
     });
     res.json(result);
   });
@@ -658,12 +726,12 @@ async function start() {
     }
   });
 
-  app.get('/api/activities', (req, res) => {
+  app.get('/api/activities', auth, async (req, res) => {
     try {
       const { limit = 50, offset = 0 } = req.query;
-      const agencyId = req.headers['x-auth-agency'];
-      if (!agencyId) return res.status(400).json({ error: 'Agency header required' });
-      const activities = all(
+      // Usar siempre req.user.agency_id del JWT — nunca el header del cliente
+      const agencyId = req.user.agency_id;
+      const activities = await all(
         'SELECT a.*, u.name AS user_name FROM activities a LEFT JOIN users u ON a.user_id = u.id WHERE a.agency_id = @agency_id ORDER BY a.created_at DESC LIMIT @limit OFFSET @offset',
         { agency_id: agencyId, limit: Number(limit), offset: Number(offset) }
       );
@@ -1672,12 +1740,28 @@ start().catch(err => {
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err.message);
   console.error(err.stack);
-  process.exit(1);
+  // Solo matar el proceso en errores realmente fatales (no errores de red o BD)
+  if (err.code !== 'ECONNRESET' && err.code !== 'EPIPE' && err.code !== 'ENOTFOUND') {
+    process.exit(1);
+  }
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  process.exit(1);
+  // Loguear siempre pero NO matar el proceso — una promesa suelta de red/BD
+  // (logActivity, calendar.getEvents, etc.) no debe tumbar el servidor entero
+  // para todas las agencias conectadas. Si necesitas strictness, audita cada
+  // punto con .catch() y luego vuelve a activar process.exit(1) aquí.
+  const message = reason instanceof Error ? reason.message : String(reason);
+  const code = reason instanceof Error ? reason.code : undefined;
+  const ignoreCodes = ['ECONNRESET', 'EPIPE', 'ENOTFOUND', 'ETIMEDOUT', 'ECONNREFUSED'];
+  if (ignoreCodes.includes(code)) {
+    // Error de red transitorio — loguear en debug, no alertar
+    console.debug('[UnhandledRejection] Network error (ignored):', message);
+  } else {
+    console.error('[UnhandledRejection] Unhandled promise rejection:', message);
+    console.error('Promise:', promise);
+    if (reason instanceof Error) console.error(reason.stack);
+  }
 });
 
 process.on('SIGTERM', () => {

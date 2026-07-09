@@ -158,8 +158,20 @@ function verifySignature(req) {
   if (!META_APP_SECRET) return true;
   const signature = req.headers['x-hub-signature-256'];
   if (!signature) return false;
-  const expected = 'sha256=' + crypto.createHmac('sha256', META_APP_SECRET).update(JSON.stringify(req.body)).digest('hex');
+  // req.body es un Buffer cuando viene de express.raw() — usar directamente
+  // para que el HMAC coincida con el calculado por Meta sobre los bytes originales
+  const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body));
+  const expected = 'sha256=' + crypto.createHmac('sha256', META_APP_SECRET).update(rawBody).digest('hex');
+  if (signature.length !== expected.length) return false;
   return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+}
+
+// Parsear el body crudo a objeto JSON para usarlo en el resto del handler
+function parseBody(req) {
+  if (Buffer.isBuffer(req.body)) {
+    try { return JSON.parse(req.body.toString('utf8')); } catch { return {}; }
+  }
+  return req.body || {};
 }
 
 router.get('/', (req, res) => {
@@ -180,9 +192,10 @@ router.post('/', (req, res) => {
       return res.status(401).send('Invalid signature');
     }
     res.status(200).send('EVENT_RECEIVED');
-    waClient.markAsRead(req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.id);
+    const body = parseBody(req);
+    waClient.markAsRead(body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.id);
 
-    for (const entry of req.body.entry || []) {
+    for (const entry of body.entry || []) {
       for (const change of entry.changes || []) {
         if (change.value?.messages) {
           for (const message of change.value.messages) {

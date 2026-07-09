@@ -110,28 +110,36 @@ export default function OnboardingPage() {
 
       if (res.ok) {
         const loginData = await res.json()
-        setUser(loginData.user)
-        setAgency({ ...loginData.agency, name: nombreEmpresa, city: ciudad })
+        if (loginData?.user?.id) {
+          setUser(loginData.user)
+          setAgency({ ...loginData.agency, name: nombreEmpresa, city: ciudad })
+        } else {
+          // Fallback si el backend responde ok pero sin user válido
+          setUser({
+            id: user.id,
+            email: user.email,
+            name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Usuario',
+            role: 'admin',
+            agency_id: user.id,
+          })
+          setAgency({ id: user.id, name: nombreEmpresa, city: ciudad })
+        }
       } else {
         // Fallback al store local si el backend no responde
         setUser({
           id: user.id,
           email: user.email,
-          name: user.user_metadata?.full_name || user.email?.split('@')[0],
+          name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Usuario',
           role: 'admin',
           agency_id: user.id,
         })
         setAgency({ id: user.id, name: nombreEmpresa, city: ciudad })
       }
-      
+
       toast.success('¡Configuración guardada! Accediendo al dashboard...')
       setLaunched(true)
-      
-      // Esperar a que la BD se sincronice, pero sin timeout para evitar race conditions
-      // La redirección ocurrirá inmediatamente porque el store ya está actualizado
-      setTimeout(() => {
-        navigate('/dashboard', { replace: true })
-      }, 500)
+      // Redirigir directamente — el store ya está actualizado
+      navigate('/dashboard', { replace: true })
     } catch (err) {
       console.error('Error saving config:', err)
       toast.error(err.message || 'Error al guardar la configuración')

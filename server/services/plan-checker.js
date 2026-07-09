@@ -4,7 +4,7 @@
 import { PLANS, PLAN_RANK, planIncludes, minPlanForFeature, upgradeMessage, limitLabel } from './plans.js'
 
 function getAgencyPlan(req) {
-  const agencyId = req.user?.agency_id || req.headers['x-auth-agency']
+  const agencyId = req.user?.agency_id
   const planId = req.user?.plan_id || 'starter'
   const planStatus = req.user?.plan_status || 'active'
   return { agencyId, planId, planStatus }

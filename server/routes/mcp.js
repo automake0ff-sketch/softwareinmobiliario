@@ -24,7 +24,7 @@ router.post('/:serverName/resources/read', async (req, res) => {
     const { uri } = req.body;
     if (!uri) return res.status(400).json({ error: 'uri es requerido' });
 
-    const agencyId = req.headers['x-auth-agency'];
+    const agencyId = req.user?.agency_id;
     const result = await server.readResource(uri, agencyId);
     res.json(result);
   } catch (error) {
@@ -51,8 +51,8 @@ router.post('/:serverName/tools/call', async (req, res) => {
     const { name, arguments: args } = req.body;
     if (!name) return res.status(400).json({ error: 'name es requerido' });
 
-    const agencyId = req.headers['x-auth-agency'];
-    const userId = req.headers['x-auth-user'];
+    const agencyId = req.user?.agency_id;
+    const userId = req.user?.id;
     const result = await server.callTool(name, args || {}, { agencyId, userId });
     res.json(result);
   } catch (error) {

@@ -501,7 +501,7 @@ export class BillingService {
 export function checkPlanLimit(type) {
   return async (req, res, next) => {
     try {
-      const agencyId = req.user?.agency_id || req.headers['x-auth-agency'];
+      const agencyId = req.user?.agency_id;
       if (!agencyId) return next();
 
       const billing = new BillingService();

@@ -42,19 +42,26 @@ export default function ProtectedRoute() {
 
           if (res.ok) {
             const loginData = await res.json()
-            if (mounted) {
-              setUser(loginData.user)
-              setAgency(loginData.agency)
-              setStatus(loginData.user?.agency_id ? 'auth' : 'no-profile')
+            // Guard crítico: asegurar que loginData.user existe antes de usarlo
+            if (loginData?.user?.id) {
+              if (mounted) {
+                setUser(loginData.user)
+                setAgency(loginData.agency || null)
+                setStatus(loginData.user.agency_id ? 'auth' : 'no-profile')
+              }
+            } else {
+              // Respuesta ok pero sin user válido — dejar pasar si hay sesión Supabase
+              if (mounted) setStatus('auth')
             }
           } else {
             // Backend no responde correctamente — si hay sesión de Supabase, dejamos pasar
-            // El backend validará el JWT en cada request
+            // El backend validará el JWT en cada request protegida
             if (mounted) setStatus('auth')
           }
-        } catch {
-          // Sin conexión al backend — si hay sesión Supabase, dejar pasar
-          if (mounted) setStatus(storeUser?.id ? 'auth' : 'no-auth')
+        } catch (fetchErr) {
+          // Sin conexión al backend — si hay sesión Supabase o store con user, dejar pasar
+          console.warn('[ProtectedRoute] Backend inalcanzable:', fetchErr?.message)
+          if (mounted) setStatus(storeUser?.id || storeUser?.token ? 'auth' : 'no-auth')
         }
       } catch (err) {
         console.error('[ProtectedRoute] Error:', err)

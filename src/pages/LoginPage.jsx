@@ -55,15 +55,27 @@ export default function LoginPage() {
 
       if (res.ok) {
         const loginData = await res.json()
-        setUser(loginData.user)
-        setAgency(loginData.agency)
-        // api.setAuth se llama automáticamente a través del store.subscribe
+        // Guard: solo actualizar si el backend devolvió datos válidos
+        if (loginData?.user?.id) {
+          setUser(loginData.user)
+          setAgency(loginData.agency || null)
+          // api.setAuth se llama automáticamente a través del store.subscribe
+        } else {
+          // Backend respondió ok pero sin user — usar datos de Supabase como fallback
+          setUser({
+            id: authData.user.id,
+            email: authData.user.email,
+            name: authData.user.email?.split('@')[0] || 'Usuario',
+            role: 'admin',
+            agency_id: authData.user.id,
+          })
+        }
       } else {
         // Fallback: establecer usuario sin token de backend (funcionalidad reducida)
         setUser({
           id: authData.user.id,
           email: authData.user.email,
-          name: authData.user.email?.split('@')[0],
+          name: authData.user.email?.split('@')[0] || 'Usuario',
           role: 'admin',
           agency_id: authData.user.id,
         })

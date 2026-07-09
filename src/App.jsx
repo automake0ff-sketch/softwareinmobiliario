@@ -71,29 +71,35 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             email: authUser.email,
-            name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0],
+            name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'Usuario',
             supabase_uid: authUser.id,
           }),
         })
         if (res.ok) {
           const loginData = await res.json()
-          setUser(loginData.user)
-          setAgency(loginData.agency)
+          // Guard: solo actualizar si el backend devolvió un user válido con id
+          if (loginData?.user?.id) {
+            setUser(loginData.user)
+            setAgency(loginData.agency || null)
+          }
         }
+        // Si el backend falla: no llamar setUser — mantener el estado actual
       } catch (err) {
         console.error('[App] Error sincronizando con backend:', err)
+        // No limpiar el store ante errores de red — el usuario sigue logueado en Supabase
       }
     }
 
-    // Al arrancar: si Supabase tiene sesión activa, sincronizar con el backend
+    // Al arrancar: si Supabase tiene sesión activa y el store no tiene token, sincronizar
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user && !storeUser?.token) {
         syncWithBackend(session.user)
       }
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (_event === 'SIGNED_OUT') {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        // Solo limpiar en logout explícito, nunca por errores de red o backend
         setUser(null)
         setAgency(null)
       }
@@ -101,7 +107,9 @@ export default function App() {
     })
 
     return () => subscription.unsubscribe()
-  }, [setUser, setAgency, storeUser])
+  // Usar primitivos como deps para evitar re-renders infinitos con el objeto completo
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeUser?.id, storeUser?.token])
 
   return (
     <AnimatePresence mode="wait">

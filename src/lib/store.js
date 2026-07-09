@@ -147,12 +147,9 @@ export const useStore = create(
       setUser: (user) => {
         syncAuth(user)
         set({ user })
-        if (!user) {
-          // Asegurar de que también cerramos sesión en Supabase si se limpia el usuario
-          import('./supabaseClient').then(({ supabase }) => {
-            supabase.auth.signOut().catch(() => {})
-          }).catch(() => {})
-        }
+        // NO llamar signOut aquí — setUser(null) puede ocurrir por errores
+        // de red o de backend, no solo por logout intencional.
+        // El logout explícito lo gestiona el componente de logout con supabase.auth.signOut()
       },
       setAgency: (agency) => set({ agency }),
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),

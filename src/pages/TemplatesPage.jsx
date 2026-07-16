@@ -43,7 +43,7 @@ export default function TemplatesPage() {
     setLoading(true)
     const url = category !== 'all' ? `/templates?category=${category}` : '/templates'
     api.get(url)
-      .then(data => { setTemplates(data); setLoading(false) })
+      .then(data => { setTemplates(Array.isArray(data) ? data : []); setLoading(false) })
       .catch(() => setLoading(false))
   }, [category])
 

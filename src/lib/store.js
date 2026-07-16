@@ -172,7 +172,7 @@ export const useStore = create(
             createdAt: l.created_at,
             budget: l.budget,
           })
-          const leads = Array.isArray(raw) ? raw.map(mapLead) : raw
+          const leads = Array.isArray(raw) ? raw.map(mapLead) : []
           set({ leads })
         } catch {
           // error already handled by api client
@@ -185,7 +185,8 @@ export const useStore = create(
         set((s) => ({ loading: { ...s.loading, properties: true } }))
         try {
           const data = await api.get('/properties', params)
-          set({ properties: data.properties || data })
+          const raw = data?.properties ?? data
+          set({ properties: Array.isArray(raw) ? raw : [] })
         } catch (e) {
           console.error('fetchProperties error:', e)
         } finally {
@@ -197,7 +198,8 @@ export const useStore = create(
         set((s) => ({ loading: { ...s.loading, conversations: true } }))
         try {
           const data = await api.get('/conversations', params)
-          set({ conversations: data.conversations || data })
+          const raw = data?.conversations ?? data
+          set({ conversations: Array.isArray(raw) ? raw : [] })
         } catch {
           // handled
         } finally {
@@ -209,7 +211,8 @@ export const useStore = create(
         set((s) => ({ loading: { ...s.loading, activities: true } }))
         try {
           const data = await api.get('/activities', params)
-          set({ activities: data.activities || data })
+          const raw = data?.activities ?? data
+          set({ activities: Array.isArray(raw) ? raw : [] })
         } catch {
           // handled
         } finally {
@@ -449,7 +452,8 @@ export const useStore = create(
       fetchRanking: async () => {
         try {
           const data = await api.get('/agency/ranking')
-          set({ ranking: data.ranking || data })
+          const raw = data?.ranking ?? data
+          set({ ranking: Array.isArray(raw) ? raw : [] })
         } catch {
           // handled
         }

@@ -17,7 +17,7 @@ async function loadUserWithPlan(userId) {
   // (subscriptions.plan_id es un UUID que referencia plans.id y NO es el slug
   // 'starter'/'profesional'/'agencia' que usa el resto del código — ver notas de migración).
   const user = await get(
-    `SELECT u.id, u.role, u.agency_id, u.office_id, a.plan, a.plan_status
+    `SELECT u.id, u.email, u.role, u.agency_id, u.office_id, a.plan, a.plan_status
      FROM users u
      LEFT JOIN agencies a ON a.id = u.agency_id
      WHERE u.id = @id AND u.active = true`,
@@ -29,6 +29,7 @@ async function loadUserWithPlan(userId) {
 function buildReqUser(user) {
   return {
     id: user.id,
+    email: user.email,
     role: user.role,
     agency_id: user.agency_id,
     office_id: user.office_id,

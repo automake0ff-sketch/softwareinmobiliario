@@ -39,7 +39,7 @@ server
     },
     required: ['phone', 'message'],
   }, async (args, context) => {
-    const leadName = args.lead_id ? await get('SELECT name FROM leads WHERE id = @id', { id: args.lead_id })?.name : 'desconocido';
+    const leadName = args.lead_id ? (await get('SELECT name FROM leads WHERE id = @id', { id: args.lead_id }))?.name : 'desconocido';
     logActivity(context.agencyId, args.lead_id, context.userId, 'whatsapp_sent',
       `WhatsApp enviado a ${args.phone}`, { message: args.message?.substring(0, 100) });
 

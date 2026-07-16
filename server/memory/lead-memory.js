@@ -1,26 +1,26 @@
 import { all, get } from '../db/db.js';
 import { buildConversationContext } from './conversation-memory.js';
 
-export function getLeadMemory(leadId) {
-  const lead = get('SELECT * FROM leads WHERE id = @id', { id: leadId });
+export async function getLeadMemory(leadId) {
+  const lead = await get('SELECT * FROM leads WHERE id = @id', { id: leadId });
   if (!lead) return null;
 
-  const activities = all(
+  const activities = await all(
     'SELECT * FROM activities WHERE lead_id = @lid ORDER BY created_at DESC LIMIT 50',
     { lid: leadId }
   );
 
-  const matchings = all(
+  const matchings = await all(
     'SELECT m.*, p.title, p.price, p.type, p.zone, p.city FROM matchings m JOIN properties p ON p.id = m.property_id WHERE m.lead_id = @lid ORDER BY m.created_at DESC',
     { lid: leadId }
   );
 
-  const tasks = all(
+  const tasks = await all(
     "SELECT * FROM tasks WHERE lead_id = @lid ORDER BY created_at DESC",
     { lid: leadId }
   );
 
-  const conv = get('SELECT * FROM conversations WHERE lead_id = @lid ORDER BY created_at DESC LIMIT 1', { lid: leadId });
+  const conv = await get('SELECT * FROM conversations WHERE lead_id = @lid ORDER BY created_at DESC LIMIT 1', { lid: leadId });
   let messages = [];
   try { messages = JSON.parse(conv?.messages || '[]'); } catch { messages = []; }
 

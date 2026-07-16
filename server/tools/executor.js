@@ -36,7 +36,7 @@ export async function executeTool(toolName, toolInput, context) {
         }
 
         sql += ' ORDER BY created_at DESC LIMIT 10';
-        result = all(sql, params);
+        result = await all(sql, params);
         break;
       }
 
@@ -105,7 +105,7 @@ export async function executeTool(toolName, toolInput, context) {
         sql += ' ORDER BY ia_score DESC NULLS LAST';
         if (toolInput.limit) { sql += ' LIMIT @lim'; params.lim = Number(toolInput.limit); }
 
-        result = all(sql, params);
+        result = await all(sql, params);
         break;
       }
 
@@ -117,7 +117,7 @@ export async function executeTool(toolName, toolInput, context) {
         if (toolInput.office_id) { sql += ' AND u.office_id = @oid'; params.oid = toolInput.office_id; }
         sql += ' ORDER BY active_leads ASC';
 
-        result = all(sql, params);
+        result = await all(sql, params);
         break;
       }
 
@@ -278,7 +278,7 @@ export async function executeTool(toolName, toolInput, context) {
         sql += ' ORDER BY created_at DESC';
         if (toolInput.limit) { sql += ' LIMIT @lim'; params.lim = Number(toolInput.limit); }
 
-        result = all(sql, params);
+        result = await all(sql, params);
         break;
       }
 

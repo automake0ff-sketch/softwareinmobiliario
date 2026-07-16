@@ -113,7 +113,7 @@ server
     logActivity(context.agencyId, args.lead_id, args.user_id, 'visita_creada',
       `Visita creada para ${args.scheduled_at} con ${commercial?.name || 'comercial'}`, { taskId, scheduled_at: args.scheduled_at });
 
-    const propertyTitle = args.property_id ? await get('SELECT title FROM properties WHERE id = @id', { id: args.property_id })?.title : null;
+    const propertyTitle = args.property_id ? (await get('SELECT title FROM properties WHERE id = @id', { id: args.property_id }))?.title : null;
 
     return {
       success: true,

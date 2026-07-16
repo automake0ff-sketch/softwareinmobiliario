@@ -15,7 +15,7 @@ function slugify(text) {
 async function seed() {
   await initDB();
 
-  const existing = get('SELECT id FROM agencies LIMIT 1');
+  const existing = await get('SELECT id FROM agencies LIMIT 1');
   if (existing) {
     console.log('Ya existen datos en la BD. No se ejecuta seed.');
     return;

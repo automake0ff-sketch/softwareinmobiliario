@@ -865,7 +865,7 @@ router.post('/match-lead', async (req, res) => {
     if (lead.budget) { sql += ' AND price <= @max_price'; params.max_price = lead.budget * 1.2; }
     if (filters?.type) { sql += ' AND type = @type'; params.type = filters.type; }
 
-    const properties = all(sql, params);
+    const properties = await all(sql, params);
     let matchResult = null;
     if (properties.length > 0) {
       try { matchResult = await generatePropertyMatch(lead, properties); }

@@ -8,7 +8,7 @@ export class PropIARagRetriever {
     const query = `Busco ${lead.property_interest || 'propiedad'} en ${zones} con presupuesto hasta ${lead.budget || 0}€`;
     const queryEmbedding = await generateEmbedding(query);
 
-    const rows = all(
+    const rows = await all(
       `SELECT pe.* FROM property_embeddings pe
        JOIN properties p ON p.id = pe.property_id
        WHERE pe.agency_id = @aid AND p.status = 'disponible'`,
@@ -40,12 +40,12 @@ export class PropIARagRetriever {
 
     let rows;
     if (outcome) {
-      rows = all(
+      rows = await all(
         'SELECT * FROM successful_conversation_embeddings WHERE agency_id = @aid AND outcome = @outcome',
         { aid: agencyId, outcome }
       );
     } else {
-      rows = all(
+      rows = await all(
         'SELECT * FROM successful_conversation_embeddings WHERE agency_id = @aid',
         { aid: agencyId }
       );
@@ -75,12 +75,12 @@ export class PropIARagRetriever {
 
     let rows;
     if (category) {
-      rows = all(
+      rows = await all(
         'SELECT * FROM knowledge_base_embeddings WHERE agency_id = @aid AND category = @cat',
         { aid: agencyId, cat: category }
       );
     } else {
-      rows = all(
+      rows = await all(
         'SELECT * FROM knowledge_base_embeddings WHERE agency_id = @aid',
         { aid: agencyId }
       );

@@ -43,7 +43,7 @@ router.get('/', async (req, res) => {
     }
     query += ' ORDER BY is_featured DESC, installs DESC';
 
-    const templates = all(query, params);
+    const templates = await all(query, params);
 
     const agencyAutomations = await all(
       'SELECT template_id FROM automations WHERE agency_id = @aid AND template_id IS NOT NULL',

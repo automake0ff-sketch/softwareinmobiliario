@@ -8,9 +8,9 @@ import { buildAgentContext } from './context-builder.js';
 const router = Router();
 router.use(auth);
 
-router.get('/lead/:leadId', (req, res) => {
+router.get('/lead/:leadId', async (req, res) => {
   try {
-    const memory = getLeadMemory(req.params.leadId);
+    const memory = await getLeadMemory(req.params.leadId);
     if (!memory) return res.status(404).json({ error: 'Lead no encontrado' });
     res.json({ memory, context: memoryToContext(memory) });
   } catch (error) {
@@ -18,32 +18,32 @@ router.get('/lead/:leadId', (req, res) => {
   }
 });
 
-router.get('/lead/:leadId/conversation', (req, res) => {
+router.get('/lead/:leadId/conversation', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 20;
-    const conversation = buildConversationContext(req.params.leadId, limit);
+    const conversation = await buildConversationContext(req.params.leadId, limit);
     res.json({ messages: conversation, total: conversation.length });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-router.post('/lead/:leadId/score', (req, res) => {
+router.post('/lead/:leadId/score', async (req, res) => {
   try {
     const { scoreChange, reason } = req.body;
     if (!scoreChange) return res.status(400).json({ error: 'scoreChange es requerido' });
-    const result = updateLeadScore(req.params.leadId, scoreChange, reason);
+    const result = await updateLeadScore(req.params.leadId, scoreChange, reason);
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-router.post('/lead/:leadId/insight', (req, res) => {
+router.post('/lead/:leadId/insight', async (req, res) => {
   try {
     const { insight } = req.body;
     if (!insight) return res.status(400).json({ error: 'insight es requerido' });
-    appendInsight(req.params.leadId, insight);
+    await appendInsight(req.params.leadId, insight);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });

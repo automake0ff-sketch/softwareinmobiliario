@@ -207,10 +207,10 @@ async function start() {
   defaultQueue.on('process_message', async (job) => {
     try {
       const { leadId, messageBody, messageType, phoneNumber, conversationId, agencyId } = job.data;
-      const lead = get('SELECT * FROM leads WHERE id = @id', { id: leadId });
+      const lead = await get('SELECT * FROM leads WHERE id = @id', { id: leadId });
       if (!lead) throw new Error('Lead not found');
 
-      const conversation = get('SELECT * FROM conversations WHERE id = @id', { id: conversationId });
+      const conversation = await get('SELECT * FROM conversations WHERE id = @id', { id: conversationId });
       const history = conversation ? JSON.parse(conversation.messages || '[]') : [];
       const status = lead.status || 'nuevo';
 
@@ -233,9 +233,9 @@ async function start() {
       const agentResponse = agentResult.message || '';
 
       if (lead.status === 'nuevo') {
-        run("UPDATE leads SET status = 'contactado', updated_at = NOW() WHERE id = @id", { id: leadId });
+        await run("UPDATE leads SET status = 'contactado', updated_at = NOW() WHERE id = @id", { id: leadId });
       }
-      run("UPDATE leads SET last_activity = NOW(), updated_at = NOW() WHERE id = @id", { id: leadId });
+      await run("UPDATE leads SET last_activity = NOW(), updated_at = NOW() WHERE id = @id", { id: leadId });
 
       logActivity(
         agencyId, leadId, null, 'ia_response',
@@ -261,10 +261,10 @@ async function start() {
   defaultQueue.on('process_new_lead', async (job) => {
     try {
       const { leadId, agencyId, source, utm } = job.data;
-      const lead = get('SELECT * FROM leads WHERE id = @id', { id: leadId });
+      const lead = await get('SELECT * FROM leads WHERE id = @id', { id: leadId });
       if (!lead) throw new Error('Lead not found');
 
-      const comerciales = all(
+      const comerciales = await all(
         `SELECT u.*, (SELECT COUNT(*) FROM leads l WHERE l.assigned_to = u.id AND l.status NOT IN ('cerrado','reserva')) as active_leads
          FROM users u WHERE u.role = 'comercial' AND u.agency_id = @agency_id AND u.active = 1
          ORDER BY active_leads ASC LIMIT 1`,
@@ -273,7 +273,7 @@ async function start() {
 
       if (comerciales && comerciales.length > 0) {
         const comercial = comerciales[0];
-        run("UPDATE leads SET assigned_to = @assigned_to, updated_at = NOW() WHERE id = @id",
+        await run("UPDATE leads SET assigned_to = @assigned_to, updated_at = NOW() WHERE id = @id",
           { assigned_to: comercial.id, id: leadId });
         logActivity(agencyId, leadId, comercial.id, 'lead_assigned',
           `Lead asignado automáticamente a ${comercial.name}`, { comercialId: comercial.id, source });
@@ -290,7 +290,7 @@ async function start() {
       }
 
       const convId = uuidv4();
-      run(
+      await run(
         `INSERT INTO conversations (id, lead_id, channel, messages, created_at)
          VALUES (@id, @lead_id, @channel, @messages, NOW())`,
         {
@@ -318,7 +318,7 @@ async function start() {
   defaultQueue.on('run_automation', async (job) => {
     try {
       const { agencyId, triggerEvent } = job.data;
-      const automations = all(
+      const automations = await all(
         'SELECT * FROM automations WHERE agency_id = @agency_id AND trigger_event = @trigger AND is_active = true',
         { agency_id: agencyId, trigger: triggerEvent }
       );
@@ -336,11 +336,11 @@ async function start() {
     try {
       const { type, agencyId } = job.data;
       if (type === 'daily_briefing') {
-        const managers = all('SELECT * FROM users WHERE agency_id = @agency_id AND role = \'manager\'', { agency_id: agencyId });
-        const leads = all('SELECT * FROM leads WHERE agency_id = @agency_id');
-        const tasks = all('SELECT * FROM tasks WHERE completed = false');
+        const managers = await all('SELECT * FROM users WHERE agency_id = @agency_id AND role = \'manager\'', { agency_id: agencyId });
+        const leads = await all('SELECT * FROM leads WHERE agency_id = @agency_id');
+        const tasks = await all('SELECT * FROM tasks WHERE completed = false');
         const visits = await all(`SELECT * FROM activities WHERE type = 'visita' AND created_at >= NOW() - INTERVAL '1 day'`);
-        const properties = all('SELECT * FROM properties WHERE agency_id = @agency_id AND status = \'disponible\'', { agency_id: agencyId });
+        const properties = await all('SELECT * FROM properties WHERE agency_id = @agency_id AND status = \'disponible\'', { agency_id: agencyId });
 
         const newLeads = leads.filter(l => {
           const created = new Date(l.created_at);
@@ -396,11 +396,11 @@ async function start() {
       startOfMonth.setDate(1);
       const somStr = startOfMonth.toISOString();
 
-      const leadsToday = get("SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND created_at >= @today", { aid, today })?.count || 0;
-      const totalLeads = get("SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid", { aid })?.count || 0;
-      const leadsThisMonth = get("SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND created_at >= @som", { aid, som: somStr })?.count || 0;
+      const leadsToday = (await get("SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND created_at >= @today", { aid, today }))?.count || 0;
+      const totalLeads = (await get("SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid", { aid }))?.count || 0;
+      const leadsThisMonth = (await get("SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND created_at >= @som", { aid, som: somStr }))?.count || 0;
 
-      const leadsYesterday = get("SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND created_at >= @yesterday AND created_at < @today", { aid, yesterday, today })?.count || 0;
+      const leadsYesterday = (await get("SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND created_at >= @yesterday AND created_at < @today", { aid, yesterday, today }))?.count || 0;
 
       let leadsPctChange = '0%';
       let leadsTrend = 'up';
@@ -417,8 +417,8 @@ async function start() {
         leadsTrend = 'down';
       }
 
-      const messagesToday = get("SELECT COUNT(*) as count FROM messages m JOIN conversations c ON m.conversation_id = c.id JOIN leads l ON c.lead_id = l.id WHERE l.agency_id = @aid AND m.created_at >= @today", { aid, today })?.count || 0;
-      const messagesYesterday = get("SELECT COUNT(*) as count FROM messages m JOIN conversations c ON m.conversation_id = c.id JOIN leads l ON c.lead_id = l.id WHERE l.agency_id = @aid AND m.created_at >= @yesterday AND m.created_at < @today", { aid, yesterday, today })?.count || 0;
+      const messagesToday = (await get("SELECT COUNT(*) as count FROM messages m JOIN conversations c ON m.conversation_id = c.id JOIN leads l ON c.lead_id = l.id WHERE l.agency_id = @aid AND m.created_at >= @today", { aid, today }))?.count || 0;
+      const messagesYesterday = (await get("SELECT COUNT(*) as count FROM messages m JOIN conversations c ON m.conversation_id = c.id JOIN leads l ON c.lead_id = l.id WHERE l.agency_id = @aid AND m.created_at >= @yesterday AND m.created_at < @today", { aid, yesterday, today }))?.count || 0;
 
       let messagesPctChange = '0%';
       let messagesTrend = 'up';
@@ -435,21 +435,21 @@ async function start() {
         messagesTrend = 'down';
       }
 
-      const automationsRun = get("SELECT COUNT(*) as count FROM activities WHERE agency_id = @aid AND type = 'automation' AND created_at >= @today", { aid, today })?.count || 0;
+      const automationsRun = (await get("SELECT COUNT(*) as count FROM activities WHERE agency_id = @aid AND type = 'automation' AND created_at >= @today", { aid, today }))?.count || 0;
 
-      const activeAgents = get("SELECT COUNT(*) as count FROM ai_agents WHERE agency_id = @aid AND status = 'active'", { aid })?.count || 0;
+      const activeAgents = (await get("SELECT COUNT(*) as count FROM ai_agents WHERE agency_id = @aid AND status = 'active'", { aid }))?.count || 0;
 
-      const pipelineStats = all("SELECT status, COUNT(*) as count FROM leads WHERE agency_id = @aid GROUP BY status", { aid });
+      const pipelineStats = await all("SELECT status, COUNT(*) as count FROM leads WHERE agency_id = @aid GROUP BY status", { aid });
       const totalPipeline = pipelineStats.reduce((sum, s) => sum + s.count, 0);
 
-      const totalProperties = get("SELECT COUNT(*) as count FROM properties WHERE agency_id = @aid", { aid })?.count || 0;
+      const totalProperties = (await get("SELECT COUNT(*) as count FROM properties WHERE agency_id = @aid", { aid }))?.count || 0;
 
-      const activities = all(
+      const activities = await all(
         "SELECT id, type, title, description, created_at FROM activities WHERE agency_id = @aid ORDER BY created_at DESC LIMIT 20",
         { aid }
       );
 
-      const conversions = all(
+      const conversions = await all(
         "SELECT DATE(created_at) as day, COUNT(*) as leads FROM leads WHERE agency_id = @aid AND created_at >= NOW() - INTERVAL '14 days' GROUP BY DATE(created_at) ORDER BY day",
         { aid }
       );
@@ -502,7 +502,7 @@ async function start() {
     try {
       const agencyId = req.user.agency_id
       const { PLANS } = await import('./services/plans.js')
-      const subs = all('SELECT * FROM subscriptions WHERE agency_id = @aid ORDER BY created_at DESC LIMIT 1', { aid: agencyId })
+      const subs = await all('SELECT * FROM subscriptions WHERE agency_id = @aid ORDER BY created_at DESC LIMIT 1', { aid: agencyId })
       const sub = subs?.[0]
       const planId = sub?.plan_id || 'starter'
       const plan = PLANS[planId] || PLANS.starter
@@ -510,11 +510,11 @@ async function start() {
       startOfMonth.setDate(1)
       const somStr = startOfMonth.toISOString()
 
-      const leadsCount = get("SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND created_at >= @som", { aid: agencyId, som: somStr })?.count || 0
-      const usersCount = get("SELECT COUNT(*) as count FROM users WHERE agency_id = @aid AND active = 1", { aid: agencyId })?.count || 0
-      const officesCount = get("SELECT COUNT(*) as count FROM offices WHERE agency_id = @aid", { aid: agencyId })?.count || 0
-      const agentsCount = get("SELECT COUNT(*) as count FROM ai_agents WHERE agency_id = @aid AND status = 'active'", { aid: agencyId })?.count || 0
-      const automationsCount = get("SELECT COUNT(*) as count FROM automations WHERE agency_id = @aid AND is_active = true", { aid: agencyId })?.count || 0
+      const leadsCount = (await get("SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND created_at >= @som", { aid: agencyId, som: somStr }))?.count || 0
+      const usersCount = (await get("SELECT COUNT(*) as count FROM users WHERE agency_id = @aid AND active = 1", { aid: agencyId }))?.count || 0
+      const officesCount = (await get("SELECT COUNT(*) as count FROM offices WHERE agency_id = @aid", { aid: agencyId }))?.count || 0
+      const agentsCount = (await get("SELECT COUNT(*) as count FROM ai_agents WHERE agency_id = @aid AND status = 'active'", { aid: agencyId }))?.count || 0
+      const automationsCount = (await get("SELECT COUNT(*) as count FROM automations WHERE agency_id = @aid AND is_active = true", { aid: agencyId }))?.count || 0
 
       const leadsLimit = plan.max_leads_per_month
       const leadsPct = leadsLimit === -1 ? 0 : Math.round((leadsCount / leadsLimit) * 100)
@@ -551,7 +551,7 @@ async function start() {
   app.post('/api/billing/create-checkout', auth, async (req, res) => {
     try {
       const { planId, interval, paymentMethod, priceId } = req.body;
-      const agency = get('SELECT * FROM agencies WHERE id = @aid', { aid: req.user.agency_id });
+      const agency = await get('SELECT * FROM agencies WHERE id = @aid', { aid: req.user.agency_id });
       if (!agency) return res.status(404).json({ error: 'Agencia no encontrada' });
       if (!PLANS[planId]) return res.status(400).json({ error: 'Plan inválido' });
       const session = await stripe.createCheckoutSession(agency, planId, interval, paymentMethod, priceId);
@@ -746,12 +746,12 @@ async function start() {
   if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
 
   try {
-    const count = get('SELECT COUNT(*) as count FROM agencies');
+    const count = await get('SELECT COUNT(*) as count FROM agencies');
     if (count && count.count > 0) {
-      seedAutomationsForExistingAgencies();
+      await seedAutomationsForExistingAgencies();
       
       // Auto-seed de agentes para todas las agencias existentes (Corrección del error del front)
-      const agencies = all('SELECT id FROM agencies');
+      const agencies = await all('SELECT id FROM agencies');
       const DEFAULT_AGENTS = [
         { type: 'captador',    name: 'Captador IA' },
         { type: 'vendedor',    name: 'Vendedor IA' },
@@ -768,9 +768,9 @@ async function start() {
       ];
       for (const agency of agencies) {
         for (const da of DEFAULT_AGENTS) {
-          const exists = get('SELECT id FROM ai_agents WHERE agency_id = @aid AND type = @type', { aid: agency.id, type: da.type });
+          const exists = await get('SELECT id FROM ai_agents WHERE agency_id = @aid AND type = @type', { aid: agency.id, type: da.type });
           if (!exists) {
-            run(
+            await run(
               `INSERT INTO ai_agents (id, agency_id, type, name, is_active, status, stats, created_at)
                VALUES (@id, @agency_id, @type, @name, 1, 'active', @stats, NOW())`,
               {
@@ -1235,14 +1235,14 @@ function hashPassword(password) {
 
 // seedDemoData eliminada — las agencias nuevas empiezan con datos vacíos
 
-function seedAutomationsForExistingAgencies() {
-  const agencies = all('SELECT id FROM agencies');
+async function seedAutomationsForExistingAgencies() {
+  const agencies = await all('SELECT id FROM agencies');
   for (const agency of agencies) {
     try {
-      const count = get('SELECT COUNT(*) as count FROM automations WHERE agency_id = @aid', { aid: agency.id });
+      const count = await get('SELECT COUNT(*) as count FROM automations WHERE agency_id = @aid', { aid: agency.id });
       if (!count || count.count === 0) {
         console.log(`Seeding automations for agency ${agency.id}...`);
-        seedAutomationsIntoDb(agency.id);
+        await seedAutomationsIntoDb(agency.id);
       }
     } catch (e) {
       console.log('Error checking automations for agency:', e.message);
@@ -1250,7 +1250,7 @@ function seedAutomationsForExistingAgencies() {
   }
 }
 
-function seedAutomationsIntoDb(agencyId) {
+async function seedAutomationsIntoDb(agencyId) {
   const seedAutomations = [
     // ══════════════════════════════════════════════════════════
     // AUTOMATIZACIONES DE CAPTACIÓN
@@ -1679,7 +1679,7 @@ function seedAutomationsIntoDb(agencyId) {
 
   for (const sa of seedAutomations) {
     try {
-      run(
+      await run(
         `INSERT INTO automations (id, agency_id, name, description, is_active, trigger_type, trigger_event, trigger_config, conditions, actions, run_count, created_at)
          VALUES (@id, @agency_id, @name, @description, 1, @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, @floor, NOW())`,
         {
@@ -1704,13 +1704,13 @@ async function initializeRAG() {
     const { indexProperty, reindexAgencyProperties } = await import('./rag/indexer-properties.js');
     const { seedDefaultKnowledgeBase } = await import('./rag/indexer-knowledge.js');
 
-    const agencies = all('SELECT id FROM agencies');
+    const agencies = await all('SELECT id FROM agencies');
     if (!agencies || agencies.length === 0) return;
 
     for (const agency of agencies) {
       try {
-        const propertyCount = get('SELECT COUNT(*) as count FROM property_embeddings WHERE agency_id = @aid', { aid: agency.id });
-        const kbCount = get('SELECT COUNT(*) as count FROM knowledge_base_embeddings WHERE agency_id = @aid', { aid: agency.id });
+        const propertyCount = await get('SELECT COUNT(*) as count FROM property_embeddings WHERE agency_id = @aid', { aid: agency.id });
+        const kbCount = await get('SELECT COUNT(*) as count FROM knowledge_base_embeddings WHERE agency_id = @aid', { aid: agency.id });
 
         if (!propertyCount || propertyCount.count === 0) {
           console.log(`[RAG] Indexando propiedades para agencia ${agency.id}...`);

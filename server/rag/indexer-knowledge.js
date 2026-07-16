@@ -6,7 +6,7 @@ export async function indexKnowledgeEntry({ agencyId, title, content, category }
   const embeddingContent = prepareTextForEmbedding(`${title}\n${content}`);
   const embedding = await generateEmbedding(embeddingContent);
 
-  const existing = get('SELECT id FROM knowledge_base_embeddings WHERE agency_id = @aid AND title = @title', { aid: agencyId, title });
+  const existing = await get('SELECT id FROM knowledge_base_embeddings WHERE agency_id = @aid AND title = @title', { aid: agencyId, title });
   if (existing) {
     run(
       `UPDATE knowledge_base_embeddings SET content = @content, category = @category, embedding = @embedding, created_at = NOW() WHERE id = @id`,

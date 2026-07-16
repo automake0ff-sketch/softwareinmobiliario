@@ -3,13 +3,13 @@ import { all, get, run } from '../db/db.js';
 import { generateEmbedding, buildPropertyEmbeddingContent, prepareTextForEmbedding } from '../services/rag.js';
 
 export async function indexProperty(propertyId) {
-  const property = get('SELECT * FROM properties WHERE id = @id', { id: propertyId });
+  const property = await get('SELECT * FROM properties WHERE id = @id', { id: propertyId });
   if (!property) return;
 
   const content = prepareTextForEmbedding(buildPropertyEmbeddingContent(property));
   const embedding = await generateEmbedding(content);
 
-  const existing = get('SELECT id FROM property_embeddings WHERE property_id = @pid', { pid: propertyId });
+  const existing = await get('SELECT id FROM property_embeddings WHERE property_id = @pid', { pid: propertyId });
   if (existing) {
     run(
       `UPDATE property_embeddings SET content = @content, embedding = @embedding, metadata = @metadata, created_at = NOW() WHERE property_id = @pid`,
@@ -56,7 +56,7 @@ export async function indexProperty(propertyId) {
 }
 
 export async function reindexAgencyProperties(agencyId) {
-  const properties = all(
+  const properties = await all(
     "SELECT id FROM properties WHERE agency_id = @aid AND status = 'disponible'",
     { aid: agencyId }
   );

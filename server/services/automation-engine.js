@@ -33,8 +33,8 @@ async function sendWhatsApp(phone, message, agencyId, ctx = {}) {
     // Try context credentials first (from full-context-builder), then DB
     const waToken = ctx?.wa_token || null
     const waPhoneId = ctx?.wa_phone_id || null
-    const agencyToken = waToken || await get('SELECT whatsapp_token FROM agencies WHERE id = @id', { id: agencyId })?.whatsapp_token
-    const agencyPhoneId = waPhoneId || await get('SELECT whatsapp_phone_id FROM agencies WHERE id = @id', { id: agencyId })?.whatsapp_phone_id
+    const agencyToken = waToken || (await get('SELECT whatsapp_token FROM agencies WHERE id = @id', { id: agencyId }))?.whatsapp_token
+    const agencyPhoneId = waPhoneId || (await get('SELECT whatsapp_phone_id FROM agencies WHERE id = @id', { id: agencyId }))?.whatsapp_phone_id
 
     if (agencyToken && agencyPhoneId) {
       const res = await fetch(`https://graph.facebook.com/v18.0/${agencyPhoneId}/messages`, {

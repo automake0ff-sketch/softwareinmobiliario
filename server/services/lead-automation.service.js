@@ -253,7 +253,7 @@ export async function getBestPropertyForLead(lead, agencyId) {
     }
 
     sql += ` ORDER BY price ASC LIMIT 1`;
-    const property = get(sql, params);
+    const property = await get(sql, params);
     if (property) return property;
 
     const fallback = await get(

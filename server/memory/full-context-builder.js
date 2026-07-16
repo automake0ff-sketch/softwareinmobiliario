@@ -19,15 +19,15 @@ export function interpolate(template, ctx) {
   })
 }
 
-export function buildFullContext(leadId, agencyId) {
-  const lead = get('SELECT * FROM leads WHERE id = @id', { id: leadId })
+export async function buildFullContext(leadId, agencyId) {
+  const lead = await get('SELECT * FROM leads WHERE id = @id', { id: leadId })
   if (!lead) return null
 
-  const agency = get('SELECT * FROM agencies WHERE id = @id', { id: agencyId })
+  const agency = await get('SELECT * FROM agencies WHERE id = @id', { id: agencyId })
 
   let assignedUser = null
   if (lead.assigned_to) {
-    assignedUser = get('SELECT name FROM users WHERE id = @id', { id: lead.assigned_to })
+    assignedUser = await get('SELECT name FROM users WHERE id = @id', { id: lead.assigned_to })
   }
 
   const now = new Date()
@@ -50,10 +50,11 @@ export function buildFullContext(leadId, agencyId) {
 
   const firstName = (lead.name || 'Lead').split(' ')[0]
   const zonesRaw = lead.zones ? (() => { try { return JSON.parse(lead.zones) } catch { return [] } })() : []
-  const tags = (() => { try {
-    const rows = get('SELECT t.name FROM tags t JOIN lead_tags lt ON t.id = lt.tag_id WHERE lt.lead_id = @lid', { lid: leadId })
-    return rows ? (Array.isArray(rows) ? rows.map(r => r.name).join(', ') : rows.name || '') : ''
-  } catch { return '' } })()
+  let tags = ''
+  try {
+    const rows = await get('SELECT t.name FROM tags t JOIN lead_tags lt ON t.id = lt.tag_id WHERE lt.lead_id = @lid', { lid: leadId })
+    tags = rows ? (Array.isArray(rows) ? rows.map(r => r.name).join(', ') : rows.name || '') : ''
+  } catch { tags = '' }
 
   // Try to parse zones as JSON array or string
   let zonesList = zonesRaw
@@ -128,8 +129,8 @@ export function buildFullContext(leadId, agencyId) {
   }
 }
 
-export function buildTestContext(agencyId) {
-  const agency = get('SELECT * FROM agencies WHERE id = @id', { id: agencyId })
+export async function buildTestContext(agencyId) {
+  const agency = await get('SELECT * FROM agencies WHERE id = @id', { id: agencyId })
   const now = new Date()
   const locale = 'es-ES'
 

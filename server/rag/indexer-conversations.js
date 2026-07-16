@@ -3,7 +3,7 @@ import { all, get, run } from '../db/db.js';
 import { generateEmbedding, prepareTextForEmbedding } from '../services/rag.js';
 
 export async function indexSuccessfulConversation(leadId, outcome) {
-  const conversation = get('SELECT * FROM conversations WHERE lead_id = @lid ORDER BY created_at DESC LIMIT 1', { lid: leadId });
+  const conversation = await get('SELECT * FROM conversations WHERE lead_id = @lid ORDER BY created_at DESC LIMIT 1', { lid: leadId });
   if (!conversation) return null;
 
   let messages = [];
@@ -24,7 +24,7 @@ export async function indexSuccessfulConversation(leadId, outcome) {
   const embeddingContent = prepareTextForEmbedding(`${context}\n${content}`);
   const embedding = await generateEmbedding(embeddingContent);
 
-  const lead = get('SELECT agency_id FROM leads WHERE id = @lid', { lid: leadId });
+  const lead = await get('SELECT agency_id FROM leads WHERE id = @lid', { lid: leadId });
   if (!lead) return null;
 
   run(

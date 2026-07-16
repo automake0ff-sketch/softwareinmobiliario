@@ -1,7 +1,7 @@
 import { all, get } from '../db/db.js';
 
-export function buildConversationContext(leadId, maxMessages = 20) {
-  const conversation = get('SELECT * FROM conversations WHERE lead_id = @lid ORDER BY created_at DESC LIMIT 1', { lid: leadId });
+export async function buildConversationContext(leadId, maxMessages = 20) {
+  const conversation = await get('SELECT * FROM conversations WHERE lead_id = @lid ORDER BY created_at DESC LIMIT 1', { lid: leadId });
   if (!conversation) return [];
 
   let messages = [];

@@ -4,13 +4,13 @@ import { buildConversationContext, toClaudeMessages } from './conversation-memor
 import { getAgentSystemPrompt } from '../agents/index.js';
 
 export async function buildAgentContext(leadId, agentType) {
-  const lead = get('SELECT * FROM leads WHERE id = @id', { id: leadId });
+  const lead = await get('SELECT * FROM leads WHERE id = @id', { id: leadId });
   if (!lead) return null;
 
-  const agency = get('SELECT * FROM agencies WHERE id = @id', { id: lead.agency_id });
+  const agency = await get('SELECT * FROM agencies WHERE id = @id', { id: lead.agency_id });
 
-  const memory = getLeadMemory(leadId);
-  const conversation = buildConversationContext(leadId);
+  const memory = await getLeadMemory(leadId);
+  const conversation = await buildConversationContext(leadId);
 
   const basePrompt = await getAgentSystemPrompt(agentType);
   const memorySection = memoryToContext(memory);

@@ -30,12 +30,12 @@ router.post('/execute-realtime', async (req, res) => {
   let ctx
 
   if (!test_mode && lead_id) {
-    ctx = buildFullContext(lead_id, req.user.agency_id)
+    ctx = await buildFullContext(lead_id, req.user.agency_id)
     if (!ctx) {
       return res.status(404).json({ error: 'Lead no encontrado' })
     }
   } else {
-    ctx = buildTestContext(req.user.agency_id)
+    ctx = await buildTestContext(req.user.agency_id)
   }
 
   // Configurar SSE

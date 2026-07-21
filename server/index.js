@@ -1008,7 +1008,7 @@ async function runMigration() {
       installs INTEGER DEFAULT 0,
       rating REAL DEFAULT 0,
       is_active BOOLEAN DEFAULT true,
-      is_featured INTEGER DEFAULT 0,
+      is_featured BOOLEAN DEFAULT false,
       sort_order INTEGER DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (NOW())
     )` },

@@ -7,6 +7,7 @@ import { evaluateConditions, executeAction, checkTrigger, triggerAutomations } f
 import { checkLimit } from '../services/plan-checker.js'
 import { PLANS, limitLabel } from '../services/plans.js'
 import { automationSchema, validateBody } from '../middleware/validators.js'
+import { safeJsonParse } from '../lib/safe-json.js';
 
 const router = Router()
 router.use(auth)
@@ -23,9 +24,9 @@ router.get('/', async (req, res) => {
     )
     const automations = rawAutomations.map(a => ({
       ...a,
-      conditions: a.conditions ? JSON.parse(a.conditions) : [],
-      actions: a.actions ? JSON.parse(a.actions) : [],
-      trigger_config: a.trigger_config ? JSON.parse(a.trigger_config) : {},
+      conditions: a.conditions ? safeJsonParse(a.conditions) : [],
+      actions: a.actions ? safeJsonParse(a.actions) : [],
+      trigger_config: a.trigger_config ? safeJsonParse(a.trigger_config) : {},
     }))
 
     res.json(automations)
@@ -116,9 +117,9 @@ router.post('/', checkLimit('automations'), validateBody(automationSchema), asyn
     const created = await get('SELECT * FROM automations WHERE id = @id', { id })
     res.json({
       ...created,
-      conditions: JSON.parse(created.conditions || '[]'),
-      actions: JSON.parse(created.actions || '[]'),
-      trigger_config: JSON.parse(created.trigger_config || '{}'),
+      conditions: safeJsonParse(created.conditions || '[]'),
+      actions: safeJsonParse(created.actions || '[]'),
+      trigger_config: safeJsonParse(created.trigger_config || '{}'),
     })
   } catch (error) {
     console.error('Error creating automation:', error)
@@ -165,9 +166,9 @@ router.post('/:id/toggle', async (req, res) => {
       { id: req.params.id, agency_id: agencyId })
     res.json({
       ...updated,
-      conditions: JSON.parse(updated.conditions || '[]'),
-      actions: JSON.parse(updated.actions || '[]'),
-      trigger_config: JSON.parse(updated.trigger_config || '{}'),
+      conditions: safeJsonParse(updated.conditions || '[]'),
+      actions: safeJsonParse(updated.actions || '[]'),
+      trigger_config: safeJsonParse(updated.trigger_config || '{}'),
     })
   } catch (error) {
     console.error('Error toggling automation:', error)
@@ -233,9 +234,9 @@ router.patch('/:id', validateBody(automationSchema.partial()), async (req, res) 
       { id: req.params.id, agency_id: agencyId })
     res.json({
       ...updated,
-      conditions: JSON.parse(updated.conditions || '[]'),
-      actions: JSON.parse(updated.actions || '[]'),
-      trigger_config: JSON.parse(updated.trigger_config || '{}'),
+      conditions: safeJsonParse(updated.conditions || '[]'),
+      actions: safeJsonParse(updated.actions || '[]'),
+      trigger_config: safeJsonParse(updated.trigger_config || '{}'),
     })
   } catch (error) {
     console.error('Error updating automation (patch):', error)
@@ -281,9 +282,9 @@ router.put('/:id', validateBody(automationSchema.partial()), async (req, res) =>
         name: name || auto.name,
         description: description !== undefined ? description : auto.description,
         trigger_type: trigger_type || auto.trigger_type,
-        trigger_config: JSON.stringify(trigger_config || JSON.parse(auto.trigger_config || '{}')),
-        conditions: JSON.stringify(conditions || JSON.parse(auto.conditions || '[]')),
-        actions: JSON.stringify(actions || JSON.parse(auto.actions || '[]')),
+        trigger_config: JSON.stringify(trigger_config || safeJsonParse(auto.trigger_config || '{}')),
+        conditions: JSON.stringify(conditions || safeJsonParse(auto.conditions || '[]')),
+        actions: JSON.stringify(actions || safeJsonParse(auto.actions || '[]')),
         is_active: is_active !== undefined ? (is_active ? true : false) : auto.is_active,
         active: is_active !== undefined ? (is_active ? true : false) : auto.is_active,
         id: req.params.id,
@@ -295,9 +296,9 @@ router.put('/:id', validateBody(automationSchema.partial()), async (req, res) =>
       { id: req.params.id, agency_id: agencyId })
     res.json({
       ...updated,
-      conditions: JSON.parse(updated.conditions || '[]'),
-      actions: JSON.parse(updated.actions || '[]'),
-      trigger_config: JSON.parse(updated.trigger_config || '{}'),
+      conditions: safeJsonParse(updated.conditions || '[]'),
+      actions: safeJsonParse(updated.actions || '[]'),
+      trigger_config: safeJsonParse(updated.trigger_config || '{}'),
     })
   } catch (error) {
     console.error('Error updating automation:', error)
@@ -369,9 +370,9 @@ router.post('/execute', async (req, res) => {
     const results = []
 
     for (const auto of automations) {
-      const conditions = JSON.parse(auto.conditions || '[]')
-      const actions = JSON.parse(auto.actions || '[]')
-      const triggerConfig = JSON.parse(auto.trigger_config || '{}')
+      const conditions = safeJsonParse(auto.conditions || '[]')
+      const actions = safeJsonParse(auto.actions || '[]')
+      const triggerConfig = safeJsonParse(auto.trigger_config || '{}')
 
       const automationWithParsed = {
         ...auto,
@@ -494,7 +495,7 @@ Responde SOLO con JSON válido, sin explicaciones:
 
     let automation
     try {
-      automation = JSON.parse(response)
+      automation = safeJsonParse(response)
     } catch {
       return res.status(422).json({ error: 'No se pudo parsear la automatización generada', raw: response })
     }
@@ -527,7 +528,7 @@ router.get('/templates', async (req, res) => {
         name: a.name,
         description: a.description,
         trigger_type: a.trigger_type,
-        actions: JSON.parse(a.actions),
+        actions: safeJsonParse(a.actions),
         installed: existing.has(a.name),
       }))
       cursor += size
@@ -574,9 +575,9 @@ router.post('/install-template', checkLimit('automations'), async (req, res) => 
     const created = await get('SELECT * FROM automations WHERE id = @id', { id })
     res.json({
       ...created,
-      conditions: JSON.parse(created.conditions || '[]'),
-      actions: JSON.parse(created.actions || '[]'),
-      trigger_config: JSON.parse(created.trigger_config || '{}'),
+      conditions: safeJsonParse(created.conditions || '[]'),
+      actions: safeJsonParse(created.actions || '[]'),
+      trigger_config: safeJsonParse(created.trigger_config || '{}'),
     })
   } catch (error) {
     console.error('Error installing template:', error)

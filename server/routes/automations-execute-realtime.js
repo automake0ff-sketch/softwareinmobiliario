@@ -6,6 +6,7 @@ import { callOpenRouter, streamOpenRouter, parseAgentReply, interpolate } from '
 import { getAgentSystemPrompt, AGENT_META } from '../agents/index.js'
 import { executeAction } from '../services/automation-engine.js'
 import { buildFullContext, buildTestContext } from '../memory/full-context-builder.js'
+import { safeJsonParse } from '../lib/safe-json.js';
 
 const router = Router()
 router.use(auth)
@@ -23,8 +24,8 @@ router.post('/execute-realtime', async (req, res) => {
     return res.status(404).json({ error: 'Automatización no encontrada' })
   }
 
-  const actions = JSON.parse(auto.actions || '[]')
-  const conditions = JSON.parse(auto.conditions || '[]')
+  const actions = safeJsonParse(auto.actions || '[]')
+  const conditions = safeJsonParse(auto.conditions || '[]')
 
   // Cargar contexto completo del lead usando buildFullContext
   let ctx

@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { all, get, run } from '../db/db.js';
 import { auth } from '../middleware/auth.js';
 import { checkLimit } from '../services/plan-checker.js';
+import { safeJsonParse } from '../lib/safe-json.js';
 
 // Auto-run schema migrations for automations table
 try {
@@ -52,13 +53,13 @@ router.get('/', async (req, res) => {
     const installedTemplateIds = new Set(agencyAutomations.map(a => a.template_id));
 
     const templatesWithAccess = templates.map(t => {
-      const requires = JSON.parse(t.requires || '[]');
+      const requires = safeJsonParse(t.requires || '[]');
       return {
         ...t,
         requires: Array.isArray(requires) ? requires : [],
-        conditions: JSON.parse(t.conditions || '[]'),
-        actions: JSON.parse(t.actions || '[]'),
-        trigger_config: JSON.parse(t.trigger_config || '{}'),
+        conditions: safeJsonParse(t.conditions || '[]'),
+        actions: safeJsonParse(t.actions || '[]'),
+        trigger_config: safeJsonParse(t.trigger_config || '{}'),
         can_install: (PLAN_ORDER[t.min_plan] || 1) <= agencyPlanLevel,
         already_installed: installedTemplateIds.has(t.id),
       };

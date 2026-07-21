@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { all, get, run } from '../db/db.js'
 import { auth } from '../middleware/auth.js'
 import { AGENT_META } from '../agents/index.js'
+import { safeJsonParse } from '../lib/safe-json.js';
 
 const router = Router()
 router.use(auth)
@@ -69,7 +70,7 @@ router.get('/', async (req, res) => {
     const todayStr = today.toISOString()
 
     const enriched = await Promise.all(agents.map(async a => {
-      const rawStats = a.stats ? (() => { try { return JSON.parse(a.stats) } catch { return null } })() : null
+      const rawStats = a.stats ? (() => { try { return safeJsonParse(a.stats) } catch { return null } })() : null
 
       const todayActivities = await all(
         `SELECT id, lead_id, created_at FROM activities

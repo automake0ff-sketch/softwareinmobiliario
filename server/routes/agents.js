@@ -10,6 +10,7 @@ import { realtime } from '../services/realtime.js'
 import { incrementAgentStats } from '../services/automation-engine.js'
 import { AgentOrchestrator } from '../services/agent-orchestrator.js'
 import { ActionExecutor } from '../services/action-executor.js'
+import { safeJsonParse } from '../lib/safe-json.js';
 
 // Dynamic schema migrations for AI Agents
 try { await run('ALTER TABLE ai_agents ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true'); } catch (e) {}
@@ -80,7 +81,7 @@ router.get('/', async (req, res) => {
     const todayStr = today.toISOString()
 
     const enriched = await Promise.all(agents.map(async a => {
-      const rawStats = a.stats ? (() => { try { return JSON.parse(a.stats) } catch { return null } })() : null
+      const rawStats = a.stats ? (() => { try { return safeJsonParse(a.stats) } catch { return null } })() : null
 
       // Real metrics from activities table today
       const todayActivities = await all(
@@ -110,8 +111,8 @@ router.get('/', async (req, res) => {
 
       return {
         ...a,
-        config: a.config ? JSON.parse(a.config) : null,
-        metrics: a.metrics ? JSON.parse(a.metrics) : null,
+        config: a.config ? safeJsonParse(a.config) : null,
+        metrics: a.metrics ? safeJsonParse(a.metrics) : null,
         stats: {
           leads_today: leadsToday,
           messages_today: messagesToday,
@@ -170,9 +171,9 @@ router.get('/:id', async (req, res) => {
   try {
     const agent = await get('SELECT * FROM ai_agents WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id })
     if (!agent) return res.status(404).json({ error: 'Agente no encontrado.' })
-    agent.config = agent.config ? JSON.parse(agent.config) : null
-    agent.metrics = agent.metrics ? JSON.parse(agent.metrics) : null
-    agent.stats = agent.stats ? JSON.parse(agent.stats) : { leads_today: 0, messages_today: 0, success_rate: null }
+    agent.config = agent.config ? safeJsonParse(agent.config) : null
+    agent.metrics = agent.metrics ? safeJsonParse(agent.metrics) : null
+    agent.stats = agent.stats ? safeJsonParse(agent.stats) : { leads_today: 0, messages_today: 0, success_rate: null }
     res.json({
       ...agent,
       is_active: agent.is_active !== undefined ? agent.is_active : (agent.status === 'active'  ? true : false),
@@ -242,9 +243,9 @@ router.post('/:id/toggle', async (req, res) => {
     }
 
     const updated = await get('SELECT * FROM ai_agents WHERE id = @id', { id: req.params.id })
-    updated.config = updated.config ? JSON.parse(updated.config) : null
-    updated.metrics = updated.metrics ? JSON.parse(updated.metrics) : null
-    updated.stats = updated.stats ? JSON.parse(updated.stats) : { leads_today: 0, messages_today: 0, success_rate: null }
+    updated.config = updated.config ? safeJsonParse(updated.config) : null
+    updated.metrics = updated.metrics ? safeJsonParse(updated.metrics) : null
+    updated.stats = updated.stats ? safeJsonParse(updated.stats) : { leads_today: 0, messages_today: 0, success_rate: null }
     updated.is_active = updated.is_active !== undefined ? updated.is_active : (updated.status === 'active'  ? true : false)
     res.json(updated)
   } catch (error) {
@@ -310,9 +311,9 @@ router.patch('/:id/toggle', async (req, res) => {
     }
 
     const updated = await get('SELECT * FROM ai_agents WHERE id = @id', { id: req.params.id })
-    updated.config = updated.config ? JSON.parse(updated.config) : null
-    updated.metrics = updated.metrics ? JSON.parse(updated.metrics) : null
-    updated.stats = updated.stats ? JSON.parse(updated.stats) : { leads_today: 0, messages_today: 0, success_rate: null }
+    updated.config = updated.config ? safeJsonParse(updated.config) : null
+    updated.metrics = updated.metrics ? safeJsonParse(updated.metrics) : null
+    updated.stats = updated.stats ? safeJsonParse(updated.stats) : { leads_today: 0, messages_today: 0, success_rate: null }
     updated.is_active = updated.is_active !== undefined ? updated.is_active : (updated.status === 'active'  ? true : false)
     res.json(updated)
   } catch (error) {
@@ -510,7 +511,7 @@ router.get('/:id/metrics', async (req, res) => {
     const agent = await get('SELECT * FROM ai_agents WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id })
     if (!agent) return res.status(404).json({ error: 'Agente no encontrado.' })
 
-    const metrics = agent.metrics ? JSON.parse(agent.metrics) : {}
+    const metrics = agent.metrics ? safeJsonParse(agent.metrics) : {}
     const activities = await all(
       'SELECT * FROM activities WHERE agent_id = @agent_id ORDER BY created_at DESC LIMIT 20',
       { agent_id: req.params.id }

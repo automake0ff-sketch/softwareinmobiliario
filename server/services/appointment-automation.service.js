@@ -4,6 +4,7 @@ import { callClaude } from './claude.js';
 import { EmailService } from './email.js';
 import { WhatsAppService } from './whatsapp.js';
 import { logActivity, logCommunication, logLeadAutomation, getBestPropertyForLead } from './lead-automation.service.js';
+import { safeJsonParse } from '../lib/safe-json.js';
 
 export async function getConsentForLead(leadId, channel) {
   const prefs = await get('SELECT * FROM lead_preferences WHERE lead_id = @lid', { lid: leadId });
@@ -27,7 +28,7 @@ export async function getLeadPreferences(leadId) {
 }
 
 export async function suggestAppointment({ lead, agency, property, userId }) {
-  const workingHours = agency.working_hours ? JSON.parse(agency.working_hours) : { start: '09:00', end: '18:00' };
+  const workingHours = agency.working_hours ? safeJsonParse(agency.working_hours) : { start: '09:00', end: '18:00' };
   const timezone = agency.timezone || 'Europe/Madrid';
 
   const now = new Date();
@@ -55,7 +56,7 @@ Preferencia: ${lead.property_interest || 'No especificada'}`;
   try {
     const raw = await callClaude(systemPrompt, userMessage);
     const cleaned = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-    suggestion = { ...suggestion, ...JSON.parse(cleaned) };
+    suggestion = { ...suggestion, ...safeJsonParse(cleaned) };
   } catch {}
 
   const startDate = new Date(tomorrow);

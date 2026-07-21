@@ -3,6 +3,7 @@ import { all, get, run } from '../db/db.js'
 import { callOpenRouter, parseAgentReply, interpolate } from './openrouter.js'
 import { getAgentSystemPrompt } from '../agents/index.js'
 import { realtime } from './realtime.js'
+import { safeJsonParse } from '../lib/safe-json.js';
 
 export async function evaluateConditions(conditions, leadData) {
   if (!conditions || !Array.isArray(conditions) || conditions.length === 0) return true
@@ -103,7 +104,7 @@ async function saveMessageToConversation(leadId, agencyId, content, senderType, 
     timestamp: new Date().toISOString(),
     created_at: new Date().toISOString(),
   }
-  const msgs = JSON.parse(conv.messages || '[]')
+  const msgs = safeJsonParse(conv.messages || '[]')
   msgs.push(newMessage)
   await run(`UPDATE conversations SET messages = @messages, updated_at = NOW() WHERE id = @id`, { messages: JSON.stringify(msgs), id: conv.id })
 
@@ -165,7 +166,7 @@ export async function incrementAgentStats(agentType, agencyId, isNewLead = false
   if (agent) {
     let parsed = { leads_today: 0, messages_today: 0, success_rate: null }
     if (agent.stats) {
-      try { parsed = JSON.parse(agent.stats) } catch (e) { /* ignore */ }
+      try { parsed = safeJsonParse(agent.stats) } catch (e) { /* ignore */ }
     }
     parsed.messages_today = (parsed.messages_today || 0) + 1
     if (isNewLead) {
@@ -715,9 +716,9 @@ export async function triggerAutomations({ trigger_type, lead_id, agency_id, tri
     const results = []
 
     for (const auto of automations) {
-      const conditions = JSON.parse(auto.conditions || '[]')
-      const actions = JSON.parse(auto.actions || '[]')
-      const triggerConfig = JSON.parse(auto.trigger_config || '{}')
+      const conditions = safeJsonParse(auto.conditions || '[]')
+      const actions = safeJsonParse(auto.actions || '[]')
+      const triggerConfig = safeJsonParse(auto.trigger_config || '{}')
 
       const automationWithParsed = {
         ...auto,

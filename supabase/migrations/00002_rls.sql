@@ -9,7 +9,7 @@
 -- ═══════════════════════════════════════════════════════
 -- FUNCIÓN HELPER: obtener agency_id del usuario autenticado
 -- ═══════════════════════════════════════════════════════
-CREATE OR REPLACE FUNCTION auth.agency_id()
+CREATE OR REPLACE FUNCTION public.agency_id()
 RETURNS UUID
 LANGUAGE SQL STABLE
 AS $$
@@ -19,7 +19,7 @@ $$;
 -- ═══════════════════════════════════════════════════════
 -- FUNCIÓN HELPER: verificar si el usuario es admin de su agencia
 -- ═══════════════════════════════════════════════════════
-CREATE OR REPLACE FUNCTION auth.is_admin()
+CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN
 LANGUAGE SQL STABLE
 AS $$
@@ -29,7 +29,7 @@ $$;
 -- ═══════════════════════════════════════════════════════
 -- FUNCIÓN HELPER: verificar si el usuario es super_admin
 -- ═══════════════════════════════════════════════════════
-CREATE OR REPLACE FUNCTION auth.is_super_admin()
+CREATE OR REPLACE FUNCTION public.is_super_admin()
 RETURNS BOOLEAN
 LANGUAGE SQL STABLE
 AS $$
@@ -76,67 +76,67 @@ ALTER TABLE plans ENABLE ROW LEVEL SECURITY;
 
 -- offices: usuarios ven solo oficinas de su agencia
 CREATE POLICY "tenant_isolation" ON offices
-  USING (agency_id = auth.agency_id());
+  USING (agency_id = public.agency_id());
 
 -- leads: usuarios ven solo leads de su agencia
 CREATE POLICY "tenant_isolation" ON leads
-  USING (agency_id = auth.agency_id());
+  USING (agency_id = public.agency_id());
 
 -- properties: usuarios ven solo propiedades de su agencia
 CREATE POLICY "tenant_isolation" ON properties
-  USING (agency_id = auth.agency_id());
+  USING (agency_id = public.agency_id());
 
 -- automations: usuarios ven solo automatizaciones de su agencia
 CREATE POLICY "tenant_isolation" ON automations
-  USING (agency_id = auth.agency_id());
+  USING (agency_id = public.agency_id());
 
 -- ai_agents: usuarios ven solo agentes de su agencia
 CREATE POLICY "tenant_isolation" ON ai_agents
-  USING (agency_id = auth.agency_id());
+  USING (agency_id = public.agency_id());
 
 -- activities: usuarios ven solo actividades de su agencia
 CREATE POLICY "tenant_isolation" ON activities
-  USING (agency_id = auth.agency_id());
+  USING (agency_id = public.agency_id());
 
 -- reports: usuarios ven solo reportes de su agencia
 CREATE POLICY "tenant_isolation" ON reports
-  USING (agency_id = auth.agency_id());
+  USING (agency_id = public.agency_id());
 
 -- tags: usuarios ven solo tags de su agencia
 CREATE POLICY "tenant_isolation" ON tags
-  USING (agency_id = auth.agency_id());
+  USING (agency_id = public.agency_id());
 
 -- subscriptions: usuarios ven solo suscripciones de su agencia
 CREATE POLICY "tenant_isolation" ON subscriptions
-  USING (agency_id = auth.agency_id());
+  USING (agency_id = public.agency_id());
 
 -- payment_history: usuarios ven solo pagos de su agencia
 CREATE POLICY "tenant_isolation" ON payment_history
-  USING (agency_id = auth.agency_id());
+  USING (agency_id = public.agency_id());
 
 -- usage_counters: usuarios ven solo contadores de su agencia
 CREATE POLICY "tenant_isolation" ON usage_counters
-  USING (agency_id = auth.agency_id());
+  USING (agency_id = public.agency_id());
 
 -- onboarding: usuarios ven solo onboarding de su agencia
 CREATE POLICY "tenant_isolation" ON onboarding
-  USING (agency_id = auth.agency_id());
+  USING (agency_id = public.agency_id());
 
 -- notifications: usuarios ven solo notificaciones de su agencia
 CREATE POLICY "tenant_isolation" ON notifications
-  USING (agency_id = auth.agency_id());
+  USING (agency_id = public.agency_id());
 
 -- property_embeddings: usuarios ven solo embeddings de su agencia
 CREATE POLICY "tenant_isolation" ON property_embeddings
-  USING (agency_id = auth.agency_id());
+  USING (agency_id = public.agency_id());
 
 -- successful_conversation_embeddings
 CREATE POLICY "tenant_isolation" ON successful_conversation_embeddings
-  USING (agency_id = auth.agency_id());
+  USING (agency_id = public.agency_id());
 
 -- knowledge_base_embeddings
 CREATE POLICY "tenant_isolation" ON knowledge_base_embeddings
-  USING (agency_id = auth.agency_id());
+  USING (agency_id = public.agency_id());
 
 -- ═══════════════════════════════════════════════════════
 -- POLÍTICAS PARA TABLAS RELACIONADAS (sin agency_id directo)
@@ -148,7 +148,7 @@ CREATE POLICY "tenant_isolation" ON conversations
     EXISTS (
       SELECT 1 FROM leads
       WHERE leads.id = conversations.lead_id
-      AND leads.agency_id = auth.agency_id()
+      AND leads.agency_id = public.agency_id()
     )
   );
 
@@ -159,7 +159,7 @@ CREATE POLICY "tenant_isolation" ON messages
       SELECT 1 FROM conversations
       JOIN leads ON leads.id = conversations.lead_id
       WHERE conversations.id = messages.conversation_id
-      AND leads.agency_id = auth.agency_id()
+      AND leads.agency_id = public.agency_id()
     )
   );
 
@@ -169,7 +169,7 @@ CREATE POLICY "tenant_isolation" ON ai_insights
     EXISTS (
       SELECT 1 FROM leads
       WHERE leads.id = ai_insights.lead_id
-      AND leads.agency_id = auth.agency_id()
+      AND leads.agency_id = public.agency_id()
     )
   );
 
@@ -179,7 +179,7 @@ CREATE POLICY "tenant_isolation" ON matchings
     EXISTS (
       SELECT 1 FROM leads
       WHERE leads.id = matchings.lead_id
-      AND leads.agency_id = auth.agency_id()
+      AND leads.agency_id = public.agency_id()
     )
   );
 
@@ -189,7 +189,7 @@ CREATE POLICY "tenant_isolation" ON tasks
     EXISTS (
       SELECT 1 FROM leads
       WHERE leads.id = tasks.lead_id
-      AND leads.agency_id = auth.agency_id()
+      AND leads.agency_id = public.agency_id()
     )
   );
 
@@ -199,7 +199,7 @@ CREATE POLICY "tenant_isolation" ON lead_tags
     EXISTS (
       SELECT 1 FROM leads
       WHERE leads.id = lead_tags.lead_id
-      AND leads.agency_id = auth.agency_id()
+      AND leads.agency_id = public.agency_id()
     )
   );
 
@@ -209,7 +209,7 @@ CREATE POLICY "tenant_isolation" ON automation_logs
     EXISTS (
       SELECT 1 FROM automations
       WHERE automations.id = automation_logs.automation_id
-      AND automations.agency_id = auth.agency_id()
+      AND automations.agency_id = public.agency_id()
     )
   );
 
@@ -221,17 +221,17 @@ CREATE POLICY "tenant_isolation" ON automation_logs
 -- Los super_admins (dueños de PropIA) pueden ver todas
 CREATE POLICY "agency_own_data" ON agencies
   USING (
-    id = auth.agency_id()
-    OR auth.is_super_admin()
+    id = public.agency_id()
+    OR public.is_super_admin()
   );
 
 -- users: los usuarios pueden verse a sí mismos y a su equipo
 -- Los super_admins pueden ver todos los usuarios
 CREATE POLICY "users_own_agency" ON users
   USING (
-    agency_id = auth.agency_id()
+    agency_id = public.agency_id()
     OR id = auth.uid()
-    OR auth.is_super_admin()
+    OR public.is_super_admin()
   );
 
 -- automation_templates: tablas globales, acceso público para autenticados
@@ -249,12 +249,12 @@ CREATE POLICY "plans_read" ON plans
 -- Políticas de INSERT: los usuarios autenticados pueden insertar en su agencia
 CREATE POLICY "tenant_insert" ON leads
   FOR INSERT WITH CHECK (
-    COALESCE(agency_id, auth.agency_id()) = auth.agency_id()
+    COALESCE(agency_id, public.agency_id()) = public.agency_id()
   );
 
 CREATE POLICY "tenant_insert" ON properties
   FOR INSERT WITH CHECK (
-    COALESCE(agency_id, auth.agency_id()) = auth.agency_id()
+    COALESCE(agency_id, public.agency_id()) = public.agency_id()
   );
 
 CREATE POLICY "tenant_insert" ON conversations
@@ -262,7 +262,7 @@ CREATE POLICY "tenant_insert" ON conversations
     EXISTS (
       SELECT 1 FROM leads
       WHERE leads.id = conversations.lead_id
-      AND leads.agency_id = auth.agency_id()
+      AND leads.agency_id = public.agency_id()
     )
   );
 
@@ -272,81 +272,81 @@ CREATE POLICY "tenant_insert" ON messages
       SELECT 1 FROM conversations
       JOIN leads ON leads.id = conversations.lead_id
       WHERE conversations.id = messages.conversation_id
-      AND leads.agency_id = auth.agency_id()
+      AND leads.agency_id = public.agency_id()
     )
   );
 
 -- Políticas INSERT/UPDATE/DELETE para tablas con agency_id directo
 CREATE POLICY "tenant_insert" ON offices
-  FOR INSERT WITH CHECK (COALESCE(agency_id, auth.agency_id()) = auth.agency_id());
+  FOR INSERT WITH CHECK (COALESCE(agency_id, public.agency_id()) = public.agency_id());
 
 CREATE POLICY "tenant_insert" ON ai_agents
-  FOR INSERT WITH CHECK (COALESCE(agency_id, auth.agency_id()) = auth.agency_id());
+  FOR INSERT WITH CHECK (COALESCE(agency_id, public.agency_id()) = public.agency_id());
 
 CREATE POLICY "tenant_insert" ON activities
-  FOR INSERT WITH CHECK (COALESCE(agency_id, auth.agency_id()) = auth.agency_id());
+  FOR INSERT WITH CHECK (COALESCE(agency_id, public.agency_id()) = public.agency_id());
 
 CREATE POLICY "tenant_insert" ON automations
-  FOR INSERT WITH CHECK (COALESCE(agency_id, auth.agency_id()) = auth.agency_id());
+  FOR INSERT WITH CHECK (COALESCE(agency_id, public.agency_id()) = public.agency_id());
 
 CREATE POLICY "tenant_insert" ON tasks
   FOR INSERT WITH CHECK (
     EXISTS (
       SELECT 1 FROM leads
       WHERE leads.id = tasks.lead_id
-      AND leads.agency_id = auth.agency_id()
+      AND leads.agency_id = public.agency_id()
     )
   );
 
 CREATE POLICY "tenant_insert" ON tags
-  FOR INSERT WITH CHECK (COALESCE(agency_id, auth.agency_id()) = auth.agency_id());
+  FOR INSERT WITH CHECK (COALESCE(agency_id, public.agency_id()) = public.agency_id());
 
 CREATE POLICY "tenant_insert" ON notifications
-  FOR INSERT WITH CHECK (COALESCE(agency_id, auth.agency_id()) = auth.agency_id());
+  FOR INSERT WITH CHECK (COALESCE(agency_id, public.agency_id()) = public.agency_id());
 
 -- UPDATE/DELETE policies (misma regla: solo datos de tu agencia)
 CREATE POLICY "tenant_update" ON leads
-  FOR UPDATE USING (agency_id = auth.agency_id());
+  FOR UPDATE USING (agency_id = public.agency_id());
 
 CREATE POLICY "tenant_delete" ON leads
-  FOR DELETE USING (agency_id = auth.agency_id());
+  FOR DELETE USING (agency_id = public.agency_id());
 
 CREATE POLICY "tenant_update" ON properties
-  FOR UPDATE USING (agency_id = auth.agency_id());
+  FOR UPDATE USING (agency_id = public.agency_id());
 
 CREATE POLICY "tenant_delete" ON properties
-  FOR DELETE USING (agency_id = auth.agency_id());
+  FOR DELETE USING (agency_id = public.agency_id());
 
 CREATE POLICY "tenant_update" ON automations
-  FOR UPDATE USING (agency_id = auth.agency_id());
+  FOR UPDATE USING (agency_id = public.agency_id());
 
 CREATE POLICY "tenant_delete" ON automations
-  FOR DELETE USING (agency_id = auth.agency_id());
+  FOR DELETE USING (agency_id = public.agency_id());
 
 CREATE POLICY "tenant_update" ON ai_agents
-  FOR UPDATE USING (agency_id = auth.agency_id());
+  FOR UPDATE USING (agency_id = public.agency_id());
 
 CREATE POLICY "tenant_delete" ON ai_agents
-  FOR DELETE USING (agency_id = auth.agency_id());
+  FOR DELETE USING (agency_id = public.agency_id());
 
 CREATE POLICY "tenant_update" ON activities
-  FOR UPDATE USING (agency_id = auth.agency_id());
+  FOR UPDATE USING (agency_id = public.agency_id());
 
 CREATE POLICY "tenant_delete" ON activities
-  FOR DELETE USING (agency_id = auth.agency_id());
+  FOR DELETE USING (agency_id = public.agency_id());
 
 CREATE POLICY "tenant_update" ON tags
-  FOR UPDATE USING (agency_id = auth.agency_id());
+  FOR UPDATE USING (agency_id = public.agency_id());
 
 CREATE POLICY "tenant_delete" ON tags
-  FOR DELETE USING (agency_id = auth.agency_id());
+  FOR DELETE USING (agency_id = public.agency_id());
 
 CREATE POLICY "tenant_update" ON tasks
   FOR UPDATE USING (
     EXISTS (
       SELECT 1 FROM leads
       WHERE leads.id = tasks.lead_id
-      AND leads.agency_id = auth.agency_id()
+      AND leads.agency_id = public.agency_id()
     )
   );
 

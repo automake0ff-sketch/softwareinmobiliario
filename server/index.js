@@ -90,6 +90,17 @@ app.use(cors({
   credentials: true
 }));
 
+// Handler específico para errores de CORS: devuelve 403 con mensaje claro en vez
+// de dejar que caigan en el manejador genérico de 500 (indistinguible de un fallo
+// real del servidor). Debe ir DESPUÉS de app.use(cors(...)) para poder atraparlo.
+app.use((err, req, res, next) => {
+  if (err && err.message && err.message.includes('no permitido por CORS')) {
+    console.error('[CORS BLOCKED]', err.message, '| ALLOWED_ORIGINS actual:', allowedOrigins.join(', '));
+    return res.status(403).json({ error: err.message });
+  }
+  next(err);
+});
+
 // Definición de limitadores de tasa (Rate Limiting)
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos

@@ -783,7 +783,7 @@ async function start() {
           if (!exists) {
             await run(
               `INSERT INTO ai_agents (id, agency_id, type, name, is_active, status, stats, created_at)
-               VALUES (@id, @agency_id, @type, @name, 1, 'active', @stats, NOW())`,
+               VALUES (@id, @agency_id, @type, @name, true, 'active', @stats, NOW())`,
               {
                 id: uuidv4(),
                 agency_id: agency.id,

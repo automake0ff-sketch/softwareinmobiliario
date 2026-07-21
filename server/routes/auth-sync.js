@@ -26,7 +26,15 @@ router.post('/social-login-or-register', async (req, res) => {
       { id: supabase_uid }
     );
 
-    if (!user) {
+    // IMPORTANTE: no basta con comprobar "!user". El trigger on_auth_user_created
+    // de Supabase (supabase/migrations/00002_rls.sql) crea automáticamente la fila
+    // en public.users en cuanto Supabase Auth inserta en auth.users — lo cual pasa
+    // ANTES de que el frontend llegue a llamar a este endpoint. Esa fila del trigger
+    // siempre tiene agency_id NULL y role 'comercial' por defecto. Sin este chequeo
+    // adicional, "user" ya existiría (creado por el trigger) y todo este bloque de
+    // aprovisionamiento se saltaría siempre — dejando al usuario sin agencia para
+    // siempre. Tratamos "existe pero sin agencia" igual que "no existe".
+    if (!user || !user.agency_id) {
       const agencyId = supabase_uid;
       const userEmail = email || '';
       const userName = name || (userEmail ? userEmail.split('@')[0] : 'Usuario');
@@ -44,10 +52,15 @@ router.post('/social-login-or-register', async (req, res) => {
         { id: supabase_uid, email: email || '' }
       );
 
+      // UPSERT real: si el trigger ya creó la fila (caso normal en producción),
+      // la actualizamos con los valores correctos en vez de dejarla como estaba.
       await run(
         `INSERT INTO users (id, email, name, role, agency_id, active)
          VALUES (@id, @email, @name, 'admin', @agency_id, true)
-         ON CONFLICT (id) DO NOTHING`,
+         ON CONFLICT (id) DO UPDATE SET
+           agency_id = COALESCE(users.agency_id, EXCLUDED.agency_id),
+           role = CASE WHEN users.agency_id IS NULL THEN EXCLUDED.role ELSE users.role END,
+           email = CASE WHEN users.email = '' OR users.email IS NULL THEN EXCLUDED.email ELSE users.email END`,
         { id: supabase_uid, email: userEmail, name: userName, agency_id: agencyId }
       );
 

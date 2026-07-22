@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useStore } from '../../lib/store'
+import { supabase } from '../../lib/supabaseClient'
 import { getInitials } from '../../utils/formatters'
 
 const pageTitles = {
@@ -182,7 +183,16 @@ export default function Topbar() {
               </button>
               <div className="border-t border-[#1E1E2E] mt-1 pt-1">
                 <button
-                  onClick={() => { setDropdownOpen(false); useStore.getState().setUser(null) }}
+                  onClick={async () => {
+                    setDropdownOpen(false)
+                    // IMPORTANTE: setUser(null) solo limpia el estado local en memoria.
+                    // La sesión real de Supabase (persistida en el navegador) seguía
+                    // viva, así que ProtectedRoute la volvía a detectar de inmediato y
+                    // te dejaba en la misma pantalla en vez de llevarte al login.
+                    await supabase.auth.signOut()
+                    useStore.getState().setUser(null)
+                    navigate('/login', { replace: true })
+                  }}
                   className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[#EF4444] hover:bg-red-500/10 transition-colors"
                 >
                   <LogOut size={16} />

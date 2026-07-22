@@ -469,7 +469,7 @@ export class BillingService {
     const leadsCount = all2('SELECT COUNT(*) as count FROM leads WHERE agency_id = @agency_id', { agency_id: agencyId });
     const agentsCount = all2('SELECT COUNT(*) as count FROM ai_agents WHERE agency_id = @agency_id AND status = \'active\'', { agency_id: agencyId });
     const officesCount = all2('SELECT COUNT(*) as count FROM offices WHERE agency_id = @agency_id', { agency_id: agencyId });
-    const usersCount = all2('SELECT COUNT(*) as count FROM users WHERE agency_id = @agency_id AND active = 1', { agency_id: agencyId });
+    const usersCount = all2('SELECT COUNT(*) as count FROM users WHERE agency_id = @agency_id AND active = true', { agency_id: agencyId });
     const automationsCount = all2('SELECT COUNT(*) as count FROM automations WHERE agency_id = @agency_id', { agency_id: agencyId });
 
     const leadsUsed = leadsCount?.[0]?.count || 0;

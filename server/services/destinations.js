@@ -255,7 +255,7 @@ export async function sendToDestination({ destConfig, content, ctx, subject, age
       }
 
       case 'internal_notification': {
-        const users = await all('SELECT id FROM users WHERE agency_id = @agency_id AND active = 1', { agency_id: agencyId })
+        const users = await all('SELECT id FROM users WHERE agency_id = @agency_id AND active = true', { agency_id: agencyId })
         for (const u of users) {
           await run(
             `INSERT INTO notifications (id, agency_id, user_id, lead_id, title, body, type, created_at)

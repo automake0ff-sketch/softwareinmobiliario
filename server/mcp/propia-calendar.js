@@ -25,7 +25,7 @@ server
       `SELECT u.id, u.name, u.email, u.phone,
               (SELECT COUNT(*) FROM tasks WHERE assigned_to = u.id AND completed = false AND due_date >= NOW()) as pending_tasks,
               (SELECT COUNT(*) FROM leads WHERE assigned_to = u.id AND status NOT IN ('cerrado', 'reserva')) as active_leads
-       FROM users u WHERE u.role = 'comercial' AND u.active = 1
+       FROM users u WHERE u.role = 'comercial' AND u.active = true
        ${agencyId ? 'AND u.agency_id = @aid' : ''}
        ORDER BY active_leads ASC`,
       agencyId ? { aid: agencyId } : {}

@@ -301,7 +301,7 @@ export class ActionExecutor {
   async createTask(leadId, task) {
     let assignedTo = null;
     if (task.assign_to_role) {
-      const user = await get("SELECT id FROM users WHERE agency_id = @agency_id AND role = @role AND active = 1 LIMIT 1", {
+      const user = await get("SELECT id FROM users WHERE agency_id = @agency_id AND role = @role AND active = true LIMIT 1", {
         agency_id: this.agencyId,
         role: task.assign_to_role,
       });
@@ -325,7 +325,7 @@ export class ActionExecutor {
   async notifyTeam(message, level, ctx) {
     const roles = level === 'urgente' ? ['admin', 'manager'] : ['admin', 'manager', 'comercial'];
     const placeholders = roles.map(() => '?').join(',');
-    const users = await all(`SELECT id FROM users WHERE agency_id = ? AND active = 1 AND role IN (${placeholders})`, [
+    const users = await all(`SELECT id FROM users WHERE agency_id = ? AND active = true AND role IN (${placeholders})`, [
       this.agencyId, ...roles
     ]);
 

@@ -196,7 +196,7 @@ async function createNotification(agencyId, userId, leadId, title, message, leve
 
 async function findLeastLoadedUser(agencyId, role) {
   const users = await all(
-    'SELECT id, name FROM users WHERE agency_id = @agency_id AND role = @role AND active = 1',
+    'SELECT id, name FROM users WHERE agency_id = @agency_id AND role = @role AND active = true',
     { agency_id: agencyId, role: role || 'comercial' }
   )
   if (!users.length) return null
@@ -413,7 +413,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
         if (!testMode && leadId && agencyId) {
           let assignToUserId = null
           if (config.assign_to === 'manager' || config.assign_to === 'comercial') {
-            const u = await get('SELECT id FROM users WHERE agency_id = @agency_id AND role = @role AND active = 1 LIMIT 1',
+            const u = await get('SELECT id FROM users WHERE agency_id = @agency_id AND role = @role AND active = true LIMIT 1',
               { agency_id: agencyId, role: config.assign_to })
             if (u) assignToUserId = u.id
           }
@@ -450,12 +450,12 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
 
         if (!testMode && agencyId) {
           let users = await all(
-            'SELECT id FROM users WHERE agency_id = @agency_id AND active = 1',
+            'SELECT id FROM users WHERE agency_id = @agency_id AND active = true',
             { agency_id: agencyId }
           )
           if (forRole !== 'all') {
             users = await all(
-              'SELECT id FROM users WHERE agency_id = @agency_id AND role = @role AND active = 1',
+              'SELECT id FROM users WHERE agency_id = @agency_id AND role = @role AND active = true',
               { agency_id: agencyId, role: forRole }
             )
           }

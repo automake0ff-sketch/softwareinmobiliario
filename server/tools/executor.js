@@ -113,7 +113,7 @@ export async function executeTool(toolName, toolInput, context) {
         const params = { aid: toolInput.agency_id || agencyId };
         let sql = `SELECT u.id, u.name, u.email, u.phone, u.role,
                    (SELECT COUNT(*) FROM leads l WHERE l.assigned_to = u.id AND l.status NOT IN ('cerrado', 'reserva')) as active_leads
-                   FROM users u WHERE u.role = 'comercial' AND u.active = 1 AND u.agency_id = @aid`;
+                   FROM users u WHERE u.role = 'comercial' AND u.active = true AND u.agency_id = @aid`;
         if (toolInput.office_id) { sql += ' AND u.office_id = @oid'; params.oid = toolInput.office_id; }
         sql += ' ORDER BY active_leads ASC';
 

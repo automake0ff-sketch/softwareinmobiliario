@@ -19,7 +19,7 @@ router.post('/social-login-or-register', async (req, res) => {
     }
 
     let user = await get(
-      `SELECT u.id, u.role, u.agency_id, u.office_id, a.plan, a.plan_status,
+      `SELECT u.id, u.name, u.email, u.role, u.agency_id, u.office_id, a.plan, a.plan_status,
               a.name as agency_name, a.slug as agency_slug
        FROM users u LEFT JOIN agencies a ON a.id = u.agency_id
        WHERE u.id = @id AND u.active = true`,
@@ -65,7 +65,7 @@ router.post('/social-login-or-register', async (req, res) => {
       );
 
       user = await get(
-        `SELECT u.id, u.role, u.agency_id, u.office_id, a.plan, a.plan_status,
+        `SELECT u.id, u.name, u.email, u.role, u.agency_id, u.office_id, a.plan, a.plan_status,
                 a.name as agency_name, a.slug as agency_slug
          FROM users u LEFT JOIN agencies a ON a.id = u.agency_id
          WHERE u.id = @id AND u.active = true`,
@@ -86,6 +86,8 @@ router.post('/social-login-or-register', async (req, res) => {
     res.json({
       user: {
         id: user.id,
+        name: user.name,
+        email: user.email,
         role: user.role,
         agency_id: user.agency_id,
         office_id: user.office_id,

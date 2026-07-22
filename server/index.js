@@ -277,7 +277,7 @@ async function start() {
 
       const comerciales = await all(
         `SELECT u.*, (SELECT COUNT(*) FROM leads l WHERE l.assigned_to = u.id AND l.status NOT IN ('cerrado','reserva')) as active_leads
-         FROM users u WHERE u.role = 'comercial' AND u.agency_id = @agency_id AND u.active = 1
+         FROM users u WHERE u.role = 'comercial' AND u.agency_id = @agency_id AND u.active = true
          ORDER BY active_leads ASC LIMIT 1`,
         { agency_id: agencyId }
       );
@@ -522,7 +522,7 @@ async function start() {
       const somStr = startOfMonth.toISOString()
 
       const leadsCount = (await get("SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND created_at >= @som", { aid: agencyId, som: somStr }))?.count || 0
-      const usersCount = (await get("SELECT COUNT(*) as count FROM users WHERE agency_id = @aid AND active = 1", { aid: agencyId }))?.count || 0
+      const usersCount = (await get("SELECT COUNT(*) as count FROM users WHERE agency_id = @aid AND active = true", { aid: agencyId }))?.count || 0
       const officesCount = (await get("SELECT COUNT(*) as count FROM offices WHERE agency_id = @aid", { aid: agencyId }))?.count || 0
       const agentsCount = (await get("SELECT COUNT(*) as count FROM ai_agents WHERE agency_id = @aid AND status = 'active'", { aid: agencyId }))?.count || 0
       const automationsCount = (await get("SELECT COUNT(*) as count FROM automations WHERE agency_id = @aid AND is_active = true", { aid: agencyId }))?.count || 0

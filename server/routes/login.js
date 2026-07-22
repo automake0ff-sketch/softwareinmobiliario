@@ -27,7 +27,7 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Email y contraseña requeridos' });
     }
 
-    const user = await get('SELECT id, email, name, password_hash, role, agency_id, office_id FROM users WHERE email = @email AND active = 1', { email });
+    const user = await get('SELECT id, email, name, password_hash, role, agency_id, office_id FROM users WHERE email = @email AND active = true', { email });
     if (!user) {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }

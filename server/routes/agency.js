@@ -96,7 +96,7 @@ router.get('/:id/stats', async (req, res) => {
     const leadsByStatus = await all('SELECT status, COUNT(*) as count FROM leads WHERE agency_id = @aid GROUP BY status', { aid });
     const totalProperties = await get('SELECT COUNT(*) as count FROM properties WHERE agency_id = @aid', { aid }).count;
     const propertiesByStatus = await all('SELECT status, COUNT(*) as count FROM properties WHERE agency_id = @aid GROUP BY status', { aid });
-    const totalUsers = await get('SELECT COUNT(*) as count FROM users WHERE agency_id = @aid AND active = 1', { aid }).count;
+    const totalUsers = await get('SELECT COUNT(*) as count FROM users WHERE agency_id = @aid AND active = true', { aid }).count;
 
     const leadsThisMonth = await get(
       "SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND created_at >= DATE_TRUNC('month', NOW())",

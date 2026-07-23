@@ -266,27 +266,21 @@ async function handleIncomingMessage(message, metadata, contacts) {
     }
 
     const messageId = uuidv4();
-    const newMessage = { role: 'lead', content: text, timestamp: new Date().toISOString(), message_id: message.id };
 
     let existingConv = await get(
-      'SELECT id, messages FROM conversations WHERE lead_id = @lead_id AND channel = \'whatsapp\' ORDER BY created_at DESC LIMIT 1',
+      'SELECT id FROM conversations WHERE lead_id = @lead_id AND channel = \'whatsapp\' ORDER BY created_at DESC LIMIT 1',
       { lead_id: leadId }
     );
 
-    if (existingConv) {
-      const msgs = JSON.parse(existingConv.messages || '[]');
-      msgs.push(newMessage);
-      await run(
-        `UPDATE conversations SET messages = @messages WHERE id = @id`,
-        { messages: JSON.stringify(msgs), id: existingConv.id }
-      );
-    } else {
+    if (!existingConv) {
       existingConv = { id: uuidv4() };
       await run(
-        `INSERT INTO conversations (id, agency_id, lead_id, channel, messages, created_at)
-         VALUES (@id, @agency_id, @lead_id, @channel, @messages, NOW())`,
-        { id: existingConv.id, agency_id: agency.id, lead_id: leadId, channel: 'whatsapp', messages: JSON.stringify([newMessage]) }
+        `INSERT INTO conversations (id, agency_id, lead_id, channel, created_at, updated_at)
+         VALUES (@id, @agency_id, @lead_id, @channel, NOW(), NOW())`,
+        { id: existingConv.id, agency_id: agency.id, lead_id: leadId, channel: 'whatsapp' }
       );
+    } else {
+      await run('UPDATE conversations SET updated_at = NOW() WHERE id = @id', { id: existingConv.id });
     }
 
     const mappedType = ({ text: 'text', interactive: 'text', audio: 'audio', image: 'image', document: 'document' })[msgType] || 'text';

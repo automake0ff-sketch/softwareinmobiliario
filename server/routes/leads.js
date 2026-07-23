@@ -119,10 +119,20 @@ router.get('/:id', async (req, res) => {
       'SELECT * FROM conversations WHERE lead_id = @lead_id ORDER BY created_at DESC',
       { lead_id: req.params.id }
     );
-    const conversations = rawConversations.map(c => {
-      const messagesList = c.messages ? JSON.parse(c.messages) : [];
+    const conversations = await Promise.all(rawConversations.map(async (c) => {
+      const msgRows = await all('SELECT * FROM messages WHERE conversation_id = @id ORDER BY created_at ASC', { id: c.id });
+      const messagesList = msgRows.map(m => ({
+        id: m.id,
+        role: m.author === 'lead' ? 'lead' : m.author === 'system' ? 'system' : 'agent',
+        sender_type: m.author,
+        content: m.content,
+        message_type: m.message_type,
+        is_read: !!m.is_read,
+        timestamp: m.created_at,
+        created_at: m.created_at,
+      }));
       return { ...c, messages: messagesList };
-    });
+    }));
 
     const insights = await all(
       'SELECT * FROM ai_insights WHERE lead_id = @lead_id ORDER BY created_at DESC',

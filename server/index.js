@@ -302,12 +302,17 @@ async function start() {
 
       const convId = uuidv4();
       await run(
-        `INSERT INTO conversations (id, lead_id, channel, messages, created_at)
-         VALUES (@id, @lead_id, @channel, @messages, NOW())`,
+        `INSERT INTO conversations (id, lead_id, agency_id, channel, created_at, updated_at)
+         VALUES (@id, @lead_id, @agency_id, @channel, NOW(), NOW())`,
         {
-          id: convId, lead_id: leadId, channel: source === 'meta_ads' ? 'web' : 'whatsapp',
-          messages: JSON.stringify([{ role: 'agent', content: welcomeMessage, timestamp: new Date().toISOString() }]),
+          id: convId, lead_id: leadId, agency_id: agencyId,
+          channel: source === 'meta_ads' ? 'web' : 'whatsapp',
         }
+      );
+      await run(
+        `INSERT INTO messages (id, conversation_id, author, content, message_type, is_read, created_at)
+         VALUES (@id, @conversation_id, 'agent', @content, 'text', true, NOW())`,
+        { id: uuidv4(), conversation_id: convId, content: welcomeMessage }
       );
 
       logActivity(agencyId, leadId, null, 'ia_welcome',

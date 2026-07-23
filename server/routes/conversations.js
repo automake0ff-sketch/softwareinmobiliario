@@ -4,12 +4,15 @@ import { all, get, run } from '../db/db.js';
 import { auth } from '../middleware/auth.js';
 import { realtime } from '../services/realtime.js';
 
-// Auto-run schema migrations for conversations table
+// Auto-run schema migrations for conversations/messages tables.
+// is_read en messages: la tabla canónica (supabase/migrations/00001_schema.sql)
+// no la incluye, pero la necesitamos para contar mensajes no leídos.
 const convMigrations = [
   `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS ia_handling INTEGER DEFAULT 1`,
   `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`,
   `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active'`,
   `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS agency_id UUID`,
+  `ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT false`,
 ];
 for (const sql of convMigrations) {
   try { await run(sql); } catch (e) { console.log('[Migration] conversations:', e.message); }
@@ -17,6 +20,19 @@ for (const sql of convMigrations) {
 
 const router = Router();
 router.use(auth);
+
+function mapMessage(m) {
+  return {
+    id: m.id,
+    role: m.author === 'lead' ? 'lead' : m.author === 'system' ? 'system' : 'agent',
+    sender_type: m.author,
+    content: m.content,
+    message_type: m.message_type,
+    is_read: !!m.is_read,
+    timestamp: m.created_at,
+    created_at: m.created_at,
+  };
+}
 
 // POST /api/conversations - Create a new conversation for a lead
 router.post('/', async (req, res) => {
@@ -26,27 +42,17 @@ router.post('/', async (req, res) => {
 
     if (!lead_id) return res.status(400).json({ error: 'lead_id es obligatorio.' });
 
-    // Verify lead belongs to agency
     const lead = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: lead_id, agency_id: agencyId });
     if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' });
 
-    // Check if a conversation already exists for this lead+channel
-    let existing = null;
-    try {
-      existing = await get(
-        'SELECT * FROM conversations WHERE lead_id = @lead_id AND channel = @channel AND agency_id = @agency_id',
-        { lead_id, channel, agency_id: agencyId }
-      );
-    } catch (e) {
-      // agency_id column might not exist yet, fallback without it
-      existing = await get(
-        'SELECT * FROM conversations WHERE lead_id = @lead_id AND channel = @channel',
-        { lead_id, channel }
-      );
-    }
+    let existing = await get(
+      'SELECT * FROM conversations WHERE lead_id = @lead_id AND channel = @channel AND agency_id = @agency_id',
+      { lead_id, channel, agency_id: agencyId }
+    );
 
     if (existing) {
-      const messages = existing.messages ? JSON.parse(existing.messages) : [];
+      const rows = await all('SELECT * FROM messages WHERE conversation_id = @id ORDER BY created_at ASC', { id: existing.id });
+      const messages = rows.map(mapMessage);
       return res.status(200).json({
         id: existing.id,
         lead_id: existing.lead_id,
@@ -59,32 +65,21 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Create new conversation
     const convId = uuidv4();
-    const firstMsg = {
-      id: uuidv4(),
-      role: 'system',
-      sender_type: 'system',
-      content,
-      is_read: true,
-      timestamp: new Date().toISOString(),
-      created_at: new Date().toISOString(),
-    };
-    const messages = [firstMsg];
-
-    // Insert using only the guaranteed base columns
     await run(
-      `INSERT INTO conversations (id, lead_id, channel, messages, created_at)
-       VALUES (@id, @lead_id, @channel, @messages, NOW())`,
-      { id: convId, lead_id, channel, messages: JSON.stringify(messages) }
+      `INSERT INTO conversations (id, lead_id, channel, agency_id, status, ia_handling, created_at, updated_at)
+       VALUES (@id, @lead_id, @channel, @agency_id, 'active', 1, NOW(), NOW())`,
+      { id: convId, lead_id, channel, agency_id: agencyId }
     );
-    // Update optional columns separately (safe even if they were just migrated)
-    try {
-      await run(
-        `UPDATE conversations SET agency_id = @agency_id, status = 'active', ia_handling = 1, updated_at = NOW() WHERE id = @id`,
-        { agency_id: agencyId, id: convId }
-      );
-    } catch (e) { /* ignore if columns still not available */ }
+
+    const firstMsgId = uuidv4();
+    await run(
+      `INSERT INTO messages (id, conversation_id, author, content, message_type, is_read, created_at)
+       VALUES (@id, @conversation_id, 'system', @content, 'text', true, NOW())`,
+      { id: firstMsgId, conversation_id: convId, content }
+    );
+
+    const messages = [mapMessage({ id: firstMsgId, author: 'system', content, message_type: 'text', is_read: true, created_at: new Date().toISOString() })];
 
     res.status(201).json({
       id: convId,
@@ -114,12 +109,12 @@ router.get('/', async (req, res) => {
       WHERE c.agency_id = @agency_id
       ORDER BY c.updated_at DESC, c.created_at DESC
     `;
-    const params = { agency_id: agencyId };
+    const rawConversations = await all(sql, { agency_id: agencyId });
 
-    const rawConversations = await all(sql, params);
-    const conversations = rawConversations.map(c => {
-      const messagesList = c.messages ? JSON.parse(c.messages) : [];
-      const unreadCount = messagesList.filter(m => (m.role === 'lead' || m.sender_type === 'lead') && !m.is_read).length;
+    const conversations = await Promise.all(rawConversations.map(async (c) => {
+      const rows = await all('SELECT * FROM messages WHERE conversation_id = @id ORDER BY created_at ASC', { id: c.id });
+      const messagesList = rows.map(mapMessage);
+      const unreadCount = messagesList.filter(m => m.role === 'lead' && !m.is_read).length;
 
       return {
         id: c.id,
@@ -128,6 +123,7 @@ router.get('/', async (req, res) => {
         status: c.status,
         ia_handling: c.ia_handling !== 0,
         updated_at: c.updated_at || c.created_at,
+        created_at: c.created_at,
         lead: {
           id: c.lead_id,
           name: c.lead_name,
@@ -139,7 +135,7 @@ router.get('/', async (req, res) => {
         last_message: messagesList[messagesList.length - 1] || null,
         unread_count: unreadCount
       };
-    });
+    }));
 
     res.json(conversations);
   } catch (error) {
@@ -154,27 +150,13 @@ router.get('/:id/messages', async (req, res) => {
     const conv = await get('SELECT * FROM conversations WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!conv) return res.status(404).json({ error: 'Conversación no encontrada.' });
 
-    const messagesList = conv.messages ? JSON.parse(conv.messages) : [];
+    await run(
+      "UPDATE messages SET is_read = true WHERE conversation_id = @id AND author = 'lead' AND is_read = false",
+      { id: req.params.id }
+    );
 
-    // Mark lead messages as read
-    let updated = false;
-    const markedList = messagesList.map(m => {
-      if ((m.role === 'lead' || m.sender_type === 'lead') && !m.is_read) {
-        updated = true;
-        return { ...m, is_read: true };
-      }
-      return m;
-    });
-
-    if (updated) {
-      await run('UPDATE conversations SET messages = @messages WHERE id = @id', { messages: JSON.stringify(markedList), id: req.params.id });
-      // update DB messages table too if active
-      try {
-        await run('UPDATE messages SET is_read = 1 WHERE conversation_id = @id AND author = \'lead\'', { id: req.params.id });
-      } catch (me) {}
-    }
-
-    res.json(markedList);
+    const rows = await all('SELECT * FROM messages WHERE conversation_id = @id ORDER BY created_at ASC', { id: req.params.id });
+    res.json(rows.map(mapMessage));
   } catch (error) {
     console.error('Error getting messages:', error);
     res.status(500).json({ error: 'Error al obtener mensajes.' });
@@ -187,44 +169,21 @@ router.post('/:id/messages', async (req, res) => {
     const { content } = req.body;
     const conversationId = req.params.id;
     const agencyId = req.user.agency_id;
-    const userId = req.user.id;
 
     if (!content) return res.status(400).json({ error: 'El contenido es obligatorio.' });
 
     const conv = await get('SELECT * FROM conversations WHERE id = @id AND agency_id = @agency_id', { id: conversationId, agency_id: agencyId });
     if (!conv) return res.status(404).json({ error: 'Conversación no encontrada.' });
 
-    const messagesList = conv.messages ? JSON.parse(conv.messages) : [];
-    const newMsg = {
-      id: uuidv4(),
-      role: 'agent',
-      sender_type: 'user',
-      sender_id: userId,
-      content,
-      is_read: true,
-      timestamp: new Date().toISOString(),
-      created_at: new Date().toISOString(),
-    };
-    messagesList.push(newMsg);
-
+    const msgId = uuidv4();
     await run(
-      `UPDATE conversations
-       SET messages = @messages, updated_at = NOW()
-       WHERE id = @id`,
-      { messages: JSON.stringify(messagesList), id: conversationId }
+      `INSERT INTO messages (id, conversation_id, author, content, message_type, is_read, created_at)
+       VALUES (@id, @conversation_id, 'agent', @content, 'text', true, NOW())`,
+      { id: msgId, conversation_id: conversationId, content }
     );
+    await run('UPDATE conversations SET updated_at = NOW() WHERE id = @id', { id: conversationId });
 
-    // Save to messages table
-    await run(
-      `INSERT INTO messages (id, conversation_id, author, content, message_type, created_at)
-       VALUES (@id, @conversation_id, @author, @content, 'text', NOW())`,
-      {
-        id: newMsg.id,
-        conversation_id: conversationId,
-        author: 'agent',
-        content,
-      }
-    );
+    const newMsg = mapMessage({ id: msgId, author: 'agent', content, message_type: 'text', is_read: true, created_at: new Date().toISOString() });
 
     // Fetch lead details
     const lead = await get('SELECT * FROM leads WHERE id = @id', { id: conv.lead_id });

@@ -10,7 +10,7 @@ server
               c.created_at as last_message_at
        FROM conversations c
        JOIN leads l ON l.id = c.lead_id
-       WHERE c.messages IS NOT NULL AND c.messages != '[]'
+       WHERE EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id)
        ${agencyId ? 'AND l.agency_id = @aid' : ''}
        ORDER BY c.created_at DESC LIMIT 20`,
       agencyId ? { aid: agencyId } : {}
@@ -119,10 +119,17 @@ server
     const conv = await get('SELECT * FROM conversations WHERE lead_id = @lid ORDER BY created_at DESC LIMIT 1', { lid: args.lead_id });
     if (!conv) return [];
 
-    let messages = [];
-    try { messages = JSON.parse(conv.messages || '[]'); } catch { messages = []; }
+    const rows = await all(
+      'SELECT * FROM messages WHERE conversation_id = @id ORDER BY created_at DESC LIMIT @limit',
+      { id: conv.id, limit: args.limit || 20 }
+    );
+    const messages = rows.reverse().map(m => ({
+      role: m.author === 'lead' ? 'lead' : m.author === 'system' ? 'system' : 'agent',
+      content: m.content,
+      timestamp: m.created_at,
+    }));
 
-    return messages.slice(-(args.limit || 20));
+    return messages;
   })
 
   .tool('get_unread_count', 'Obtiene el número de mensajes no leídos por agencia', {
@@ -134,7 +141,7 @@ server
       `SELECT COUNT(*) as count FROM messages m
        JOIN conversations c ON c.id = m.conversation_id
        JOIN leads l ON l.id = c.lead_id
-       WHERE m.author = 'lead' AND l.agency_id = @aid`,
+       WHERE m.author = 'lead' AND m.is_read = false AND l.agency_id = @aid`,
       { aid: args.agency_id }
     );
     return { unread: count?.count || 0 };

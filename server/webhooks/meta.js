@@ -127,11 +127,15 @@ async function processMetaLead(leadData, pageId) {
 
     if (message) {
       const convId = uuidv4();
-      const msgs = [{ role: 'lead', content: message, timestamp: new Date().toISOString() }];
       await run(
-        `INSERT INTO conversations (id, agency_id, lead_id, channel, messages, created_at)
-         VALUES (@id, @agency_id, @lead_id, @channel, @messages, NOW())`,
-        { id: convId, agency_id: agency.id, lead_id: leadId, channel: 'web', messages: JSON.stringify(msgs) }
+        `INSERT INTO conversations (id, agency_id, lead_id, channel, created_at)
+         VALUES (@id, @agency_id, @lead_id, @channel, NOW())`,
+        { id: convId, agency_id: agency.id, lead_id: leadId, channel: 'web' }
+      );
+      await run(
+        `INSERT INTO messages (id, conversation_id, author, content, message_type, is_read, created_at)
+         VALUES (@id, @conversation_id, 'lead', @content, 'text', false, NOW())`,
+        { id: uuidv4(), conversation_id: convId, content: message }
       );
     }
 

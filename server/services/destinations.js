@@ -35,9 +35,9 @@ async function saveMessageToConversation(leadId, agencyId, content) {
   if (!conv) {
     const convId = uuidv4()
     await run(
-      `INSERT INTO conversations (id, lead_id, agent_id, channel, messages, created_at)
-       VALUES (@id, @lead_id, @agent_id, @channel, @messages, NOW())`,
-      { id: convId, lead_id: leadId, agent_id: null, channel: 'whatsapp', messages: '[]' }
+      `INSERT INTO conversations (id, lead_id, agent_id, channel, created_at)
+       VALUES (@id, @lead_id, @agent_id, @channel, NOW())`,
+      { id: convId, lead_id: leadId, agent_id: null, channel: 'whatsapp' }
     )
     conv = { id: convId }
   }

@@ -82,15 +82,17 @@ async function sendWhatsApp(phone, message, agencyId, ctx = {}) {
 
 async function saveMessageToConversation(leadId, agencyId, content, senderType, senderId) {
   if (!leadId || !content) return
-  let conv = await get('SELECT id, messages FROM conversations WHERE lead_id = @lead_id ORDER BY created_at DESC LIMIT 1', { lead_id: leadId })
+  let conv = await get('SELECT id FROM conversations WHERE lead_id = @lead_id ORDER BY created_at DESC LIMIT 1', { lead_id: leadId })
   if (!conv) {
     const convId = uuidv4()
     await run(
-      `INSERT INTO conversations (id, agency_id, lead_id, channel, messages, created_at)
-       VALUES (@id, @agency_id, @lead_id, @channel, @messages, NOW())`,
-      { id: convId, agency_id: agencyId, lead_id: leadId, channel: 'whatsapp', messages: '[]' }
+      `INSERT INTO conversations (id, agency_id, lead_id, channel, created_at, updated_at)
+       VALUES (@id, @agency_id, @lead_id, @channel, NOW(), NOW())`,
+      { id: convId, agency_id: agencyId, lead_id: leadId, channel: 'whatsapp' }
     )
-    conv = { id: convId, messages: '[]' }
+    conv = { id: convId }
+  } else {
+    await run('UPDATE conversations SET updated_at = NOW() WHERE id = @id', { id: conv.id })
   }
 
   const msgId = uuidv4()
@@ -104,13 +106,10 @@ async function saveMessageToConversation(leadId, agencyId, content, senderType, 
     timestamp: new Date().toISOString(),
     created_at: new Date().toISOString(),
   }
-  const msgs = safeJsonParse(conv.messages || '[]')
-  msgs.push(newMessage)
-  await run(`UPDATE conversations SET messages = @messages, updated_at = NOW() WHERE id = @id`, { messages: JSON.stringify(msgs), id: conv.id })
 
   await run(
-    `INSERT INTO messages (id, conversation_id, author, content, message_type, created_at)
-     VALUES (@id, @conversation_id, @author, @content, @message_type, NOW())`,
+    `INSERT INTO messages (id, conversation_id, author, content, message_type, is_read, created_at)
+     VALUES (@id, @conversation_id, @author, @content, @message_type, true, NOW())`,
     {
       id: msgId,
       conversation_id: conv.id,
@@ -180,16 +179,16 @@ export async function incrementAgentStats(agentType, agencyId, isNewLead = false
 
 async function createNotification(agencyId, userId, leadId, title, message, level) {
   await run(
-    `INSERT INTO notifications (id, agency_id, user_id, lead_id, title, message, level, is_read, created_at)
-     VALUES (@id, @agency_id, @user_id, @lead_id, @title, @message, @level, 0, NOW())`,
+    `INSERT INTO notifications (id, agency_id, user_id, lead_id, title, body, type, read, created_at)
+     VALUES (@id, @agency_id, @user_id, @lead_id, @title, @body, @type, false, NOW())`,
     {
       id: uuidv4(),
       agency_id: agencyId,
       user_id: userId,
       lead_id: leadId || null,
       title: title || 'Notificación',
-      message: message || '',
-      level: level || 'info',
+      body: message || '',
+      type: level || 'info',
     }
   )
 }

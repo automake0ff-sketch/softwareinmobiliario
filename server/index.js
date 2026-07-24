@@ -240,38 +240,10 @@ async function start() {
 
       const agentResult = results[0] || {};
       const agentResponse = agentResult.message || '';
-
-      if (agentResponse && lead.phone) {
-        try {
-          await waClient.sendText(lead.phone, agentResponse);
-
-          let conv = conversationId
-            ? await get('SELECT id FROM conversations WHERE id = @id', { id: conversationId })
-            : null;
-          if (!conv) {
-            conv = await get(
-              'SELECT id FROM conversations WHERE lead_id = @lead_id ORDER BY created_at DESC LIMIT 1',
-              { lead_id: leadId }
-            );
-          }
-          if (conv) {
-            await run(
-              `INSERT INTO messages (id, conversation_id, author, content, message_type, is_read, created_at)
-               VALUES (@id, @conversation_id, 'ia_agent', @content, 'text', true, NOW())`,
-              { id: uuidv4(), conversation_id: conv.id, content: agentResponse }
-            );
-            await run('UPDATE conversations SET updated_at = NOW() WHERE id = @id', { id: conv.id });
-            if (realtime) {
-              realtime.broadcast('message', {
-                conversation_id: conv.id,
-                message: { role: 'agent', sender_type: 'ia_agent', content: agentResponse, timestamp: new Date().toISOString() },
-              });
-            }
-          }
-        } catch (sendErr) {
-          console.error('[QUEUE] Error enviando/guardando respuesta del agente:', sendErr.message);
-        }
-      }
+      // NOTA: el envío real por WhatsApp y el guardado en la tabla messages ya lo
+      // hace ActionExecutor.executeFromAgentData (invocado dentro de runForLead)
+      // en cuanto agentResult.message tiene contenido real. No lo repetimos aquí
+      // para no duplicar el mensaje que recibe el lead.
 
       if (lead.status === 'nuevo') {
         await run("UPDATE leads SET status = 'contactado', updated_at = NOW() WHERE id = @id", { id: leadId });

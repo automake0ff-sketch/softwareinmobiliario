@@ -7,21 +7,71 @@ import { checkFeature } from '../services/plan-checker.js';
 const router = Router();
 router.use(auth);
 
-router.get('/:id', async (req, res) => {
-  try {
-    const agency = await get('SELECT * FROM agencies WHERE id = @id', { id: req.params.id });
-    if (!agency) return res.status(404).json({ error: 'Agencia no encontrada.' });
+// ── Helper compartido: stats de una agencia ──
+async function buildAgencyStats(aid) {
+  const totalLeads = (await get('SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid', { aid }))?.count || 0;
+  const leadsByStatus = await all('SELECT status, COUNT(*) as count FROM leads WHERE agency_id = @aid GROUP BY status', { aid });
+  const totalProperties = (await get('SELECT COUNT(*) as count FROM properties WHERE agency_id = @aid', { aid }))?.count || 0;
+  const propertiesByStatus = await all('SELECT status, COUNT(*) as count FROM properties WHERE agency_id = @aid GROUP BY status', { aid });
+  const totalUsers = (await get('SELECT COUNT(*) as count FROM users WHERE agency_id = @aid AND active = true', { aid }))?.count || 0;
 
-    const offices = await all('SELECT * FROM offices WHERE agency_id = @agency_id ORDER BY name', { agency_id: req.params.id });
-    const users = await all('SELECT id, email, name, role, office_id, avatar, phone, active FROM users WHERE agency_id = @agency_id ORDER BY name', { agency_id: req.params.id });
+  const leadsThisMonth = (await get(
+    "SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND created_at >= DATE_TRUNC('month', NOW())",
+    { aid }
+  ))?.count || 0;
 
-    res.json({ ...agency, offices, users });
-  } catch (error) {
-    console.error('Error getting agency:', error);
-    res.status(500).json({ error: 'Error al obtener agencia.' });
-  }
-});
+  const conversion = (await get(
+    "SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND status IN ('reserva','cerrado')",
+    { aid }
+  ))?.count || 0;
 
+  const avgScore = (await get('SELECT AVG(ia_score) as avg FROM leads WHERE agency_id = @aid AND ia_score > 0', { aid }))?.avg;
+
+  const topZone = await get(
+    'SELECT zone, COUNT(*) as count FROM leads WHERE agency_id = @aid AND zone IS NOT NULL GROUP BY zone ORDER BY count DESC LIMIT 1',
+    { aid }
+  );
+
+  return {
+    totalLeads,
+    leadsByStatus,
+    totalProperties,
+    propertiesByStatus,
+    totalUsers,
+    leadsThisMonth,
+    conversionRate: totalLeads > 0 ? ((conversion / totalLeads) * 100).toFixed(1) : 0,
+    avgScore: avgScore ? Number(avgScore).toFixed(1) : null,
+    topZone: topZone ? topZone.zone : null,
+  };
+}
+
+async function buildAgencyRanking(aid) {
+  return all(
+    `SELECT u.id, u.name, u.avatar, u.office_id, o.name AS office_name,
+            COUNT(l.id) AS total_leads,
+            SUM(CASE WHEN l.status IN ('reserva','cerrado') THEN 1 ELSE 0 END) AS converted,
+            AVG(l.ia_score) AS avg_score
+     FROM users u
+     LEFT JOIN leads l ON l.assigned_to = u.id
+     LEFT JOIN offices o ON u.office_id = o.id
+     WHERE u.agency_id = @aid AND u.role = 'comercial'
+     GROUP BY u.id
+     ORDER BY converted DESC, avg_score DESC`,
+    { aid }
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// IMPORTANTE: las rutas literales (/stats, /ranking, /config,
+// /test-integration) van SIEMPRE antes de /:id. Express hace matching de
+// rutas por orden de registro; si /:id fuera primero, una petición a
+// GET /api/agency/config coincidiría con /:id (id='config') antes de
+// llegar nunca a la ruta real — y como 'config' no es un UUID válido,
+// la query revienta con un error de Postgres ('Error al obtener agencia.'
+// genérico), exactamente el bug reportado.
+// ═══════════════════════════════════════════════════════
+
+// POST /api/agency — Crear agencia
 router.post('/', requireRole('admin'), async (req, res) => {
   try {
     const { name, slug, logo_url, primary_color, domain, custom_domain } = req.body;
@@ -46,110 +96,21 @@ router.post('/', requireRole('admin'), async (req, res) => {
   }
 });
 
-router.patch('/:id', requireRole('admin', 'manager'), async (req, res) => {
+// GET /api/agency/stats — Stats de la agencia del usuario autenticado
+router.get('/stats', async (req, res) => {
   try {
-    const existing = await get('SELECT * FROM agencies WHERE id = @id', { id: req.params.id });
-    if (!existing) return res.status(404).json({ error: 'Agencia no encontrada.' });
-
-    // Mapear domain a custom_domain para compatibilidad
-    if (req.body.domain !== undefined && req.body.custom_domain === undefined) {
-      req.body.custom_domain = req.body.domain;
-    }
-
-    const whiteLabelFields = ['logo_url', 'primary_color', 'custom_domain'];
-    const hasWhiteLabelUpdate = whiteLabelFields.some(f => req.body[f] !== undefined);
-    if (hasWhiteLabelUpdate) {
-      const featureCheck = checkFeature('white_label')(req, res, () => {})
-      if (featureCheck !== undefined) return // 402 sent by middleware
-    }
-
-    const allowed = ['name', 'slug', 'logo_url', 'primary_color', 'custom_domain',
-      'email', 'phone', 'address', 'city', 'province', 'website',
-      'idealista_api_key', 'idealista_api_secret', 'idealista_import_mode', 'idealista_office_id',
-    ];
-    const updates = [];
-    const params = { id: req.params.id };
-
-    for (const field of allowed) {
-      if (req.body[field] !== undefined) {
-        updates.push(`${field} = @${field}`);
-        params[field] = req.body[field];
-      }
-    }
-
-    if (updates.length === 0) return res.status(400).json({ error: 'No hay campos para actualizar.' });
-    await run(`UPDATE agencies SET ${updates.join(', ')} WHERE id = @id`, params);
-
-    const agency = await get('SELECT * FROM agencies WHERE id = @id', { id: req.params.id });
-    res.json(agency);
-  } catch (error) {
-    console.error('Error updating agency:', error);
-    res.status(500).json({ error: 'Error al actualizar agencia.' });
-  }
-});
-
-router.get('/:id/stats', async (req, res) => {
-  try {
-    const aid = req.params.id;
-
-    const totalLeads = await get('SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid', { aid }).count;
-    const leadsByStatus = await all('SELECT status, COUNT(*) as count FROM leads WHERE agency_id = @aid GROUP BY status', { aid });
-    const totalProperties = await get('SELECT COUNT(*) as count FROM properties WHERE agency_id = @aid', { aid }).count;
-    const propertiesByStatus = await all('SELECT status, COUNT(*) as count FROM properties WHERE agency_id = @aid GROUP BY status', { aid });
-    const totalUsers = await get('SELECT COUNT(*) as count FROM users WHERE agency_id = @aid AND active = true', { aid }).count;
-
-    const leadsThisMonth = await get(
-      "SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND created_at >= DATE_TRUNC('month', NOW())",
-      { aid }
-    ).count;
-
-    const conversion = await get(
-      "SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND status IN ('reserva','cerrado')",
-      { aid }
-    ).count;
-
-    const avgScore = await get('SELECT AVG(ia_score) as avg FROM leads WHERE agency_id = @aid AND ia_score > 0', { aid }).avg;
-
-    const topZone = await get(
-      'SELECT zone, COUNT(*) as count FROM leads WHERE agency_id = @aid AND zone IS NOT NULL GROUP BY zone ORDER BY count DESC LIMIT 1',
-      { aid }
-    );
-
-    res.json({
-      totalLeads,
-      leadsByStatus,
-      totalProperties,
-      propertiesByStatus,
-      totalUsers,
-      leadsThisMonth,
-      conversionRate: totalLeads > 0 ? ((conversion / totalLeads) * 100).toFixed(1) : 0,
-      avgScore: avgScore ? Number(avgScore).toFixed(1) : null,
-      topZone: topZone ? topZone.zone : null,
-    });
+    const stats = await buildAgencyStats(req.user.agency_id);
+    res.json(stats);
   } catch (error) {
     console.error('Error getting stats:', error);
     res.status(500).json({ error: 'Error al obtener estadísticas.' });
   }
 });
 
-router.get('/:id/ranking', async (req, res) => {
+// GET /api/agency/ranking — Ranking de comerciales de la agencia del usuario autenticado
+router.get('/ranking', async (req, res) => {
   try {
-    const aid = req.params.id;
-
-    const ranking = await all(
-      `SELECT u.id, u.name, u.avatar, u.office_id, o.name AS office_name,
-              COUNT(l.id) AS total_leads,
-              SUM(CASE WHEN l.status IN ('reserva','cerrado') THEN 1 ELSE 0 END) AS converted,
-              AVG(l.ia_score) AS avg_score
-       FROM users u
-       LEFT JOIN leads l ON l.assigned_to = u.id
-       LEFT JOIN offices o ON u.office_id = o.id
-       WHERE u.agency_id = @aid AND u.role = 'comercial'
-       GROUP BY u.id
-       ORDER BY converted DESC, avg_score DESC`,
-      { aid }
-    );
-
+    const ranking = await buildAgencyRanking(req.user.agency_id);
     res.json(ranking);
   } catch (error) {
     console.error('Error getting ranking:', error);
@@ -200,23 +161,23 @@ router.patch('/config', async (req, res) => {
   try {
     const agencyId = req.user?.agency_id
     if (!agencyId) return res.status(401).json({ error: 'No agency context' })
-    const safeUpdate = {}
-    for (const [key, value] of Object.entries(req.body)) {
-      if (CONFIG_FIELDS.includes(key)) safeUpdate[key] = value
+
+    const updates = []
+    const params = { id: agencyId }
+    for (const field of CONFIG_FIELDS) {
+      if (req.body[field] !== undefined) {
+        updates.push(`${field} = @${field}`)
+        params[field] = req.body[field]
+      }
     }
-    if (Object.keys(safeUpdate).length === 0) {
-      return res.status(400).json({ error: 'No hay campos válidos para actualizar' })
-    }
-    safeUpdate.id = agencyId
-    const setClauses = Object.keys(safeUpdate)
-      .filter(k => k !== 'id')
-      .map(k => `${k} = @${k}`)
-      .join(', ')
-    await run(`UPDATE agencies SET ${setClauses} WHERE id = @id`, safeUpdate)
-    const updated = await get('SELECT * FROM agencies WHERE id = @id', { id: agencyId })
+    if (updates.length === 0) return res.status(400).json({ error: 'No hay campos para actualizar.' })
+
+    await run(`UPDATE agencies SET ${updates.join(', ')} WHERE id = @id`, params)
+
+    const agency = await get('SELECT * FROM agencies WHERE id = @id', { id: agencyId })
     const config = {}
     for (const field of CONFIG_FIELDS) {
-      config[field] = updated[field] ?? ''
+      config[field] = agency[field] ?? ''
     }
     res.json(config)
   } catch (error) {
@@ -225,7 +186,7 @@ router.patch('/config', async (req, res) => {
   }
 })
 
-// POST /api/agency/test-integration — Probar conexión con integraciones
+// POST /api/agency/test-integration — Probar una integración con credenciales del body
 router.post('/test-integration', async (req, res) => {
   try {
     const agencyId = req.user?.agency_id
@@ -308,6 +269,86 @@ router.post('/test-integration', async (req, res) => {
     res.json({ ok: false, msg: String(err) })
   }
 })
+
+// ═══════════════════════════════════════════════════════
+// A partir de aquí, rutas con :id — deben ir SIEMPRE al final del archivo.
+// ═══════════════════════════════════════════════════════
+
+router.get('/:id', async (req, res) => {
+  try {
+    const agency = await get('SELECT * FROM agencies WHERE id = @id', { id: req.params.id });
+    if (!agency) return res.status(404).json({ error: 'Agencia no encontrada.' });
+
+    const offices = await all('SELECT * FROM offices WHERE agency_id = @agency_id ORDER BY name', { agency_id: req.params.id });
+    const users = await all('SELECT id, email, name, role, office_id, avatar, phone, active FROM users WHERE agency_id = @agency_id ORDER BY name', { agency_id: req.params.id });
+
+    res.json({ ...agency, offices, users });
+  } catch (error) {
+    console.error('Error getting agency:', error);
+    res.status(500).json({ error: 'Error al obtener agencia.' });
+  }
+});
+
+router.patch('/:id', requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const existing = await get('SELECT * FROM agencies WHERE id = @id', { id: req.params.id });
+    if (!existing) return res.status(404).json({ error: 'Agencia no encontrada.' });
+
+    if (req.body.domain !== undefined && req.body.custom_domain === undefined) {
+      req.body.custom_domain = req.body.domain;
+    }
+
+    const whiteLabelFields = ['logo_url', 'primary_color', 'custom_domain'];
+    const hasWhiteLabelUpdate = whiteLabelFields.some(f => req.body[f] !== undefined);
+    if (hasWhiteLabelUpdate) {
+      const featureCheck = checkFeature('white_label')(req, res, () => {})
+      if (featureCheck !== undefined) return // 402 sent by middleware
+    }
+
+    const allowed = ['name', 'slug', 'logo_url', 'primary_color', 'custom_domain',
+      'email', 'phone', 'address', 'city', 'province', 'website',
+      'idealista_api_key', 'idealista_api_secret', 'idealista_import_mode', 'idealista_office_id',
+    ];
+    const updates = [];
+    const params = { id: req.params.id };
+
+    for (const field of allowed) {
+      if (req.body[field] !== undefined) {
+        updates.push(`${field} = @${field}`);
+        params[field] = req.body[field];
+      }
+    }
+
+    if (updates.length === 0) return res.status(400).json({ error: 'No hay campos para actualizar.' });
+    await run(`UPDATE agencies SET ${updates.join(', ')} WHERE id = @id`, params);
+
+    const agency = await get('SELECT * FROM agencies WHERE id = @id', { id: req.params.id });
+    res.json(agency);
+  } catch (error) {
+    console.error('Error updating agency:', error);
+    res.status(500).json({ error: 'Error al actualizar agencia.' });
+  }
+});
+
+router.get('/:id/stats', async (req, res) => {
+  try {
+    const stats = await buildAgencyStats(req.params.id);
+    res.json(stats);
+  } catch (error) {
+    console.error('Error getting stats:', error);
+    res.status(500).json({ error: 'Error al obtener estadísticas.' });
+  }
+});
+
+router.get('/:id/ranking', async (req, res) => {
+  try {
+    const ranking = await buildAgencyRanking(req.params.id);
+    res.json(ranking);
+  } catch (error) {
+    console.error('Error getting ranking:', error);
+    res.status(500).json({ error: 'Error al obtener ranking.' });
+  }
+});
 
 router.get('/:id/feed', async (req, res) => {
   try {

@@ -221,8 +221,6 @@ async function start() {
       const lead = await get('SELECT * FROM leads WHERE id = @id', { id: leadId });
       if (!lead) throw new Error('Lead not found');
 
-      const conversation = await get('SELECT * FROM conversations WHERE id = @id', { id: conversationId });
-      const history = conversation ? JSON.parse(conversation.messages || '[]') : [];
       const status = lead.status || 'nuevo';
 
       let agentType = 'captador';
@@ -242,6 +240,38 @@ async function start() {
 
       const agentResult = results[0] || {};
       const agentResponse = agentResult.message || '';
+
+      if (agentResponse && lead.phone) {
+        try {
+          await waClient.sendText(lead.phone, agentResponse);
+
+          let conv = conversationId
+            ? await get('SELECT id FROM conversations WHERE id = @id', { id: conversationId })
+            : null;
+          if (!conv) {
+            conv = await get(
+              'SELECT id FROM conversations WHERE lead_id = @lead_id ORDER BY created_at DESC LIMIT 1',
+              { lead_id: leadId }
+            );
+          }
+          if (conv) {
+            await run(
+              `INSERT INTO messages (id, conversation_id, author, content, message_type, is_read, created_at)
+               VALUES (@id, @conversation_id, 'ia_agent', @content, 'text', true, NOW())`,
+              { id: uuidv4(), conversation_id: conv.id, content: agentResponse }
+            );
+            await run('UPDATE conversations SET updated_at = NOW() WHERE id = @id', { id: conv.id });
+            if (realtime) {
+              realtime.broadcast('message', {
+                conversation_id: conv.id,
+                message: { role: 'agent', sender_type: 'ia_agent', content: agentResponse, timestamp: new Date().toISOString() },
+              });
+            }
+          }
+        } catch (sendErr) {
+          console.error('[QUEUE] Error enviando/guardando respuesta del agente:', sendErr.message);
+        }
+      }
 
       if (lead.status === 'nuevo') {
         await run("UPDATE leads SET status = 'contactado', updated_at = NOW() WHERE id = @id", { id: leadId });

@@ -26,20 +26,22 @@ class WhatsAppClient {
         console.log('[WHATSAPP MOCK]', JSON.stringify(payload).substring(0, 200));
         return resolve({ mock: true, messageId: `mock_${Date.now()}` });
       }
-      const data = JSON.stringify(payload);
+      const data = Buffer.from(JSON.stringify(payload), 'utf8');
       const options = {
         hostname: GRAPH_API_BASE,
         path: `/${WHATSAPP_API_VERSION}/${META_PHONE_NUMBER_ID}/messages`,
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Length': data.length,
           Authorization: `Bearer ${META_ACCESS_TOKEN}`,
         },
       };
       const req = https.request(options, (res) => {
-        let body = '';
-        res.on('data', (chunk) => (body += chunk));
+        const chunks = [];
+        res.on('data', (chunk) => chunks.push(chunk));
         res.on('end', () => {
+          const body = Buffer.concat(chunks).toString('utf8');
           try { resolve(JSON.parse(body)); } catch { resolve({ raw: body }); }
         });
       });

@@ -151,14 +151,49 @@ export async function askAI({
   })
 }
 
+// Extrae el texto real de contenido_generado del prompt maestro (server/agents/index.js),
+// que puede ser un string directo o un objeto anidado con varios textos redactados
+// (ej. { whatsapp: "...", email: {...} }).
+function extractGeneratedText(contenido) {
+  if (!contenido) return ''
+  if (typeof contenido === 'string') return contenido.trim()
+  if (typeof contenido === 'object') {
+    const priorityKeys = ['whatsapp', 'mensaje', 'mensaje_whatsapp', 'respuesta', 'texto', 'contenido', 'body', 'text', 'saludo', 'briefing_comercial']
+    for (const k of priorityKeys) {
+      if (typeof contenido[k] === 'string' && contenido[k].trim()) return contenido[k].trim()
+    }
+    for (const v of Object.values(contenido)) {
+      if (typeof v === 'string' && v.trim()) return v.trim()
+    }
+  }
+  return ''
+}
+
+// Limpia caracteres de reemplazo Unicode (U+FFFD) que a veces deja el modelo de
+// IA cuando el límite de tokens corta la generación a mitad de un emoji — el
+// síntoma visible es un '�' suelto, normalmente cerca de saludos o al final del
+// mensaje. Esto no arregla la causa (truncamiento del modelo), pero evita que
+// el carácter roto llegue al lead real por WhatsApp/email.
+function sanitizeGeneratedText(text) {
+  if (!text) return text
+  return text.replace(/\uFFFD\s*/g, '').replace(/[ \t]{2,}/g, ' ').trim()
+}
+
 export function parseAgentReply(raw) {
   const SEP = '---JSON---'
   const idx = raw.indexOf(SEP)
   if (idx === -1) {
-    try { return { message: '', data: JSON.parse(raw) } } catch { /**/ }
-    return { message: raw, data: null }
+    try {
+      const data = JSON.parse(raw)
+      // Formato del prompt maestro actual: el texto real vive en contenido_generado,
+      // no en un campo "message" — sin esto, message queda vacío y cualquier caller
+      // que haga "message || raw" termina usando el JSON completo como mensaje.
+      const message = sanitizeGeneratedText(extractGeneratedText(data?.contenido_generado))
+      return { message, data }
+    } catch { /**/ }
+    return { message: sanitizeGeneratedText(raw), data: null }
   }
-  const message = raw.slice(0, idx).replace(/^MENSAJE:\s*/i, '').trim()
+  const message = sanitizeGeneratedText(raw.slice(0, idx).replace(/^MENSAJE:\s*/i, '').trim())
   try { return { message, data: JSON.parse(raw.slice(idx + SEP.length).trim()) } }
   catch { return { message, data: null } }
 }

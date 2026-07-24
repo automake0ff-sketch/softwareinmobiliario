@@ -4,28 +4,6 @@ import { askAI, parseAgentReply } from './openrouter.js';
 import { ActionExecutor } from './action-executor.js';
 import { getAgentSystemPrompt, AGENT_META } from '../agents/index.js';
 
-// Extrae el texto real de contenido_generado, que según el prompt maestro
-// (server/agents/index.js) puede ser un string directo o un objeto anidado
-// con los textos redactados por el agente (ej. { whatsapp: "...", email: "..." }).
-// Sin esto, parseAgentReply() devuelve message='' para el formato JSON del
-// prompt maestro (no usa el separador ---JSON--- antiguo), y el código caía
-// en "message || raw", enviando/guardando el JSON crudo completo como si
-// fuera el mensaje al lead.
-function extractGeneratedText(contenido) {
-  if (!contenido) return '';
-  if (typeof contenido === 'string') return contenido.trim();
-  if (typeof contenido === 'object') {
-    const priorityKeys = ['whatsapp', 'mensaje', 'mensaje_whatsapp', 'respuesta', 'texto', 'contenido', 'body', 'text', 'saludo'];
-    for (const k of priorityKeys) {
-      if (typeof contenido[k] === 'string' && contenido[k].trim()) return contenido[k].trim();
-    }
-    for (const v of Object.values(contenido)) {
-      if (typeof v === 'string' && v.trim()) return v.trim();
-    }
-  }
-  return '';
-}
-
 export class AgentOrchestrator {
   constructor(agencyId) {
     this.agencyId = agencyId;
@@ -142,7 +120,7 @@ export class AgentOrchestrator {
       });
 
       const { message, data } = parseAgentReply(raw);
-      const finalMessage = message || extractGeneratedText(data?.contenido_generado);
+      const finalMessage = message || raw;
 
       const executor = new ActionExecutor(this.agencyId);
       const actionsExecuted = await executor.executeFromAgentData(

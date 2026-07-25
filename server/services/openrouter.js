@@ -109,13 +109,20 @@ export async function* streamOpenRouter({
 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
+  let lineBuffer = ''
 
   while (true) {
     const { done, value } = await reader.read()
-    if (done) break
-    const chunk = decoder.decode(value)
-    const lines = chunk.split('\n').filter(l => l.startsWith('data: '))
+    if (done) {
+      const tail = decoder.decode()
+      if (tail) lineBuffer += tail
+      break
+    }
+    lineBuffer += decoder.decode(value, { stream: true })
+    const lines = lineBuffer.split('\n')
+    lineBuffer = lines.pop() ?? ''
     for (const line of lines) {
+      if (!line.startsWith('data: ')) continue
       const json = line.slice(6)
       if (json === '[DONE]') return
       try {

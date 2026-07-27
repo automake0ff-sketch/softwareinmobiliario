@@ -92,6 +92,28 @@ function ActivityIcon({ type }) {
   )
 }
 
+function extractDisplayText(raw) {
+  if (!raw) return raw
+  try {
+    const data = JSON.parse(raw)
+    const contenido = data?.contenido_generado
+    if (typeof contenido === 'string' && contenido.trim()) return contenido.trim()
+    if (contenido && typeof contenido === 'object') {
+      const priorityKeys = ['whatsapp', 'mensaje', 'mensaje_whatsapp', 'respuesta', 'texto', 'contenido', 'body', 'text']
+      for (const k of priorityKeys) {
+        if (typeof contenido[k] === 'string' && contenido[k].trim()) return contenido[k].trim()
+      }
+      for (const v of Object.values(contenido)) {
+        if (typeof v === 'string' && v.trim()) return v.trim()
+      }
+    }
+    if (data?.analisis_ejecutivo) return data.analisis_ejecutivo
+  } catch {
+    // Aún streameando (JSON incompleto) o no es JSON — mostrar tal cual
+  }
+  return raw
+}
+
 export default function LeadDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -715,13 +737,16 @@ export default function LeadDetailPage() {
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let fullText = ''
+      let lineBuffer = ''
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        const text = decoder.decode(value)
-        const lines = text.split('\n').filter(l => l.startsWith('data: '))
+        lineBuffer += decoder.decode(value, { stream: true })
+        const lines = lineBuffer.split('\n')
+        lineBuffer = lines.pop() ?? ''
         for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
           const json = line.slice(6)
           if (json === '[DONE]') break
           try {
@@ -842,7 +867,7 @@ export default function LeadDetailPage() {
                 <span>Agente {runningAgent === 'captador' ? 'Captador' : 'Vendedor'} IA ejecutándose en streaming...</span>
               </div>
               <pre className="text-xs text-white/90 whitespace-pre-wrap font-sans leading-relaxed">
-                {agentOutput || 'Llamando a Claude OpenRouter...'}
+                {extractDisplayText(agentOutput) || 'Llamando a Claude OpenRouter...'}
               </pre>
             </motion.div>
           )}

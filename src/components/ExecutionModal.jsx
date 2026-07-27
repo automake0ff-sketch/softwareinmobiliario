@@ -82,15 +82,18 @@ async function executeAutomationStream({ automation_id, lead_id, test_mode, onEv
 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
+  let lineBuffer = ''
 
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
 
-    const text = decoder.decode(value)
-    const lines = text.split('\n').filter(l => l.startsWith('data: '))
+    lineBuffer += decoder.decode(value, { stream: true })
+    const lines = lineBuffer.split('\n')
+    lineBuffer = lines.pop() ?? ''
 
     for (const line of lines) {
+      if (!line.startsWith('data: ')) continue
       const json = line.slice(6)
       if (json === '[DONE]') return
 

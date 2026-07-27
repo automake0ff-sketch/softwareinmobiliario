@@ -350,13 +350,16 @@ export default function AgentsIAPage() {
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let full = ''
+      let lineBuffer = ''
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        const text = decoder.decode(value)
-        const lines = text.split('\n').filter(l => l.startsWith('data: '))
+        lineBuffer += decoder.decode(value, { stream: true })
+        const lines = lineBuffer.split('\n')
+        lineBuffer = lines.pop() ?? ''
         for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
           const json = line.slice(6)
           if (json === '[DONE]') break
           try {
@@ -919,12 +922,35 @@ function ModalStat({ label, value }) {
   )
 }
 
+function extractDisplayText(raw) {
+  if (!raw) return raw
+  try {
+    const data = JSON.parse(raw)
+    const contenido = data?.contenido_generado
+    if (typeof contenido === 'string' && contenido.trim()) return contenido.trim()
+    if (contenido && typeof contenido === 'object') {
+      const priorityKeys = ['whatsapp', 'mensaje', 'mensaje_whatsapp', 'respuesta', 'texto', 'contenido', 'body', 'text']
+      for (const k of priorityKeys) {
+        if (typeof contenido[k] === 'string' && contenido[k].trim()) return contenido[k].trim()
+      }
+      for (const v of Object.values(contenido)) {
+        if (typeof v === 'string' && v.trim()) return v.trim()
+      }
+    }
+    if (data?.analisis_ejecutivo) return data.analisis_ejecutivo
+  } catch {
+    // Aún streameando (JSON incompleto) o no es JSON — mostrar tal cual
+  }
+  return raw
+}
+
 function ConsoleSection({
   chatAgent, setChatAgent, chatMessage, setChatMessage,
   chatResponse, chatLoading, chatHistory,
   sendToAgent, copyResponse,
   selectedLeadId, setSelectedLeadId, leads, dbAgents
 }) {
+  const chatResponseDisplay = extractDisplayText(chatResponse)
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 p-5">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-white/5">
@@ -1863,7 +1889,7 @@ function ConsoleSection({
                   </button>
                 )}
               </div>
-              <pre className="text-sm text-white/90 whitespace-pre-wrap font-sans leading-relaxed">{chatResponse}</pre>
+              <pre className="text-sm text-white/90 whitespace-pre-wrap font-sans leading-relaxed">{chatResponseDisplay}</pre>
             </div>
           )}
         </div>

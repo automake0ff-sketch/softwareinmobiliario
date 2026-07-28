@@ -101,7 +101,7 @@ router.post('/', checkLimit('automations'), validateBody(automationSchema), asyn
     const id = uuidv4()
     await run(
       `INSERT INTO automations (id, agency_id, name, description, is_active, trigger_type, trigger_event, trigger_config, conditions, actions, action, run_count, created_at)
-       VALUES (@id, @agency_id, @name, @description, 1, @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, '', 0, NOW())`,
+       VALUES (@id, @agency_id, @name, @description, true, @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, '', 0, NOW())`,
       {
         id,
         agency_id: agencyId,

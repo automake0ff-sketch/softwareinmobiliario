@@ -29,7 +29,7 @@ const ACTION_TEXTS = {
   notificador: 'Envió notificación al equipo',
 }
 
-async function getDefaultAgents(agencyId) {
+function getDefaultAgents(agencyId) {
   const now = new Date().toISOString()
   return AGENT_TYPES.map(type => ({
     id: uuidv4(),

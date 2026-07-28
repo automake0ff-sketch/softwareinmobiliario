@@ -5,7 +5,7 @@ import { getAgentSystemPrompt } from '../agents/index.js'
 import { realtime } from './realtime.js'
 import { safeJsonParse } from '../lib/safe-json.js';
 
-export async function evaluateConditions(conditions, leadData) {
+export function evaluateConditions(conditions, leadData) {
   if (!conditions || !Array.isArray(conditions) || conditions.length === 0) return true
   return conditions.every(cond => {
     const val = leadData[cond.field]
@@ -637,7 +637,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
   }
 }
 
-export async function checkTrigger(automation, leadContext) {
+export function checkTrigger(automation, leadContext) {
   const conditionsMet = evaluateConditions(automation.conditions || [], leadContext)
   if (!conditionsMet) return false
 

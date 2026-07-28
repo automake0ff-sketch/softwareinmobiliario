@@ -38,7 +38,7 @@ const FIELD_MAP = {
   quality_score: 'quality_score',
 };
 
-async function normalizeStatus(status) {
+function normalizeStatus(status) {
   const map = {
     available: 'disponible',
     reserved: 'reservado',
@@ -48,13 +48,13 @@ async function normalizeStatus(status) {
   return map[status] || status || 'disponible';
 }
 
-async function normalizeOperation(operation) {
+function normalizeOperation(operation) {
   const value = String(operation || 'sale').toLowerCase();
   if (['rent', 'rental', 'alquiler'].includes(value)) return 'rent';
   return 'sale';
 }
 
-async function normalizePortal(url) {
+function normalizePortal(url) {
   const value = String(url || '').toLowerCase();
   if (value.includes('idealista')) return 'idealista';
   if (value.includes('fotocasa')) return 'fotocasa';
@@ -63,7 +63,7 @@ async function normalizePortal(url) {
   return 'portal';
 }
 
-async function parseImages(images) {
+function parseImages(images) {
   if (!images) return null;
   if (Array.isArray(images)) return JSON.stringify(images.filter(Boolean));
   if (typeof images === 'string') {
@@ -73,7 +73,7 @@ async function parseImages(images) {
   return JSON.stringify(images);
 }
 
-async function parseFeatures(features) {
+function parseFeatures(features) {
   if (!features) return null;
   if (Array.isArray(features)) return JSON.stringify(features.filter(Boolean));
   if (typeof features === 'string') {
@@ -177,7 +177,7 @@ async function logActivity(req, property, type, description, metadata = {}) {
   );
 }
 
-async function parseCsv(text) {
+function parseCsv(text) {
   const lines = String(text || '').split(/\r?\n/).filter(Boolean);
   if (lines.length < 2) return [];
   const headers = lines[0].split(',').map(h => h.trim());
@@ -190,7 +190,7 @@ async function parseCsv(text) {
   });
 }
 
-async function decodeHtml(value = '') {
+function decodeHtml(value = '') {
   return String(value)
     .replace(/\\u002F/gi, '/')
     .replace(/\\u003c/g, '<')
@@ -206,15 +206,15 @@ async function decodeHtml(value = '') {
     .trim();
 }
 
-async function stripTags(value = '') {
+function stripTags(value = '') {
   return decodeHtml(String(value).replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' '));
 }
 
-async function unique(values) {
+function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
-async function absoluteUrl(src, baseUrl) {
+function absoluteUrl(src, baseUrl) {
   try {
     return new URL(src, baseUrl).toString();
   } catch {
@@ -222,13 +222,13 @@ async function absoluteUrl(src, baseUrl) {
   }
 }
 
-async function numberFromText(value = '') {
+function numberFromText(value = '') {
   const match = String(value).replace(/\./g, '').match(/(\d[\d\s,]*)/);
   if (!match) return 0;
   return Number(match[1].replace(/[^\d]/g, '')) || 0;
 }
 
-async function extractMeta(html, property) {
+function extractMeta(html, property) {
   const patterns = [
     new RegExp(`<meta[^>]+property=["']${property}["'][^>]+content=["']([^"']+)["']`, 'i'),
     new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+property=["']${property}["']`, 'i'),
@@ -241,7 +241,7 @@ async function extractMeta(html, property) {
   return '';
 }
 
-async function collectJsonLd(html) {
+function collectJsonLd(html) {
   const blocks = [];
   const regex = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   let match;
@@ -254,7 +254,7 @@ async function collectJsonLd(html) {
   return blocks.flatMap((entry) => entry?.['@graph'] || entry).filter(Boolean);
 }
 
-async function findDeep(obj, keys, results = []) {
+function findDeep(obj, keys, results = []) {
   if (!obj || typeof obj !== 'object') return results;
   for (const [key, value] of Object.entries(obj)) {
     if (keys.includes(key)) results.push(value);
@@ -263,7 +263,7 @@ async function findDeep(obj, keys, results = []) {
   return results;
 }
 
-async function collectImages(html, url, jsonBlocks = []) {
+function collectImages(html, url, jsonBlocks = []) {
   const images = [];
   const decodedHtml = decodeHtml(html);
   for (const key of ['og:image', 'og:image:url', 'twitter:image', 'twitter:image:src']) {
@@ -315,13 +315,13 @@ async function collectImages(html, url, jsonBlocks = []) {
   return unique(images).slice(0, 12);
 }
 
-async function isImageLike(src = '') {
+function isImageLike(src = '') {
   const value = decodeHtml(src).toLowerCase();
   return /\.(jpg|jpeg|png|webp)([?#]|$)/i.test(value) ||
     /(foto|photo|image|img|multimedia|picture|idealista|fotocasa|habitaclia|pisos\.com)/i.test(value);
 }
 
-async function firstJsonValue(jsonBlocks, keys) {
+function firstJsonValue(jsonBlocks, keys) {
   for (const value of findDeep(jsonBlocks, keys)) {
     if (Array.isArray(value)) continue;
     if (value && typeof value === 'object') {
@@ -335,13 +335,13 @@ async function firstJsonValue(jsonBlocks, keys) {
   return '';
 }
 
-async function inferOperation(text, url) {
+function inferOperation(text, url) {
   const value = `${text} ${url}`.toLowerCase();
   if (/(alquiler|rent|rental|\/alquiler-|\/alquiler\/)/.test(value)) return 'rent';
   return 'sale';
 }
 
-async function inferType(text) {
+function inferType(text) {
   const value = String(text || '').toLowerCase();
   if (/chalet|villa/.test(value)) return 'villa';
   if (/casa/.test(value)) return 'house';
@@ -353,7 +353,7 @@ async function inferType(text) {
   return 'apartment';
 }
 
-async function extractByRegex(text, patterns) {
+function extractByRegex(text, patterns) {
   for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match?.[1]) return Number(match[1].replace(/[^\d]/g, '')) || 0;
@@ -361,7 +361,7 @@ async function extractByRegex(text, patterns) {
   return 0;
 }
 
-async function findTextLiteral(source, keys) {
+function findTextLiteral(source, keys) {
   const decoded = decodeHtml(source);
   for (const key of keys) {
     const regex = new RegExp(`["']${key}["']\\s*:\\s*["']([^"']{3,650})["']`, 'i');
@@ -371,7 +371,7 @@ async function findTextLiteral(source, keys) {
   return '';
 }
 
-async function findNumberLiteral(source, keys) {
+function findNumberLiteral(source, keys) {
   const decoded = decodeHtml(source);
   for (const key of keys) {
     const regex = new RegExp(`["']${key}["']\\s*:\\s*["']?([\\d.,]{2,})["']?`, 'i');
@@ -381,12 +381,12 @@ async function findNumberLiteral(source, keys) {
   return 0;
 }
 
-async function isGenericPortalTitle(title = '') {
+function isGenericPortalTitle(title = '') {
   const value = String(title).trim().toLowerCase();
   return !value || ['idealista', 'fotocasa', 'habitaclia', 'pisos.com'].includes(value) || /^ficha de /.test(value);
 }
 
-async function firstMeaningfulParagraph(source = '') {
+function firstMeaningfulParagraph(source = '') {
   return stripTags(source)
     .split(/\n|\r|\. /)
     .map(line => line.trim())
@@ -396,7 +396,7 @@ async function firstMeaningfulParagraph(source = '') {
     ) || '';
 }
 
-async function scrapeQuality(data = {}) {
+function scrapeQuality(data = {}) {
   return [
     data.title && !isGenericPortalTitle(data.title),
     data.description,
@@ -407,7 +407,7 @@ async function scrapeQuality(data = {}) {
   ].filter(Boolean).length;
 }
 
-async function mergeScraped(base = {}, fallback = {}) {
+function mergeScraped(base = {}, fallback = {}) {
   return {
     ...base,
     title: !isGenericPortalTitle(base.title) ? base.title : fallback.title || base.title,
@@ -428,7 +428,7 @@ async function mergeScraped(base = {}, fallback = {}) {
   };
 }
 
-async function extractPortalData(html, url, status = 0, scrapeSource = 'html') {
+function extractPortalData(html, url, status = 0, scrapeSource = 'html') {
   const jsonBlocks = collectJsonLd(html);
   const cleanText = stripTags(html);
   const title = (
@@ -547,7 +547,7 @@ async function scrapePortal(url) {
   }
 }
 
-async function marketingCopy(property, type = 'general') {
+function marketingCopy(property, type = 'general') {
   const title = property.title || 'Propiedad destacada';
   const zone = [property.zone, property.city].filter(Boolean).join(', ');
   const price = property.price ? `${Number(property.price).toLocaleString('es-ES')} EUR` : 'precio a consultar';

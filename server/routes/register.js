@@ -7,7 +7,7 @@ import bcrypt from 'bcryptjs';
 
 const router = Router();
 
-async function slugify(text) {
+function slugify(text) {
   return text
     .toString()
     .toLowerCase()
@@ -20,11 +20,11 @@ async function slugify(text) {
 }
 import { registerSchema, validateBody } from '../middleware/validators.js';
 
-async function hashPassword(password) {
+function hashPassword(password) {
   return bcrypt.hashSync(password, 10);
 }
 
-async function verifyPassword(password, stored) {
+function verifyPassword(password, stored) {
   if (stored.startsWith('$2a$') || stored.startsWith('$2b$')) {
     return bcrypt.compareSync(password, stored);
   }
@@ -54,7 +54,7 @@ router.post('/', validateBody(registerSchema), async (req, res) => {
 
     await run(
       `INSERT INTO agencies (id, name, slug, email, phone, city, website, plan, plan_status, onboarding_step, onboarding_completed, created_at)
-       VALUES (@id, @name, @slug, @email, @phone, @city, @website, @plan, @plan_status, 0, 0, @now)`,
+       VALUES (@id, @name, @slug, @email, @phone, @city, @website, @plan, @plan_status, 0, false, @now)`,
       {
         id: agencyId,
         name: agencyName,
@@ -74,7 +74,7 @@ router.post('/', validateBody(registerSchema), async (req, res) => {
 
     await run(
       `INSERT INTO users (id, email, name, password_hash, role, agency_id, phone, active, created_at)
-       VALUES (@id, @email, @name, @password_hash, @role, @agency_id, @phone, 1, @created_at)`,
+       VALUES (@id, @email, @name, @password_hash, @role, @agency_id, @phone, true, @created_at)`,
       {
         id: userId,
         email,

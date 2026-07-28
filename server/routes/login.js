@@ -7,7 +7,7 @@ import jwt from 'jsonwebtoken';
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'crm-inmobiliario-secret-dev-key-2026';
 
-async function verifyPassword(password, stored) {
+function verifyPassword(password, stored) {
   if (stored.startsWith('$2a$') || stored.startsWith('$2b$')) {
     return bcrypt.compareSync(password, stored);
   }

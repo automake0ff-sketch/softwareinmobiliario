@@ -46,7 +46,7 @@ export class MCPServer {
   }
 }
 
-export async function calculateCompatibility(lead, property) {
+export function calculateCompatibility(lead, property) {
   let score = 0;
   if (!lead || !property) return 0;
   if (property.price <= (lead.budget || 999999999)) score += 30;
@@ -56,7 +56,7 @@ export async function calculateCompatibility(lead, property) {
   return Math.min(score, 100);
 }
 
-export async function getMatchReasons(lead, property) {
+export function getMatchReasons(lead, property) {
   const reasons = [];
   if (property.price <= (lead.budget || 999999999)) reasons.push('Dentro del presupuesto');
   if (lead.zone && property.zone && lead.zone.toLowerCase() === property.zone.toLowerCase()) reasons.push('Misma zona');

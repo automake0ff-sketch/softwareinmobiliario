@@ -57,7 +57,7 @@ router.get('/', async (req, res) => {
         const id = uuidv4()
         await run(
           `INSERT INTO ai_agents (id, agency_id, type, name, is_active, status, stats, created_at)
-           VALUES (@id, @agency_id, @type, @name, 1, 'active', @stats, @created_at)`,
+           VALUES (@id, @agency_id, @type, @name, true, 'active', @stats, @created_at)`,
           {
             id,
             agency_id: req.user.agency_id,
@@ -150,7 +150,7 @@ const LAST_ACTION_LABELS = {
   notificador: 'Envió notificación al equipo',
 }
 
-async function buildLastActionText(agentType, activity) {
+function buildLastActionText(agentType, activity) {
   if (!activity) return null
   const label = LAST_ACTION_LABELS[agentType]
   if (label) return label

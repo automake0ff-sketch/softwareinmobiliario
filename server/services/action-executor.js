@@ -310,7 +310,7 @@ export class ActionExecutor {
 
     await run(
       `INSERT INTO tasks (id, lead_id, assigned_to, title, description, due_date, completed, created_at)
-       VALUES (@id, @lead_id, @assigned_to, @title, @description, @due, 0, NOW())`,
+       VALUES (@id, @lead_id, @assigned_to, @title, @description, @due, false, NOW())`,
       {
         id: uuidv4(),
         lead_id: leadId,
@@ -324,17 +324,19 @@ export class ActionExecutor {
 
   async notifyTeam(message, level, ctx) {
     const roles = level === 'urgente' ? ['admin', 'manager'] : ['admin', 'manager', 'comercial'];
-    const placeholders = roles.map(() => '?').join(',');
-    const users = await all(`SELECT id FROM users WHERE agency_id = ? AND active = true AND role IN (${placeholders})`, [
-      this.agencyId, ...roles
-    ]);
+    const roleParams = {};
+    const roleNames = roles.map((r, i) => { const key = `role${i}`; roleParams[key] = r; return `@${key}`; });
+    const users = await all(
+      `SELECT id FROM users WHERE agency_id = @agency_id AND active = true AND role IN (${roleNames.join(',')})`,
+      { agency_id: this.agencyId, ...roleParams }
+    );
 
     if (!users?.length) return;
 
     for (const u of users) {
       await run(
         `INSERT INTO notifications (id, agency_id, user_id, lead_id, title, body, type, read, created_at)
-         VALUES (@id, @agency_id, @user_id, @lead_id, @title, @body, @type, 0, NOW())`,
+         VALUES (@id, @agency_id, @user_id, @lead_id, @title, @body, @type, false, NOW())`,
         {
           id: uuidv4(),
           agency_id: this.agencyId,

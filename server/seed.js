@@ -40,7 +40,7 @@ async function seed() {
 
   const userId = uuidv4();
   run(`INSERT INTO users (id, email, name, password_hash, role, agency_id, phone, active, created_at)
-       VALUES (@id, @email, @name, @password_hash, @role, @agency_id, @phone, 1, @created_at)`, {
+       VALUES (@id, @email, @name, @password_hash, @role, @agency_id, @phone, true, @created_at)`, {
     id: userId,
     email: 'admin@inmotech.es',
     name: 'Admin',

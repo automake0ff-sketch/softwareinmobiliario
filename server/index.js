@@ -1699,7 +1699,7 @@ async function seedAutomationsIntoDb(agencyId) {
     try {
       await run(
         `INSERT INTO automations (id, agency_id, name, description, is_active, trigger_type, trigger_event, trigger_config, conditions, actions, run_count, created_at)
-         VALUES (@id, @agency_id, @name, @description, 1, @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, @floor, NOW())`,
+         VALUES (@id, @agency_id, @name, @description, true, @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, @floor, NOW())`,
         {
           id: uuidv4(),
           agency_id: agencyId,

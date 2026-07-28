@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import { get, run } from '../db/db.js'
 
-async function currentPeriod() {
+function currentPeriod() {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }

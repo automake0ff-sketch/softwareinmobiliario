@@ -37,7 +37,7 @@ export async function logActivity(agencyId, leadId, userId, type, description, m
   );
 }
 
-export async function buildEmailBody({ lead, agency, property, template, subject, body }) {
+export function buildEmailBody({ lead, agency, property, template, subject, body }) {
   const name = lead.name || 'cliente';
   const agencyName = agency.name || 'PropIA Inmobiliaria';
   const signature = agency.email_signature || `${agencyName}\n${agency.phone || ''}\n${agency.email || ''}`;
@@ -96,7 +96,7 @@ const EMAIL_TEMPLATES = {
   },
 };
 
-export async function detectTemplate(lead) {
+export function detectTemplate(lead) {
   const status = lead.status || 'nuevo';
   const lastActivity = lead.last_activity ? new Date(lead.last_activity) : null;
   const daysSinceActivity = lastActivity ? Math.floor((Date.now() - lastActivity.getTime()) / 86400000) : 999;
@@ -176,7 +176,7 @@ Genera un email mejorado con IA manteniendo el propósito de esta plantilla. Res
   }
 }
 
-async function getCtaForTemplate(template) {
+function getCtaForTemplate(template) {
   const map = {
     first_contact: 'Responder a este email o agendar una llamada',
     follow_up: 'Responder con disponibilidad para una llamada',
@@ -266,7 +266,7 @@ export async function getBestPropertyForLead(lead, agencyId) {
   }
 }
 
-export async function enhanceEmailWithPropertyContext(body, lead, property) {
+export function enhanceEmailWithPropertyContext(body, lead, property) {
   if (!property) return body;
   const propBlock = `\n\n---\n🏠 ${property.title || 'Propiedad recomendada'}\n💰 ${typeof property.price === 'number' ? property.price.toLocaleString('es-ES') + '€' : property.price}\n📍 ${[property.zone, property.city].filter(Boolean).join(', ')}\n🛏 ${property.bedrooms || 'N/A'} hab · ${property.surface || 'N/A'} m²\n🔗 ${property.external_url || property.public_url || 'Consultar disponibilidad'}\n---`;
   return body.includes('---') ? body : body + propBlock;
@@ -277,7 +277,7 @@ export async function createFollowUpTask(agencyId, leadId, userId, days = 3) {
   const taskId = uuidv4();
   await run(
     `INSERT INTO tasks (id, lead_id, assigned_to, title, description, due_date, completed, created_at)
-     VALUES (@id, @lid, @uid, @title, @desc, @due, 0, NOW())`,
+     VALUES (@id, @lid, @uid, @title, @desc, @due, false, NOW())`,
     {
       id: taskId, lid: leadId, uid: userId || null,
       title: 'Seguimiento de email',

@@ -469,7 +469,7 @@ router.post('/:id/tasks', async (req, res) => {
     const taskId = uuidv4();
     await run(
       `INSERT INTO tasks (id, lead_id, title, description, due_date, completed, created_at)
-       VALUES (@id, @lead_id, @title, @description, @due_date, 0, NOW())`,
+       VALUES (@id, @lead_id, @title, @description, @due_date, false, NOW())`,
       {
         id: taskId,
         lead_id: req.params.id,

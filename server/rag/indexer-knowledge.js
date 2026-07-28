@@ -97,7 +97,7 @@ export async function seedDefaultKnowledgeBase(agencyId) {
   return results;
 }
 
-export async function getKnowledgeByCategory(agencyId, category) {
+export function getKnowledgeByCategory(agencyId, category) {
   if (category) {
     return all(
       'SELECT title, content, category FROM knowledge_base_embeddings WHERE agency_id = @aid AND category = @cat ORDER BY created_at DESC',

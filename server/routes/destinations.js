@@ -98,7 +98,7 @@ router.post('/', async (req, res) => {
     const id = uuidv4()
     await run(
       `INSERT INTO agency_destinations (id, agency_id, type, name, credentials, is_active, created_at)
-       VALUES (@id, @agency_id, @type, @name, @credentials, 1, NOW())`,
+       VALUES (@id, @agency_id, @type, @name, @credentials, true, NOW())`,
       { id, agency_id: agencyId, type, name, credentials: JSON.stringify(credentials || {}) }
     )
 

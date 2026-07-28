@@ -93,7 +93,7 @@ Resumen: ${lead.ia_summary || 'ninguno'}`;
     const taskId = uuidv4();
     await run(
       `INSERT INTO tasks (id, lead_id, assigned_to, title, description, due_date, completed, created_at)
-       VALUES (@id, @lid, @uid, @title, @desc, @due, 0, NOW())`,
+       VALUES (@id, @lid, @uid, @title, @desc, @due, false, NOW())`,
       {
         id: taskId, lid: lead.id, uid: userId,
         title: 'Lead caliente - acción urgente',

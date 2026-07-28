@@ -229,7 +229,12 @@ export async function executeAction(action, leadContext, options = {}) {
         if (config._preGeneratedMessage) {
           rawResponse = config._preGeneratedMessage
           const parsed = parseAgentReply(rawResponse)
-          finalMessage = parsed.message || rawResponse
+          // Sin fallback a rawResponse: si parseAgentReply detectó basura
+          // (respuesta de moderación/clasificación en vez de contenido real, típico
+          // del modelo gratuito de fallback cuando se acaba el crédito de OpenRouter)
+          // finalMessage queda vacío a propósito, para NO enviarlo/guardarlo como si
+          // fuera un mensaje real al lead.
+          finalMessage = parsed.message
           agentData = parsed.data
         } else {
           const systemPrompt = await getAgentSystemPrompt(agentType)
@@ -252,7 +257,12 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
           })
 
           const parsed = parseAgentReply(rawResponse)
-          finalMessage = parsed.message || rawResponse
+          // Sin fallback a rawResponse: si parseAgentReply detectó basura
+          // (respuesta de moderación/clasificación en vez de contenido real, típico
+          // del modelo gratuito de fallback cuando se acaba el crédito de OpenRouter)
+          // finalMessage queda vacío a propósito, para NO enviarlo/guardarlo como si
+          // fuera un mensaje real al lead.
+          finalMessage = parsed.message
           agentData = parsed.data
         }
         let whatsappSent = false

@@ -120,7 +120,10 @@ export class AgentOrchestrator {
       });
 
       const { message, data } = parseAgentReply(raw);
-      const finalMessage = message || raw;
+      // Sin fallback a raw: si parseAgentReply detectó basura (respuesta de
+      // moderación/clasificación en vez de contenido real), message queda vacío
+      // a propósito para que executeFromAgentData NO lo envíe al lead real.
+      const finalMessage = message;
 
       const executor = new ActionExecutor(this.agencyId);
       const actionsExecuted = await executor.executeFromAgentData(

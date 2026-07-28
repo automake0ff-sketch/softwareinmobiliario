@@ -186,6 +186,18 @@ function sanitizeGeneratedText(text) {
   return text.replace(/\uFFFD\s*/g, '').replace(/[ \t]{2,}/g, ' ').trim()
 }
 
+// Detecta respuestas que no son contenido real (p.ej. el modelo de fallback
+// gratuito openrouter/free a veces no sigue las instrucciones y devuelve
+// metadatos de clasificación/moderación en vez del mensaje pedido). Mejor no
+// enviar nada a un lead real que enviarle esto.
+function looksLikeJunkResponse(text) {
+  if (!text) return true
+  const t = text.trim()
+  if (t.length < 15) return true
+  if (/^(user safety|response safety|safety:|i cannot|i can't assist|as an ai)/i.test(t)) return true
+  return false
+}
+
 export function parseAgentReply(raw) {
   const SEP = '---JSON---'
   const idx = raw.indexOf(SEP)
@@ -195,12 +207,15 @@ export function parseAgentReply(raw) {
       // Formato del prompt maestro actual: el texto real vive en contenido_generado,
       // no en un campo "message" — sin esto, message queda vacío y cualquier caller
       // que haga "message || raw" termina usando el JSON completo como mensaje.
-      const message = sanitizeGeneratedText(extractGeneratedText(data?.contenido_generado))
+      let message = sanitizeGeneratedText(extractGeneratedText(data?.contenido_generado))
+      if (looksLikeJunkResponse(message)) message = ''
       return { message, data }
     } catch { /**/ }
-    return { message: sanitizeGeneratedText(raw), data: null }
+    const cleaned = sanitizeGeneratedText(raw)
+    return { message: looksLikeJunkResponse(cleaned) ? '' : cleaned, data: null }
   }
-  const message = sanitizeGeneratedText(raw.slice(0, idx).replace(/^MENSAJE:\s*/i, '').trim())
+  let message = sanitizeGeneratedText(raw.slice(0, idx).replace(/^MENSAJE:\s*/i, '').trim())
+  if (looksLikeJunkResponse(message)) message = ''
   try { return { message, data: JSON.parse(raw.slice(idx + SEP.length).trim()) } }
   catch { return { message, data: null } }
 }

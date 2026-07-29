@@ -385,7 +385,7 @@ export default function AgentsIAPage() {
 
   const copyResponse = () => {
     if (chatResponse) {
-      navigator.clipboard.writeText(chatResponse)
+      navigator.clipboard.writeText(extractDisplayText(chatResponse))
       toast.success('Copiado al portapapeles')
     }
   }

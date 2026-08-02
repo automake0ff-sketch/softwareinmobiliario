@@ -158,7 +158,7 @@ function StatCard({ value, label, active, onClick }) {
 }
 
 export default function PropertiesPage() {
-  const { properties, fetchProperties, createProperty } = useStore()
+  const { properties, fetchProperties, createProperty, leads, fetchLeads } = useStore()
   const [activeTab, setActiveTab] = useState('all')
   const [search, setSearch] = useState('')
   const [showFilters, setShowFilters] = useState(false)
@@ -174,6 +174,10 @@ export default function PropertiesPage() {
   const [marketing, setMarketing] = useState(null)
   const [aiResult, setAiResult] = useState(null)
   const [matches, setMatches] = useState([])
+  const [interests, setInterests] = useState([])
+  const [activityLog, setActivityLog] = useState([])
+  const [interestsLoading, setInterestsLoading] = useState(false)
+  const [activityLoading, setActivityLoading] = useState(false)
 
   useEffect(() => {
     fetchProperties?.()
@@ -285,12 +289,51 @@ export default function PropertiesPage() {
     setMatches(res.leads || [])
   }
 
+  async function loadInterests() {
+    if (!selected) return
+    setInterestsLoading(true)
+    try {
+      const res = await api.get(`/properties/${selected.id}/interests`)
+      setInterests(Array.isArray(res) ? res : [])
+    } catch (err) {
+      toast.error(err.message || 'No se pudieron cargar los interesados')
+    } finally {
+      setInterestsLoading(false)
+    }
+  }
+
+  async function loadActivity() {
+    if (!selected) return
+    setActivityLoading(true)
+    try {
+      const res = await api.get(`/properties/${selected.id}/activity`)
+      setActivityLog(Array.isArray(res) ? res : [])
+    } catch (err) {
+      toast.error(err.message || 'No se pudo cargar el historial')
+    } finally {
+      setActivityLoading(false)
+    }
+  }
+
+  async function addInterest(leadId) {
+    if (!selected || !leadId) return
+    try {
+      await api.post(`/properties/${selected.id}/interests`, { lead_id: leadId, status: 'interested' })
+      toast.success('Lead anadido como interesado')
+      await loadInterests()
+    } catch (err) {
+      toast.error(err.message || 'No se pudo anadir el interesado')
+    }
+  }
+
   function openDetail(property, tab = 'summary') {
     setSelected(property)
     setDetailTab(tab)
     setMarketing(null)
     setAiResult(null)
     setMatches([])
+    setInterests([])
+    setActivityLog([])
   }
 
   return (
@@ -516,6 +559,15 @@ export default function PropertiesPage() {
             loadAi={loadAi}
             matches={matches}
             loadMatches={loadMatches}
+            interests={interests}
+            loadInterests={loadInterests}
+            interestsLoading={interestsLoading}
+            addInterest={addInterest}
+            leads={leads}
+            fetchLeads={fetchLeads}
+            activityLog={activityLog}
+            loadActivity={loadActivity}
+            activityLoading={activityLoading}
           />
         )}
       </AnimatePresence>
@@ -566,7 +618,7 @@ function Textarea({ label, value, onChange, className = '', ...props }) {
   )
 }
 
-function DetailDrawer({ property, activeTab, setActiveTab, onClose, onDelete, marketing, loadMarketing, aiResult, loadAi, matches, loadMatches }) {
+function DetailDrawer({ property, activeTab, setActiveTab, onClose, onDelete, marketing, loadMarketing, aiResult, loadAi, matches, loadMatches, interests, loadInterests, interestsLoading, addInterest, leads, fetchLeads, activityLog, loadActivity, activityLoading }) {
   const images = property.images || []
   const [imageIndex, setImageIndex] = useState(0)
   const heroImage = images[imageIndex]
@@ -618,7 +670,7 @@ function DetailDrawer({ property, activeTab, setActiveTab, onClose, onDelete, ma
         <div className="shrink-0 border-b border-[#27283a] px-6">
           <div className="flex gap-2 overflow-x-auto py-3">
             {detailTabs.map(({ id, label, icon: Icon }) => (
-              <button key={id} onClick={() => { setActiveTab(id); if (id === 'compatible') loadMatches(); if (id === 'ai') loadAi(); }} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold whitespace-nowrap ${activeTab === id ? 'bg-indigo-500 text-white' : 'text-[#9fb3d9] hover:bg-white/5 hover:text-white'}`}>
+              <button key={id} onClick={() => { setActiveTab(id); if (id === 'compatible') loadMatches(); if (id === 'ai') loadAi(); if (id === 'interested') { loadInterests(); fetchLeads?.(); } if (id === 'activity') loadActivity(); }} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold whitespace-nowrap ${activeTab === id ? 'bg-indigo-500 text-white' : 'text-[#9fb3d9] hover:bg-white/5 hover:text-white'}`}>
                 <Icon size={16} /> {label}
               </button>
             ))}
@@ -628,9 +680,9 @@ function DetailDrawer({ property, activeTab, setActiveTab, onClose, onDelete, ma
         <div className="flex-1 overflow-y-auto p-7">
           {activeTab === 'summary' && <SummaryTab property={property} />}
           {activeTab === 'images' && <ImagesTab images={images} />}
-          {activeTab === 'interested' && <InterestedTab />}
+          {activeTab === 'interested' && <InterestedTab interests={interests} loading={interestsLoading} addInterest={addInterest} leads={leads} />}
           {activeTab === 'compatible' && <CompatibleTab matches={matches} />}
-          {activeTab === 'activity' && <ActivityTab property={property} />}
+          {activeTab === 'activity' && <ActivityTab property={property} activityLog={activityLog} loading={activityLoading} />}
           {activeTab === 'marketing' && <MarketingTab marketing={marketing} loadMarketing={loadMarketing} />}
           {activeTab === 'ai' && <AiTab aiResult={aiResult} loadAi={loadAi} />}
         </div>
@@ -691,8 +743,73 @@ function ImagesTab({ images }) {
 }
 
 // Keep it simple
-function InterestedTab() {
-  return <Panel title="Interesados"><p className="text-[#9fb3d9]">Aqui apareceran los leads que hayan pedido informacion, recibido esta propiedad o agendado visita. Acciones preparadas: WhatsApp, email, llamada y calendario.</p></Panel>
+function InterestedTab({ interests = [], loading, addInterest, leads = [] }) {
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const linkedIds = new Set(interests.map((i) => i.lead_id))
+  const availableLeads = leads.filter((l) => !linkedIds.has(l.id))
+
+  const statusLabel = { interested: 'Interesado', visit_scheduled: 'Visita agendada', visit_done: 'Visita realizada', offer_sent: 'Oferta enviada', offer_accepted: 'Oferta aceptada' }
+
+  return (
+    <Panel title="Interesados">
+      <div className="mb-4 flex items-center justify-between">
+        <p className="text-sm text-[#9fb3d9]">{interests.length} lead{interests.length === 1 ? '' : 's'} interesado{interests.length === 1 ? '' : 's'} en esta propiedad</p>
+        <button onClick={() => setPickerOpen((v) => !v)} className="inline-flex items-center gap-2 rounded-xl bg-indigo-500/15 px-3 py-2 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/25">
+          <Plus size={14} /> Anadir interesado
+        </button>
+      </div>
+
+      {pickerOpen && (
+        <div className="mb-4 rounded-2xl bg-white/5 p-3">
+          {availableLeads.length === 0 ? (
+            <p className="text-sm text-[#9fb3d9]">No hay mas leads disponibles para relacionar.</p>
+          ) : (
+            <div className="max-h-52 space-y-1 overflow-y-auto">
+              {availableLeads.map((l) => (
+                <button key={l.id} onClick={() => { addInterest(l.id); setPickerOpen(false) }} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm text-[#d7e2f7] hover:bg-white/10">
+                  <span>{l.name}</span>
+                  <span className="text-xs text-[#7f91b3]">{l.phone || l.email || ''}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-[#9fb3d9]">Cargando interesados...</p>
+      ) : interests.length === 0 ? (
+        <p className="text-[#9fb3d9]">Aqui apareceran los leads que hayan pedido informacion, recibido esta propiedad o agendado visita.</p>
+      ) : (
+        <div className="space-y-3">
+          {interests.map((i) => (
+            <div key={i.id} className="rounded-2xl bg-white/5 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-white">{i.lead_name}</p>
+                  <p className="text-sm text-[#9fb3d9]">{i.lead_phone || i.lead_email || 'Sin contacto'}</p>
+                </div>
+                <span className="rounded-full bg-indigo-500/15 px-3 py-1 text-xs font-bold text-indigo-200">{statusLabel[i.status] || i.status}</span>
+              </div>
+              {i.notes && <p className="mt-2 text-sm text-[#d7e2f7]">{i.notes}</p>}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {i.lead_phone && (
+                  <a href={`https://wa.me/${String(i.lead_phone).replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/15 px-2.5 py-1.5 text-xs font-semibold text-emerald-300">
+                    <MessageCircle size={12} /> WhatsApp
+                  </a>
+                )}
+                {i.lead_email && (
+                  <a href={`mailto:${i.lead_email}`} className="inline-flex items-center gap-1 rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-semibold text-[#d7e2f7]">
+                    <Mail size={12} /> Email
+                  </a>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Panel>
+  )
 }
 
 function CompatibleTab({ matches }) {
@@ -705,8 +822,35 @@ function CompatibleTab({ matches }) {
   )
 }
 
-function ActivityTab({ property }) {
-  return <Panel title="Actividad"><p className="text-[#9fb3d9]">Creada/importada {formatDate(property.created_at)}. Las proximas acciones de envio, edicion y marketing quedaran registradas aqui.</p></Panel>
+function ActivityTab({ property, activityLog = [], loading }) {
+  const typeIcon = {
+    property_created: Home, property_imported: Download, property_updated: Pencil,
+    lead_interest_added: Star, marketing_generated: Sparkles,
+  }
+  return (
+    <Panel title="Actividad">
+      {loading ? (
+        <p className="text-[#9fb3d9]">Cargando historial...</p>
+      ) : activityLog.length === 0 ? (
+        <p className="text-[#9fb3d9]">Creada/importada {formatDate(property.created_at)}. Las proximas acciones de envio, edicion y marketing quedaran registradas aqui.</p>
+      ) : (
+        <div className="space-y-3">
+          {activityLog.map((a) => {
+            const Icon = typeIcon[a.type] || Activity
+            return (
+              <div key={a.id} className="flex items-start gap-3 rounded-2xl bg-white/5 p-3">
+                <div className="mt-0.5 rounded-xl bg-indigo-500/15 p-2 text-indigo-200"><Icon size={14} /></div>
+                <div className="flex-1">
+                  <p className="text-sm text-[#d7e2f7]">{a.description}</p>
+                  <p className="mt-0.5 text-xs text-[#7f91b3]">{a.user_name ? `${a.user_name} · ` : ''}{formatDate(a.created_at)}</p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </Panel>
+  )
 }
 
 function MarketingTab({ marketing, loadMarketing }) {

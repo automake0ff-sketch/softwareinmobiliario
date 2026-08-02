@@ -865,6 +865,97 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// GET /api/properties/:id/activity — historial real (creación, importación, ediciones, marketing...)
+router.get('/:id/activity', async (req, res) => {
+  try {
+    const property = await get('SELECT id FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
+    if (!property) return res.status(404).json({ error: 'Propiedad no encontrada.' });
+
+    const rows = await all(
+      `SELECT a.id, a.type, a.title, a.description, a.metadata, a.created_at, u.name AS user_name
+       FROM activities a
+       LEFT JOIN users u ON u.id = a.user_id
+       WHERE a.agency_id = @agency_id
+         AND (a.metadata::jsonb ->> 'property_id') = @property_id
+       ORDER BY a.created_at DESC
+       LIMIT 100`,
+      { agency_id: req.user.agency_id, property_id: req.params.id }
+    );
+
+    res.json(rows.map(r => ({
+      id: r.id,
+      type: r.type,
+      title: r.title,
+      description: r.description,
+      user_name: r.user_name,
+      created_at: r.created_at,
+    })));
+  } catch (error) {
+    console.error('Error getting property activity:', error);
+    res.status(500).json({ error: 'Error al obtener el historial de actividad.' });
+  }
+});
+
+// GET /api/properties/:id/interests — leads interesados en esta propiedad
+router.get('/:id/interests', async (req, res) => {
+  try {
+    const property = await get('SELECT id FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
+    if (!property) return res.status(404).json({ error: 'Propiedad no encontrada.' });
+
+    const rows = await all(
+      `SELECT pi.id, pi.status, pi.channel, pi.notes, pi.created_at, pi.updated_at,
+              l.id AS lead_id, l.name AS lead_name, l.phone AS lead_phone, l.email AS lead_email, l.ia_score
+       FROM property_interests pi
+       JOIN leads l ON l.id = pi.lead_id
+       WHERE pi.property_id = @property_id AND pi.agency_id = @agency_id
+       ORDER BY pi.created_at DESC`,
+      { property_id: req.params.id, agency_id: req.user.agency_id }
+    );
+
+    res.json(rows);
+  } catch (error) {
+    console.error('Error getting property interests:', error);
+    res.status(500).json({ error: 'Error al obtener interesados.' });
+  }
+});
+
+// POST /api/properties/:id/interests — vincular un lead existente como interesado
+router.post('/:id/interests', async (req, res) => {
+  try {
+    const { lead_id, status, channel, notes } = req.body;
+    if (!lead_id) return res.status(400).json({ error: 'lead_id es obligatorio.' });
+
+    const property = await get('SELECT id, title FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
+    if (!property) return res.status(404).json({ error: 'Propiedad no encontrada.' });
+
+    const lead = await get('SELECT id, name FROM leads WHERE id = @id AND agency_id = @agency_id', { id: lead_id, agency_id: req.user.agency_id });
+    if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' });
+
+    const interestId = uuidv4();
+    await run(
+      `INSERT INTO property_interests (id, property_id, lead_id, agency_id, status, channel, notes, created_at)
+       VALUES (@id, @property_id, @lead_id, @agency_id, @status, @channel, @notes, NOW())
+       ON CONFLICT (property_id, lead_id) DO UPDATE SET status = @status, channel = @channel, notes = @notes, updated_at = NOW()`,
+      {
+        id: interestId,
+        property_id: req.params.id,
+        lead_id,
+        agency_id: req.user.agency_id,
+        status: status || 'interested',
+        channel: channel || null,
+        notes: notes || null,
+      }
+    );
+
+    await logActivity(req, property, 'lead_interest_added', `${lead.name} marcado como interesado`, { lead_id });
+
+    res.status(201).json({ ok: true, id: interestId });
+  } catch (error) {
+    console.error('Error adding property interest:', error);
+    res.status(500).json({ error: 'Error al anadir interesado.' });
+  }
+});
+
 router.patch('/:id', async (req, res) => {
   try {
     const existing = await get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });

@@ -11,6 +11,17 @@ import api from '../lib/api'
 import { useStore } from '../lib/store'
 import { formatCurrency, formatDate, getPropertyTypeLabel } from '../utils/formatters'
 
+function propertyPriceLabel(property) {
+  if (!property.price) return 'Consultar precio'
+  const suffix = property.operation_type === 'rent' ? '/mes' : ''
+  return `${formatCurrency(property.price)}${suffix}`
+}
+
+function propertyPricePerM2(property) {
+  if (!property.price || !property.surface) return null
+  return `${formatCurrency(Math.round(property.price / property.surface))}/m²`
+}
+
 const tabs = [
   { id: 'all', label: 'Todas' },
   { id: 'manual', label: 'Manuales' },
@@ -389,7 +400,7 @@ export default function PropertiesPage() {
                   <span className="absolute right-4 top-4 rounded-full bg-black/60 px-3 py-1 text-xs font-bold text-white">+{property.images.length - 1} fotos</span>
                 )}
                 <div className="absolute bottom-4 left-4 right-4">
-                  <p className="text-2xl font-bold text-white">{formatCurrency(property.price)}</p>
+                  <p className="text-2xl font-bold text-white">{propertyPriceLabel(property)}</p>
                   <h2 className="mt-1 line-clamp-1 text-lg font-bold text-white">{property.title}</h2>
                   <p className="mt-1 flex items-center gap-1 text-sm text-slate-200"><MapPin size={14} /> {[property.zone, property.city].filter(Boolean).join(', ') || 'Ubicacion pendiente'}</p>
                 </div>
@@ -400,7 +411,7 @@ export default function PropertiesPage() {
                   <span className="rounded-2xl bg-white/5 p-3"><Bed className="mx-auto mb-1" size={16} />{property.bedrooms || 0}</span>
                   <span className="rounded-2xl bg-white/5 p-3"><Bath className="mx-auto mb-1" size={16} />{property.bathrooms || 0}</span>
                   <span className="rounded-2xl bg-white/5 p-3"><Maximize className="mx-auto mb-1" size={16} />{property.surface || 0} m2</span>
-                  <span className="rounded-2xl bg-white/5 p-3"><Home className="mx-auto mb-1" size={16} />{property.operation === 'rent' ? 'Alq.' : 'Venta'}</span>
+                  <span className="rounded-2xl bg-white/5 p-3"><Home className="mx-auto mb-1" size={16} />{property.operation_type === 'rent' ? 'Alq.' : 'Venta'}</span>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
@@ -597,8 +608,9 @@ function DetailDrawer({ property, activeTab, setActiveTab, onClose, onDelete, ma
               <p className="mt-1 text-[#c7d4ef]">{[property.zone, property.city].filter(Boolean).join(', ') || 'Ubicacion pendiente'}</p>
             </div>
             <div className="text-right">
-              <p className="text-3xl font-bold text-white">{formatCurrency(property.price)}</p>
-              <p className="text-sm text-[#9fb3d9]">{property.operation === 'rent' ? 'Alquiler' : 'Venta'}</p>
+              <p className="text-3xl font-bold text-white">{propertyPriceLabel(property)}</p>
+              {propertyPricePerM2(property) && <p className="text-xs text-[#7f91b3]">{propertyPricePerM2(property)}</p>}
+              <p className="text-sm text-[#9fb3d9]">{property.operation_type === 'rent' ? 'Alquiler' : 'Venta'}</p>
             </div>
           </div>
         </div>
@@ -643,12 +655,22 @@ function SummaryTab({ property }) {
       </Panel>
       <Panel title="Caracteristicas">
         <div className="grid grid-cols-2 gap-3 text-sm text-[#d7e2f7]">
-          <Feature icon={Bed} label="Habitaciones" value={property.bedrooms || 0} />
-          <Feature icon={Bath} label="Banos" value={property.bathrooms || 0} />
-          <Feature icon={Maximize} label="Superficie" value={`${property.surface || 0} m2`} />
+          <Feature icon={Bed} label="Habitaciones" value={property.bedrooms ? property.bedrooms : '-'} />
+          <Feature icon={Bath} label="Banos" value={property.bathrooms ? property.bathrooms : '-'} />
+          <Feature icon={Maximize} label="Superficie" value={property.surface ? `${property.surface} m2` : '-'} />
+          <Feature icon={Maximize} label="Superficie util" value={property.useful_surface ? `${property.useful_surface} m2` : '-'} />
           <Feature icon={Building2} label="Planta" value={property.floor || '-'} />
           <Feature icon={CheckCircle2} label="Ascensor" value={property.has_elevator ? 'Si' : 'No'} />
           <Feature icon={Home} label="Garaje" value={property.has_garage ? 'Si' : 'No'} />
+          <Feature icon={Home} label="Terraza" value={property.has_terrace ? 'Si' : 'No'} />
+          <Feature icon={Home} label="Balcon" value={property.has_balcony ? 'Si' : 'No'} />
+          <Feature icon={Home} label="Trastero" value={property.has_storage ? 'Si' : 'No'} />
+          <Feature icon={Home} label="Piscina" value={property.has_pool ? 'Si' : 'No'} />
+          <Feature icon={Home} label="Jardin" value={property.has_garden ? 'Si' : 'No'} />
+          <Feature icon={CalendarClock} label="Ano construccion" value={property.year_built || '-'} />
+          <Feature icon={CheckCircle2} label="Cert. energetico" value={property.energy_certificate || '-'} />
+          <Feature icon={Building2} label="Estado" value={property.condition || '-'} />
+          <Feature icon={Building2} label="Referencia" value={property.reference || '-'} />
         </div>
       </Panel>
       <Panel title="Calidad y pendientes">

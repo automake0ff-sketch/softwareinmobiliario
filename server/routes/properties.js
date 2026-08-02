@@ -26,6 +26,16 @@ const FIELD_MAP = {
   has_elevator: 'has_elevator',
   has_terrace: 'has_terrace',
   has_garage: 'has_garage',
+  has_balcony: 'has_balcony',
+  has_storage: 'has_storage',
+  has_pool: 'has_pool',
+  has_garden: 'has_garden',
+  useful_surface: 'useful_surface',
+  year_built: 'year_built',
+  energy_certificate: 'energy_certificate',
+  reference: 'reference',
+  latitude: 'latitude',
+  longitude: 'longitude',
   condition: 'condition',
   features: 'features',
   images: 'images',
@@ -118,6 +128,14 @@ async function normalizeProperty(body, req, defaults = {}) {
   data.has_elevator = data.has_elevator ? 1 : 0;
   data.has_terrace = data.has_terrace ? 1 : 0;
   data.has_garage = data.has_garage ? 1 : 0;
+  data.has_balcony = !!data.has_balcony;
+  data.has_storage = !!data.has_storage;
+  data.has_pool = !!data.has_pool;
+  data.has_garden = !!data.has_garden;
+  data.useful_surface = data.useful_surface ? Number(data.useful_surface) : null;
+  data.year_built = data.year_built ? Number(data.year_built) : null;
+  data.latitude = data.latitude ? Number(data.latitude) : null;
+  data.longitude = data.longitude ? Number(data.longitude) : null;
   data.quality_score = await qualityScore(data);
   return data;
 }
@@ -128,13 +146,17 @@ async function insertProperty(data) {
     `INSERT INTO properties (
       id, agency_id, office_id, title, description, price, type, operation_type,
       city, zone, address, province, postal_code, bedrooms, bathrooms, surface,
-      floor, has_elevator, has_terrace, has_garage, condition, features, images,
+      useful_surface, floor, has_elevator, has_terrace, has_garage, has_balcony,
+      has_storage, has_pool, has_garden, condition, year_built, energy_certificate,
+      reference, latitude, longitude, features, images,
       status, source, external_source, external_id, external_url, imported_at,
       assigned_to, quality_score, created_at, updated_at
     ) VALUES (
       @id, @agency_id, @office_id, @title, @description, @price, @type, @operation_type,
       @city, @zone, @address, @province, @postal_code, @bedrooms, @bathrooms, @surface,
-      @floor, @has_elevator, @has_terrace, @has_garage, @condition, @features, @images,
+      @useful_surface, @floor, @has_elevator, @has_terrace, @has_garage, @has_balcony,
+      @has_storage, @has_pool, @has_garden, @condition, @year_built, @energy_certificate,
+      @reference, @latitude, @longitude, @features, @images,
       @status, @source, @external_source, @external_id, @external_url, @imported_at,
       @assigned_to, @quality_score, NOW(), NOW()
     )`,
@@ -475,6 +497,49 @@ function extractPortalData(html, url, status = 0, scrapeSource = 'html') {
     cleanText.match(/(?:en|de)\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ\s-]{2,30})(?:,|\s|$)/)?.[1] ||
     '';
 
+  const zone = firstJsonValue(jsonBlocks, ['addressSubLocality', 'neighborhood']) ||
+    findTextLiteral(html, ['neighborhood', 'district', 'zone', 'subLocality']) ||
+    cleanText.match(/barrio\s+(?:de\s+)?([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ\s-]{2,30})/i)?.[1] || '';
+
+  const province = firstJsonValue(jsonBlocks, ['addressRegion']) ||
+    findTextLiteral(html, ['addressRegion', 'province', 'provincia']) || '';
+
+  const postal_code = findTextLiteral(html, ['postalCode', 'zipCode', 'postal_code']) ||
+    cleanText.match(/\b(\d{5})\b/)?.[1] || '';
+
+  const useful_surface = findNumberLiteral(html, ['usefulSurface', 'usableArea', 'superficieUtil']) ||
+    extractByRegex(cleanText, [/(\d+)\s*m(?:2|\u00b2)\s*(?:util|útiles?)/i]) || 0;
+
+  const floor = findTextLiteral(html, ['floor', 'planta']) ||
+    cleanText.match(/planta\s*([\wº°]{1,10})/i)?.[1] || '';
+
+  const hasKeyword = (keys, regexes) => {
+    if (findTextLiteral(html, keys) || findNumberLiteral(html, keys)) return true;
+    return regexes.some((r) => r.test(cleanText));
+  };
+  const has_elevator = hasKeyword(['hasLift', 'elevator', 'ascensor'], [/con\s+ascensor/i, /\bascensor\b(?!\s*no)/i]);
+  const has_terrace = hasKeyword(['terrace', 'hasTerrace'], [/con\s+terraza/i, /\bterraza\b/i]);
+  const has_garage = hasKeyword(['garage', 'hasParking', 'parking'], [/con\s+garaje/i, /plaza\s+de\s+garaje/i]);
+  const has_balcony = hasKeyword(['balcony', 'hasBalcony'], [/con\s+balc[oó]n/i, /\bbalc[oó]n\b/i]);
+  const has_storage = hasKeyword(['storageRoom', 'hasStorage', 'trastero'], [/con\s+trastero/i, /\btrastero\b/i]);
+  const has_pool = hasKeyword(['pool', 'hasPool', 'piscina'], [/con\s+piscina/i, /\bpiscina\b/i]);
+  const has_garden = hasKeyword(['garden', 'hasGarden', 'jardin'], [/con\s+jard[ií]n/i, /\bjard[ií]n\b/i]);
+
+  const condition = findTextLiteral(html, ['condition', 'propertyCondition', 'estado']) ||
+    cleanText.match(/(a\s+reformar|para\s+reformar|buen\s+estado|reci[eé]n\s+reformad[oa]|obra\s+nueva|nuev[oa]\s+construcci[oó]n|segunda\s+mano)/i)?.[0] || '';
+
+  const year_built = findNumberLiteral(html, ['yearBuilt', 'constructionYear', 'anoConstruccion']) ||
+    extractByRegex(cleanText, [/(?:construid[oa]|a[nñ]o\s+de\s+construcci[oó]n)[^\d]{0,15}(\d{4})/i]) || 0;
+
+  const energy_certificate = findTextLiteral(html, ['energyCertificate', 'energyRating', 'certificadoEnergetico']) ||
+    cleanText.match(/certificaci[oó]n\s+energ[eé]tica[^\wA-G]{0,20}\b([A-G])\b/i)?.[1] || '';
+
+  const reference = findTextLiteral(html, ['reference', 'adId', 'propertyCode', 'referencia']) || '';
+
+  const geo = findDeep(jsonBlocks, ['geo']).find((v) => v && typeof v === 'object' && (v.latitude || v.longitude));
+  const latitude = geo?.latitude ? Number(geo.latitude) : (numberFromText(findTextLiteral(html, ['latitude', 'lat'])) || 0) || null;
+  const longitude = geo?.longitude ? Number(geo.longitude) : (numberFromText(findTextLiteral(html, ['longitude', 'lng', 'lon'])) || 0) || null;
+
   return {
     title: title || '',
     description: description || '',
@@ -482,10 +547,28 @@ function extractPortalData(html, url, status = 0, scrapeSource = 'html') {
     type: inferType(`${title} ${description} ${cleanText.slice(0, 1000)}`),
     operation_type: inferOperation(`${title} ${description}`, url),
     city,
+    zone,
+    province,
+    postal_code,
     address: typeof address === 'string' ? address : '',
     bedrooms,
     bathrooms,
     surface,
+    useful_surface: useful_surface || null,
+    floor,
+    has_elevator,
+    has_terrace,
+    has_garage,
+    has_balcony,
+    has_storage,
+    has_pool,
+    has_garden,
+    condition,
+    year_built: year_built || null,
+    energy_certificate,
+    reference,
+    latitude,
+    longitude,
     images: collectImages(html, url, jsonBlocks),
     scraped: true,
     blocked: false,
@@ -641,10 +724,28 @@ router.post('/import/url', async (req, res) => {
         type: req.body.type || scraped.type || 'apartment',
         operation_type: req.body.operation_type || scraped.operation_type || 'sale',
         city: req.body.city || scraped.city || 'Pendiente',
+        zone: req.body.zone || scraped.zone || '',
+        province: req.body.province || scraped.province || '',
+        postal_code: req.body.postal_code || scraped.postal_code || '',
         address: req.body.address || scraped.address || '',
         bedrooms: req.body.bedrooms ?? scraped.bedrooms ?? 0,
         bathrooms: req.body.bathrooms ?? scraped.bathrooms ?? 0,
         surface: req.body.surface ?? scraped.surface ?? 0,
+        useful_surface: req.body.useful_surface ?? scraped.useful_surface ?? null,
+        floor: req.body.floor || scraped.floor || '',
+        has_elevator: req.body.has_elevator ?? scraped.has_elevator ?? false,
+        has_terrace: req.body.has_terrace ?? scraped.has_terrace ?? false,
+        has_garage: req.body.has_garage ?? scraped.has_garage ?? false,
+        has_balcony: req.body.has_balcony ?? scraped.has_balcony ?? false,
+        has_storage: req.body.has_storage ?? scraped.has_storage ?? false,
+        has_pool: req.body.has_pool ?? scraped.has_pool ?? false,
+        has_garden: req.body.has_garden ?? scraped.has_garden ?? false,
+        condition: req.body.condition || scraped.condition || '',
+        year_built: req.body.year_built ?? scraped.year_built ?? null,
+        energy_certificate: req.body.energy_certificate || scraped.energy_certificate || '',
+        reference: req.body.reference || scraped.reference || '',
+        latitude: req.body.latitude ?? scraped.latitude ?? null,
+        longitude: req.body.longitude ?? scraped.longitude ?? null,
         images: req.body.images || scraped.images || [],
         features: req.body.features || [
           scraped.bedrooms ? `${scraped.bedrooms} habitaciones` : '',

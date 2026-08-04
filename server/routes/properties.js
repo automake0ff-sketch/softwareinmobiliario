@@ -499,7 +499,8 @@ function extractPortalData(html, url, status = 0, scrapeSource = 'html') {
 
   const zone = firstJsonValue(jsonBlocks, ['addressSubLocality', 'neighborhood']) ||
     findTextLiteral(html, ['neighborhood', 'district', 'zone', 'subLocality']) ||
-    cleanText.match(/barrio\s+(?:de\s+)?([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ\s-]{2,30})/i)?.[1] || '';
+    cleanText.match(/barrio\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ\s-]{2,40})/i)?.[1]?.split(/distrito|sevilla/i)[0]?.trim() ||
+    cleanText.match(/(?:en|de)\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ\s-]{2,30})(?:,|\s|$)/)?.[1] || '';
 
   const province = firstJsonValue(jsonBlocks, ['addressRegion']) ||
     findTextLiteral(html, ['addressRegion', 'province', 'provincia']) || '';
@@ -510,20 +511,28 @@ function extractPortalData(html, url, status = 0, scrapeSource = 'html') {
   const useful_surface = findNumberLiteral(html, ['usefulSurface', 'usableArea', 'superficieUtil']) ||
     extractByRegex(cleanText, [/(\d+)\s*m(?:2|\u00b2)\s*(?:util|útiles?)/i]) || 0;
 
+  // Idealista escribe "3ª planta" (numero ANTES de la palabra), no al reves
   const floor = findTextLiteral(html, ['floor', 'planta']) ||
+    cleanText.match(/(\d+[ºª°]?)\s*planta/i)?.[1] ||
     cleanText.match(/planta\s*([\wº°]{1,10})/i)?.[1] || '';
 
-  const hasKeyword = (keys, regexes) => {
+  // IMPORTANTE: "Sin ascensor"/"Sin garaje" son negaciones — hay que comprobar que
+  // NO haya "sin"/"no dispone de" justo antes de la palabra clave, no solo mirar
+  // lo que viene despues. Probado contra HTML real de Idealista donde "Sin ascensor"
+  // se detectaba (mal) como ascensor=true.
+  const hasKeyword = (keys, word) => {
     if (findTextLiteral(html, keys) || findNumberLiteral(html, keys)) return true;
-    return regexes.some((r) => r.test(cleanText));
+    const re = new RegExp(`(sin|no\\s+dispone\\s+de|no\\s+tiene)\\s+${word}`, 'i');
+    if (re.test(cleanText)) return false;
+    return new RegExp(`\\b${word}\\b`, 'i').test(cleanText);
   };
-  const has_elevator = hasKeyword(['hasLift', 'elevator', 'ascensor'], [/con\s+ascensor/i, /\bascensor\b(?!\s*no)/i]);
-  const has_terrace = hasKeyword(['terrace', 'hasTerrace'], [/con\s+terraza/i, /\bterraza\b/i]);
-  const has_garage = hasKeyword(['garage', 'hasParking', 'parking'], [/con\s+garaje/i, /plaza\s+de\s+garaje/i]);
-  const has_balcony = hasKeyword(['balcony', 'hasBalcony'], [/con\s+balc[oó]n/i, /\bbalc[oó]n\b/i]);
-  const has_storage = hasKeyword(['storageRoom', 'hasStorage', 'trastero'], [/con\s+trastero/i, /\btrastero\b/i]);
-  const has_pool = hasKeyword(['pool', 'hasPool', 'piscina'], [/con\s+piscina/i, /\bpiscina\b/i]);
-  const has_garden = hasKeyword(['garden', 'hasGarden', 'jardin'], [/con\s+jard[ií]n/i, /\bjard[ií]n\b/i]);
+  const has_elevator = hasKeyword(['hasLift', 'elevator', 'ascensor'], 'ascensor');
+  const has_terrace = hasKeyword(['terrace', 'hasTerrace'], 'terraza');
+  const has_garage = hasKeyword(['garage', 'hasParking', 'parking'], 'garaje');
+  const has_balcony = hasKeyword(['balcony', 'hasBalcony'], 'balc[oó]n');
+  const has_storage = hasKeyword(['storageRoom', 'hasStorage', 'trastero'], 'trastero');
+  const has_pool = hasKeyword(['pool', 'hasPool', 'piscina'], 'piscina');
+  const has_garden = hasKeyword(['garden', 'hasGarden', 'jardin'], 'jard[ií]n');
 
   const condition = findTextLiteral(html, ['condition', 'propertyCondition', 'estado']) ||
     cleanText.match(/(a\s+reformar|para\s+reformar|buen\s+estado|reci[eé]n\s+reformad[oa]|obra\s+nueva|nuev[oa]\s+construcci[oó]n|segunda\s+mano)/i)?.[0] || '';
@@ -532,9 +541,11 @@ function extractPortalData(html, url, status = 0, scrapeSource = 'html') {
     extractByRegex(cleanText, [/(?:construid[oa]|a[nñ]o\s+de\s+construcci[oó]n)[^\d]{0,15}(\d{4})/i]) || 0;
 
   const energy_certificate = findTextLiteral(html, ['energyCertificate', 'energyRating', 'certificadoEnergetico']) ||
+    cleanText.match(/certificad[oa]\s+energ[eé]tic[oa][^\wA-G]{0,25}\b([A-G])\b/i)?.[1] ||
     cleanText.match(/certificaci[oó]n\s+energ[eé]tica[^\wA-G]{0,20}\b([A-G])\b/i)?.[1] || '';
 
-  const reference = findTextLiteral(html, ['reference', 'adId', 'propertyCode', 'referencia']) || '';
+  const reference = findTextLiteral(html, ['reference', 'adId', 'propertyCode', 'referencia']) ||
+    cleanText.match(/referencia\s+del\s+anuncio[:\s]*([\w-]{2,20})/i)?.[1] || '';
 
   const geo = findDeep(jsonBlocks, ['geo']).find((v) => v && typeof v === 'object' && (v.latitude || v.longitude));
   const latitude = geo?.latitude ? Number(geo.latitude) : (numberFromText(findTextLiteral(html, ['latitude', 'lat'])) || 0) || null;

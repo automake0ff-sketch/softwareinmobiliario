@@ -47,6 +47,7 @@ const statusLabels = {
   reservado: 'Reservada',
   vendido: 'Vendida',
   alquilado: 'Alquilada',
+  pendiente: 'Pendiente',
   available: 'Disponible',
   reserved: 'Reservada',
   sold: 'Vendida',
@@ -158,7 +159,7 @@ function StatCard({ value, label, active, onClick }) {
 }
 
 export default function PropertiesPage() {
-  const { properties, fetchProperties, createProperty, leads, fetchLeads } = useStore()
+  const { properties, fetchProperties, createProperty, updateProperty, leads, fetchLeads } = useStore()
   const [activeTab, setActiveTab] = useState('all')
   const [search, setSearch] = useState('')
   const [showFilters, setShowFilters] = useState(false)
@@ -324,6 +325,12 @@ export default function PropertiesPage() {
     } catch (err) {
       toast.error(err.message || 'No se pudo anadir el interesado')
     }
+  }
+
+  async function saveEdit(id, formData) {
+    const updated = await updateProperty(id, formData)
+    setSelected((prev) => (prev ? { ...prev, ...updated } : prev))
+    return updated
   }
 
   function openDetail(property, tab = 'summary') {
@@ -568,6 +575,7 @@ export default function PropertiesPage() {
             activityLog={activityLog}
             loadActivity={loadActivity}
             activityLoading={activityLoading}
+            saveEdit={saveEdit}
           />
         )}
       </AnimatePresence>
@@ -618,9 +626,10 @@ function Textarea({ label, value, onChange, className = '', ...props }) {
   )
 }
 
-function DetailDrawer({ property, activeTab, setActiveTab, onClose, onDelete, marketing, loadMarketing, aiResult, loadAi, matches, loadMatches, interests, loadInterests, interestsLoading, addInterest, leads, fetchLeads, activityLog, loadActivity, activityLoading }) {
+function DetailDrawer({ property, activeTab, setActiveTab, onClose, onDelete, marketing, loadMarketing, aiResult, loadAi, matches, loadMatches, interests, loadInterests, interestsLoading, addInterest, leads, fetchLeads, activityLog, loadActivity, activityLoading, saveEdit }) {
   const images = property.images || []
   const [imageIndex, setImageIndex] = useState(0)
+  const [editMode, setEditMode] = useState(false)
   const heroImage = images[imageIndex]
 
   return (
@@ -678,24 +687,227 @@ function DetailDrawer({ property, activeTab, setActiveTab, onClose, onDelete, ma
         </div>
 
         <div className="flex-1 overflow-y-auto p-7">
-          {activeTab === 'summary' && <SummaryTab property={property} />}
-          {activeTab === 'images' && <ImagesTab images={images} />}
-          {activeTab === 'interested' && <InterestedTab interests={interests} loading={interestsLoading} addInterest={addInterest} leads={leads} />}
-          {activeTab === 'compatible' && <CompatibleTab matches={matches} />}
-          {activeTab === 'activity' && <ActivityTab property={property} activityLog={activityLog} loading={activityLoading} />}
-          {activeTab === 'marketing' && <MarketingTab marketing={marketing} loadMarketing={loadMarketing} />}
-          {activeTab === 'ai' && <AiTab aiResult={aiResult} loadAi={loadAi} />}
+          {editMode ? (
+            <EditPropertyForm
+              property={property}
+              onCancel={() => setEditMode(false)}
+              onSave={async (formData) => {
+                await saveEdit(property.id, formData)
+                setEditMode(false)
+              }}
+            />
+          ) : (
+            <>
+              {activeTab === 'summary' && <SummaryTab property={property} />}
+              {activeTab === 'images' && <ImagesTab images={images} />}
+              {activeTab === 'interested' && <InterestedTab interests={interests} loading={interestsLoading} addInterest={addInterest} leads={leads} />}
+              {activeTab === 'compatible' && <CompatibleTab matches={matches} />}
+              {activeTab === 'activity' && <ActivityTab property={property} activityLog={activityLog} loading={activityLoading} />}
+              {activeTab === 'marketing' && <MarketingTab marketing={marketing} loadMarketing={loadMarketing} />}
+              {activeTab === 'ai' && <AiTab aiResult={aiResult} loadAi={loadAi} />}
+            </>
+          )}
         </div>
 
         <div className="flex shrink-0 justify-between border-t border-[#27283a] p-5">
           <button onClick={onDelete} className="inline-flex items-center gap-2 rounded-xl bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200"><Trash2 size={16} /> Eliminar</button>
           <div className="flex gap-3">
             {property.external_url && <a href={property.external_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-white/5 px-4 py-3 text-sm font-semibold text-white"><ExternalLink size={16} /> Ver portal</a>}
-            <button className="inline-flex items-center gap-2 rounded-xl bg-indigo-500 px-4 py-3 text-sm font-semibold text-white"><Pencil size={16} /> Editar</button>
+            {editMode ? (
+              <button onClick={() => setEditMode(false)} className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-4 py-3 text-sm font-semibold text-white">Cancelar</button>
+            ) : (
+              <button onClick={() => setEditMode(true)} className="inline-flex items-center gap-2 rounded-xl bg-indigo-500 px-4 py-3 text-sm font-semibold text-white"><Pencil size={16} /> Editar</button>
+            )}
           </div>
         </div>
       </motion.aside>
     </motion.div>
+  )
+}
+
+const PROPERTY_TYPE_OPTIONS = [
+  ['apartment', 'Apartamento'], ['house', 'Casa'], ['penthouse', 'Ático'], ['studio', 'Estudio'],
+  ['loft', 'Loft'], ['duplex', 'Dúplex'], ['townhouse', 'Adosado'], ['villa', 'Villa'],
+  ['land', 'Terreno'], ['commercial', 'Local comercial'], ['office', 'Oficina'], ['garage', 'Garaje'],
+]
+
+function EditPropertyForm({ property, onSave, onCancel }) {
+  const [form, setForm] = useState({
+    title: property.title || '',
+    description: property.description || '',
+    price: property.price || '',
+    operation_type: property.operation_type || 'sale',
+    type: property.type || 'apartment',
+    status: property.status || 'disponible',
+    city: property.city || '',
+    zone: property.zone || '',
+    province: property.province || '',
+    postal_code: property.postal_code || '',
+    address: property.address || '',
+    bedrooms: property.bedrooms ?? '',
+    bathrooms: property.bathrooms ?? '',
+    surface: property.surface || '',
+    useful_surface: property.useful_surface || '',
+    floor: property.floor || '',
+    has_elevator: !!property.has_elevator,
+    has_terrace: !!property.has_terrace,
+    has_garage: !!property.has_garage,
+    has_balcony: !!property.has_balcony,
+    has_storage: !!property.has_storage,
+    has_pool: !!property.has_pool,
+    has_garden: !!property.has_garden,
+    condition: property.condition || '',
+    year_built: property.year_built || '',
+    energy_certificate: property.energy_certificate || '',
+    reference: property.reference || '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [errors, setErrors] = useState({})
+
+  const set = (field) => (e) => {
+    const value = e?.target?.type === 'checkbox' ? e.target.checked : e?.target?.value ?? e
+    setForm((f) => ({ ...f, [field]: value }))
+  }
+
+  function validate() {
+    const errs = {}
+    if (!form.title.trim()) errs.title = 'El título es obligatorio.'
+    if (!form.type) errs.type = 'El tipo es obligatorio.'
+    if (!form.city.trim()) errs.city = 'La ciudad es obligatoria.'
+    setErrors(errs)
+    return Object.keys(errs).length === 0
+  }
+
+  async function handleSave() {
+    if (!validate()) return
+    setSaving(true)
+    try {
+      const payload = {
+        ...form,
+        price: form.price === '' ? 0 : Number(form.price),
+        bedrooms: form.bedrooms === '' ? 0 : Number(form.bedrooms),
+        bathrooms: form.bathrooms === '' ? 0 : Number(form.bathrooms),
+        surface: form.surface === '' ? 0 : Number(form.surface),
+        useful_surface: form.useful_surface === '' ? null : Number(form.useful_surface),
+        year_built: form.year_built === '' ? null : Number(form.year_built),
+      }
+      await onSave(payload)
+      toast.success('Propiedad actualizada')
+    } catch (err) {
+      toast.error(err.message || 'No se pudo guardar')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const inputCls = 'w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-[#6b7794] focus:border-indigo-400 focus:outline-none'
+  const labelCls = 'mb-1.5 block text-xs font-semibold text-[#9fb3d9]'
+
+  const Field = ({ label, error, children }) => (
+    <div>
+      <label className={labelCls}>{label}</label>
+      {children}
+      {error && <p className="mt-1 text-xs text-rose-400">{error}</p>}
+    </div>
+  )
+
+  const amenities = [
+    ['has_elevator', 'Ascensor'], ['has_terrace', 'Terraza'], ['has_garage', 'Garaje'],
+    ['has_balcony', 'Balcón'], ['has_storage', 'Trastero'], ['has_pool', 'Piscina'], ['has_garden', 'Jardín'],
+  ]
+
+  return (
+    <div className="space-y-6">
+      <Panel title="Datos principales">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="col-span-2">
+            <Field label="Título *" error={errors.title}>
+              <input className={inputCls} value={form.title} onChange={set('title')} />
+            </Field>
+          </div>
+          <div className="col-span-2">
+            <Field label="Descripción">
+              <textarea rows={4} className={inputCls} value={form.description} onChange={set('description')} />
+            </Field>
+          </div>
+          <Field label="Precio (€)">
+            <input type="number" className={inputCls} value={form.price} onChange={set('price')} />
+          </Field>
+          <Field label="Operación">
+            <select className={inputCls} value={form.operation_type} onChange={set('operation_type')}>
+              <option value="sale">Venta</option>
+              <option value="rent">Alquiler</option>
+            </select>
+          </Field>
+          <Field label="Tipo *" error={errors.type}>
+            <select className={inputCls} value={form.type} onChange={set('type')}>
+              {PROPERTY_TYPE_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </Field>
+          <Field label="Estado del inmueble">
+            <select className={inputCls} value={form.status} onChange={set('status')}>
+              {Object.entries({ disponible: 'Disponible', reservado: 'Reservada', vendido: 'Vendida', alquilado: 'Alquilada', pendiente: 'Pendiente' }).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </Field>
+        </div>
+      </Panel>
+
+      <Panel title="Ubicación">
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Ciudad *" error={errors.city}>
+            <input className={inputCls} value={form.city} onChange={set('city')} />
+          </Field>
+          <Field label="Barrio / Zona">
+            <input className={inputCls} value={form.zone} onChange={set('zone')} />
+          </Field>
+          <Field label="Provincia">
+            <input className={inputCls} value={form.province} onChange={set('province')} />
+          </Field>
+          <Field label="Código postal">
+            <input className={inputCls} value={form.postal_code} onChange={set('postal_code')} />
+          </Field>
+          <div className="col-span-2">
+            <Field label="Dirección">
+              <input className={inputCls} value={form.address} onChange={set('address')} />
+            </Field>
+          </div>
+        </div>
+      </Panel>
+
+      <Panel title="Características">
+        <div className="grid grid-cols-3 gap-4">
+          <Field label="Habitaciones"><input type="number" className={inputCls} value={form.bedrooms} onChange={set('bedrooms')} /></Field>
+          <Field label="Baños"><input type="number" className={inputCls} value={form.bathrooms} onChange={set('bathrooms')} /></Field>
+          <Field label="Planta"><input className={inputCls} value={form.floor} onChange={set('floor')} /></Field>
+          <Field label="Superficie (m²)"><input type="number" className={inputCls} value={form.surface} onChange={set('surface')} /></Field>
+          <Field label="Superficie útil (m²)"><input type="number" className={inputCls} value={form.useful_surface} onChange={set('useful_surface')} /></Field>
+          <Field label="Año de construcción"><input type="number" className={inputCls} value={form.year_built} onChange={set('year_built')} /></Field>
+          <Field label="Certificado energético">
+            <select className={inputCls} value={form.energy_certificate} onChange={set('energy_certificate')}>
+              <option value="">Sin especificar</option>
+              {['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((l) => <option key={l} value={l}>{l}</option>)}
+            </select>
+          </Field>
+          <Field label="Estado del inmueble"><input className={inputCls} value={form.condition} onChange={set('condition')} placeholder="Buen estado, a reformar..." /></Field>
+          <Field label="Referencia"><input className={inputCls} value={form.reference} onChange={set('reference')} /></Field>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-3">
+          {amenities.map(([field, label]) => (
+            <label key={field} className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-white/5 px-3 py-2 text-sm text-[#d7e2f7]">
+              <input type="checkbox" checked={form[field]} onChange={set(field)} className="accent-indigo-500" />
+              {label}
+            </label>
+          ))}
+        </div>
+      </Panel>
+
+      <div className="flex justify-end gap-3">
+        <button onClick={onCancel} className="rounded-xl bg-white/10 px-5 py-2.5 text-sm font-semibold text-white">Cancelar</button>
+        <button onClick={handleSave} disabled={saving} className="rounded-xl bg-indigo-500 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+          {saving ? 'Guardando...' : 'Guardar cambios'}
+        </button>
+      </div>
+    </div>
   )
 }
 

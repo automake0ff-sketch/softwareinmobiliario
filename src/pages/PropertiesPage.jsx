@@ -733,7 +733,47 @@ function SummaryTab({ property }) {
       <Panel title="Origen">
         <p className="text-[#d7e2f7]">{portalLabel(property.source)} {property.external_url ? `· ${property.external_url}` : ''}</p>
       </Panel>
+      <MapPanel property={property} />
     </div>
+  )
+}
+
+function MapPanel({ property }) {
+  const hasCoords = property.latitude && property.longitude
+  const addressQuery = [property.address, property.zone, property.city].filter(Boolean).join(', ')
+  if (!hasCoords && !addressQuery) {
+    return <Panel title="Ubicacion"><p className="text-[#9fb3d9]">Sin direccion ni coordenadas. Anade la ubicacion para ver el mapa aqui.</p></Panel>
+  }
+  const lat = hasCoords ? property.latitude : null
+  const lng = hasCoords ? property.longitude : null
+  const osmSrc = hasCoords
+    ? `https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.006}%2C${lat - 0.004}%2C${lng + 0.006}%2C${lat + 0.004}&layer=mapnik&marker=${lat}%2C${lng}`
+    : null
+  const gmapsUrl = hasCoords
+    ? `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addressQuery)}`
+  const streetViewUrl = hasCoords
+    ? `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}`
+    : null
+
+  return (
+    <Panel title="Ubicacion" className="lg:col-span-2">
+      {osmSrc ? (
+        <iframe title="Mapa" src={osmSrc} className="h-64 w-full rounded-2xl border-0" loading="lazy" />
+      ) : (
+        <p className="mb-3 text-[#9fb3d9]">Sin coordenadas exactas — el anunciante no las ha compartido. Puedes buscar la direccion en el mapa:</p>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <a href={gmapsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-[#d7e2f7] hover:bg-white/15">
+          <MapPin size={12} /> Ver en Google Maps
+        </a>
+        {streetViewUrl && (
+          <a href={streetViewUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-[#d7e2f7] hover:bg-white/15">
+            <Eye size={12} /> Street View
+          </a>
+        )}
+      </div>
+    </Panel>
   )
 }
 
@@ -878,8 +918,8 @@ function AiTab({ aiResult, loadAi }) {
   )
 }
 
-function Panel({ title, children }) {
-  return <section className="rounded-3xl border border-[#27283a] bg-[#15151d] p-5"><h3 className="mb-4 text-lg font-bold text-white">{title}</h3>{children}</section>
+function Panel({ title, children, className = '' }) {
+  return <section className={`rounded-3xl border border-[#27283a] bg-[#15151d] p-5 ${className}`}><h3 className="mb-4 text-lg font-bold text-white">{title}</h3>{children}</section>
 }
 
 function Feature({ icon: Icon, label, value }) {

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { all, get, run } from '../db/db.js';
 import { defaultQueue } from '../services/queue.js';
@@ -16,6 +17,31 @@ async function checkAgencyMetaAds(agencyId) {
 const router = Router();
 
 const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN || 'inmobiliaria_webhook_2024';
+const META_APP_SECRET = process.env.META_APP_SECRET;
+
+// Misma lógica que en server/webhooks/whatsapp.js: valida que el POST venga
+// realmente de Meta comprobando el HMAC-SHA256 sobre el body crudo.
+// Si META_APP_SECRET no está configurado, se deja pasar (comportamiento previo)
+// pero se avisa por log, para no romper despliegues que aún no lo tengan seteado.
+function verifySignature(req) {
+  if (!META_APP_SECRET) {
+    console.warn('[META] META_APP_SECRET no configurado — firma del webhook sin verificar.');
+    return true;
+  }
+  const signature = req.headers['x-hub-signature-256'];
+  if (!signature) return false;
+  const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body));
+  const expected = 'sha256=' + crypto.createHmac('sha256', META_APP_SECRET).update(rawBody).digest('hex');
+  if (signature.length !== expected.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+}
+
+function parseBody(req) {
+  if (Buffer.isBuffer(req.body)) {
+    try { return JSON.parse(req.body.toString('utf8')); } catch { return {}; }
+  }
+  return req.body || {};
+}
 
 router.get('/', async (req, res) => {
   const mode = req.query['hub.mode'];
@@ -30,8 +56,12 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
+    if (!verifySignature(req)) {
+      console.warn('[META] Invalid signature');
+      return res.status(401).send('Invalid signature');
+    }
     res.status(200).send('EVENT_RECEIVED');
-    const body = req.body;
+    const body = parseBody(req);
     if (body.object !== 'page') return;
 
     for (const entry of body.entry || []) {
@@ -73,7 +103,7 @@ async function processMetaLead(leadData, pageId) {
       return;
     }
 
-    if (!checkAgencyMetaAds(agency.id)) {
+    if (!(await checkAgencyMetaAds(agency.id))) {
       console.log(`[META] Agency ${agency.id} (${agency.name}) does not have meta_ads feature. Lead discarded.`);
       return;
     }

@@ -159,8 +159,17 @@ export class BillingService {
       const end = new Date(Date.now() + periodDays * 86400000).toISOString();
 
       await run(
-        `INSERT OR REPLACE INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, current_period_start, current_period_end, trial_end, payment_method, created_at, updated_at)
-         VALUES (@id, @agency_id, @plan_id, @status, @billing_cycle, @period_start, @period_end, @trial_end, @payment_method, @created_at, @updated_at)`,
+        `INSERT INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, current_period_start, current_period_end, trial_end, payment_method, created_at, updated_at)
+         VALUES (@id, @agency_id, @plan_id, @status, @billing_cycle, @period_start, @period_end, @trial_end, @payment_method, @created_at, @updated_at)
+         ON CONFLICT (agency_id) DO UPDATE SET
+           plan_id = EXCLUDED.plan_id,
+           status = EXCLUDED.status,
+           billing_cycle = EXCLUDED.billing_cycle,
+           current_period_start = EXCLUDED.current_period_start,
+           current_period_end = EXCLUDED.current_period_end,
+           trial_end = EXCLUDED.trial_end,
+           payment_method = EXCLUDED.payment_method,
+           updated_at = EXCLUDED.updated_at`,
         {
           id: subId,
           agency_id: agency.id,
@@ -241,8 +250,17 @@ export class BillingService {
             const now = new Date().toISOString();
             const end = new Date(Date.now() + (interval === 'year' ? 365 : 30) * 86400000).toISOString();
             await run(
-              `INSERT OR REPLACE INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, stripe_subscription_id, stripe_customer_id, current_period_start, current_period_end, updated_at)
-               VALUES (@id, @agency_id, @plan_id, 'active', @billing_cycle, @stripe_sub, @stripe_cus, @period_start, @period_end, @updated_at)`,
+              `INSERT INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, stripe_subscription_id, stripe_customer_id, current_period_start, current_period_end, updated_at)
+               VALUES (@id, @agency_id, @plan_id, 'active', @billing_cycle, @stripe_sub, @stripe_cus, @period_start, @period_end, @updated_at)
+               ON CONFLICT (agency_id) DO UPDATE SET
+                 plan_id = EXCLUDED.plan_id,
+                 status = EXCLUDED.status,
+                 billing_cycle = EXCLUDED.billing_cycle,
+                 stripe_subscription_id = EXCLUDED.stripe_subscription_id,
+                 stripe_customer_id = EXCLUDED.stripe_customer_id,
+                 current_period_start = EXCLUDED.current_period_start,
+                 current_period_end = EXCLUDED.current_period_end,
+                 updated_at = EXCLUDED.updated_at`,
               {
                 id: uuidv4(),
                 agency_id: agencyId,
@@ -336,8 +354,15 @@ export class BillingService {
             const planId = resource.plan_id?.includes('starter') ? 'starter' :
                            resource.plan_id?.includes('profesional') ? 'profesional' : 'agencia';
             await run(
-              `INSERT OR REPLACE INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, paypal_subscription_id, paypal_plan_id, updated_at)
-               VALUES (@id, @agency_id, @plan_id, 'active', 'monthly', @paypal_sub, @paypal_plan, NOW())`,
+              `INSERT INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, paypal_subscription_id, paypal_plan_id, updated_at)
+               VALUES (@id, @agency_id, @plan_id, 'active', 'monthly', @paypal_sub, @paypal_plan, NOW())
+               ON CONFLICT (agency_id) DO UPDATE SET
+                 plan_id = EXCLUDED.plan_id,
+                 status = EXCLUDED.status,
+                 billing_cycle = EXCLUDED.billing_cycle,
+                 paypal_subscription_id = EXCLUDED.paypal_subscription_id,
+                 paypal_plan_id = EXCLUDED.paypal_plan_id,
+                 updated_at = EXCLUDED.updated_at`,
               {
                 id: uuidv4(), agency_id: agencyId, plan_id: planId,
                 paypal_sub: resource.id, paypal_plan: resource.plan_id,
@@ -415,8 +440,22 @@ export class BillingService {
     const { run } = await this._db();
     const now = new Date().toISOString();
     await run(
-      `INSERT OR REPLACE INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, current_period_start, current_period_end, trial_end, cancel_at_period_end, payment_method, stripe_customer_id, stripe_subscription_id, paypal_subscription_id, paypal_plan_id, updated_at)
-       VALUES (@id, @agency_id, @plan_id, @status, @billing_cycle, @period_start, @period_end, @trial_end, @cancel, @payment_method, @stripe_cus, @stripe_sub, @paypal_sub, @paypal_plan, @updated_at)`,
+      `INSERT INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, current_period_start, current_period_end, trial_end, cancel_at_period_end, payment_method, stripe_customer_id, stripe_subscription_id, paypal_subscription_id, paypal_plan_id, updated_at)
+       VALUES (@id, @agency_id, @plan_id, @status, @billing_cycle, @period_start, @period_end, @trial_end, @cancel, @payment_method, @stripe_cus, @stripe_sub, @paypal_sub, @paypal_plan, @updated_at)
+       ON CONFLICT (agency_id) DO UPDATE SET
+         plan_id = EXCLUDED.plan_id,
+         status = EXCLUDED.status,
+         billing_cycle = EXCLUDED.billing_cycle,
+         current_period_start = EXCLUDED.current_period_start,
+         current_period_end = EXCLUDED.current_period_end,
+         trial_end = EXCLUDED.trial_end,
+         cancel_at_period_end = EXCLUDED.cancel_at_period_end,
+         payment_method = EXCLUDED.payment_method,
+         stripe_customer_id = EXCLUDED.stripe_customer_id,
+         stripe_subscription_id = EXCLUDED.stripe_subscription_id,
+         paypal_subscription_id = EXCLUDED.paypal_subscription_id,
+         paypal_plan_id = EXCLUDED.paypal_plan_id,
+         updated_at = EXCLUDED.updated_at`,
       {
         id: data.id || uuidv4(),
         agency_id: data.agency_id,

@@ -291,7 +291,7 @@ export default function LeadDetailPage() {
     const ends = new Date(new Date(apptStartsAt).getTime() + apptDuration * 60000).toISOString();
 
     try {
-      await api.post(`/leads/${lead.id}/appointments`, {
+      const apptRes = await api.post(`/leads/${lead.id}/appointments`, {
         type: apptType,
         starts_at: starts,
         ends_at: ends,
@@ -300,7 +300,13 @@ export default function LeadDetailPage() {
         notes: apptNotes.trim(),
         attendant_name: apptAttendant.trim()
       })
-      toast.success('Cita programada con éxito. Mensajes de confirmación enviados.')
+      if (apptRes.email_sent === false && apptRes.whatsapp_sent === false) {
+        toast.error('Cita programada, pero no se pudo enviar la confirmación por email ni WhatsApp. Avisa al cliente manualmente.')
+      } else if (apptRes.email_sent === false || apptRes.whatsapp_sent === false) {
+        toast.success('Cita programada. Ojo: uno de los canales de confirmación (email o WhatsApp) no se pudo enviar.')
+      } else {
+        toast.success('Cita programada con éxito. Mensajes de confirmación enviados.')
+      }
       setShowAppointmentModal(false)
       setApptStartsAt('')
       setApptNotes('')
@@ -637,7 +643,13 @@ export default function LeadDetailPage() {
         notes: apptNotes.trim(), attendant_name: apptAttendant.trim(),
         send_whatsapp: autoWaOnAppointment,
       })
-      toast.success('Cita programada con éxito. Mensajes enviados.')
+      if (result.email_sent === false && result.whatsapp_sent === false) {
+        toast.error('Cita programada, pero no se pudo enviar la confirmación por email ni WhatsApp. Avisa al cliente manualmente.')
+      } else if (result.email_sent === false || result.whatsapp_sent === false) {
+        toast.success('Cita programada. Ojo: uno de los canales de confirmación (email o WhatsApp) no se pudo enviar.')
+      } else {
+        toast.success('Cita programada con éxito. Mensajes enviados.')
+      }
       setShowAppointmentModal(false)
       setAutoApptSuggestion(null)
       loadLeadDetails()

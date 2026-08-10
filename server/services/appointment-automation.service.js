@@ -119,31 +119,35 @@ export async function createAppointment({ lead, agency, type, starts_at, ends_at
 
   const modifyUrl = `${origin || 'http://localhost:5173'}/appointment/${clientToken}`;
 
+  let emailSent = false;
   if (lead.email) {
     const emailService = new EmailService({
       sendgridKey: agency.sendgrid_api_key, fromEmail: agency.sendgrid_from_email, agencyName: agency.name,
     });
     const emailResult = await emailService.sendAppointmentConfirmation(lead, appointment, agency, modifyUrl);
+    emailSent = Boolean(emailResult.success || emailResult.mock);
     logCommunication({
       agencyId: agency.id, leadId: lead.id, appointmentId,
       channel: 'email', direction: 'outbound',
       subject: `Confirmación de cita - ${agency.name}`,
       body: `Cita programada para el ${new Date(starts_at).toLocaleString('es-ES')}`,
-      status: emailResult.success || emailResult.mock ? 'sent' : 'failed',
+      status: emailSent ? 'sent' : 'failed',
       providerMessageId: emailResult.messageId, error: emailResult.error,
     });
   }
 
+  let whatsappSent = false;
   if (lead.phone) {
     const whatsappService = new WhatsAppService({
       whatsappToken: agency.whatsapp_token, whatsappPhoneId: agency.whatsapp_phone_id, whatsappNumber: agency.whatsapp_number,
     });
     const waResult = await whatsappService.sendAppointmentConfirmation(lead, appointment, agency, modifyUrl);
+    whatsappSent = Boolean(waResult.success || waResult.mock);
     logCommunication({
       agencyId: agency.id, leadId: lead.id, appointmentId,
       channel: 'whatsapp', direction: 'outbound',
       subject: null, body: `Confirmación de cita`,
-      status: waResult.success || waResult.mock ? 'sent' : 'failed',
+      status: whatsappSent ? 'sent' : 'failed',
       providerMessageId: waResult.messageId, error: waResult.error,
     });
   }
@@ -157,5 +161,5 @@ export async function createAppointment({ lead, agency, type, starts_at, ends_at
     result: { appointment_id: appointmentId, client_token: clientToken },
   });
 
-  return { appointment, client_token: clientToken, modify_url: modifyUrl };
+  return { appointment, client_token: clientToken, modify_url: modifyUrl, email_sent: emailSent, whatsapp_sent: whatsappSent };
 }

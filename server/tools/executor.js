@@ -64,18 +64,18 @@ export async function executeTool(toolName, toolInput, context) {
         );
 
         result = await get('SELECT * FROM leads WHERE id = @id', { id });
-        logActivity(defaultAgencyId, id, userId, 'lead_created', `Lead ${toolInput.name} creado por IA`, { toolName, input: toolInput });
+        logActivity(agencyId, id, userId, 'lead_created', `Lead ${toolInput.name} creado por IA`, { toolName, input: toolInput });
         break;
       }
 
       case 'detectar_duplicado': {
         const duplicates = [];
         if (toolInput.phone) {
-          const byPhone = await all('SELECT id, name, phone, email, status, created_at FROM leads WHERE phone = @phone', { phone: toolInput.phone });
+          const byPhone = await all('SELECT id, name, phone, email, status, created_at FROM leads WHERE phone = @phone AND agency_id = @aid', { phone: toolInput.phone, aid: agencyId });
           duplicates.push(...byPhone);
         }
         if (toolInput.email) {
-          const byEmail = await all('SELECT id, name, phone, email, status, created_at FROM leads WHERE email = @email', { email: toolInput.email });
+          const byEmail = await all('SELECT id, name, phone, email, status, created_at FROM leads WHERE email = @email AND agency_id = @aid', { email: toolInput.email, aid: agencyId });
           for (const e of byEmail) {
             if (!duplicates.find(d => d.id === e.id)) duplicates.push(e);
           }
@@ -97,10 +97,9 @@ export async function executeTool(toolName, toolInput, context) {
       }
 
       case 'obtener_leads_sin_asignar': {
-        let sql = "SELECT id, name, phone, email, budget, zone, property_interest, status, ia_score, last_activity, created_at FROM leads WHERE assigned_to IS NULL";
-        const params = {};
+        let sql = "SELECT id, name, phone, email, budget, zone, property_interest, status, ia_score, last_activity, created_at FROM leads WHERE assigned_to IS NULL AND agency_id = @aid";
+        const params = { aid: agencyId };
 
-        if (toolInput.agency_id) { sql += ' AND agency_id = @aid'; params.aid = toolInput.agency_id; }
         if (toolInput.min_score) { sql += ' AND ia_score >= @min_score'; params.min_score = Number(toolInput.min_score); }
         sql += ' ORDER BY ia_score DESC NULLS LAST';
         if (toolInput.limit) { sql += ' LIMIT @lim'; params.lim = Number(toolInput.limit); }
@@ -110,7 +109,7 @@ export async function executeTool(toolName, toolInput, context) {
       }
 
       case 'obtener_comerciales_disponibles': {
-        const params = { aid: toolInput.agency_id || agencyId };
+        const params = { aid: agencyId };
         let sql = `SELECT u.id, u.name, u.email, u.phone, u.role,
                    (SELECT COUNT(*) FROM leads l WHERE l.assigned_to = u.id AND l.status NOT IN ('cerrado', 'reserva')) as active_leads
                    FROM users u WHERE u.role = 'comercial' AND u.active = true AND u.agency_id = @aid`;
@@ -122,34 +121,34 @@ export async function executeTool(toolName, toolInput, context) {
       }
 
       case 'asignar_lead': {
-        const lead = await get('SELECT * FROM leads WHERE id = @id', { id: toolInput.lead_id });
+        const lead = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @aid', { id: toolInput.lead_id, aid: agencyId });
         if (!lead) { result = { error: 'Lead no encontrado' }; break; }
 
-        const agent = await get('SELECT * FROM users WHERE id = @id', { id: toolInput.user_id });
+        const agent = await get('SELECT * FROM users WHERE id = @id AND agency_id = @aid', { id: toolInput.user_id, aid: agencyId });
         if (!agent) { result = { error: 'Usuario no encontrado' }; break; }
 
-        await run("UPDATE leads SET assigned_to = @uid, updated_at = NOW() WHERE id = @lid", { uid: toolInput.user_id, lid: toolInput.lead_id });
+        await run("UPDATE leads SET assigned_to = @uid, updated_at = NOW() WHERE id = @lid AND agency_id = @aid", { uid: toolInput.user_id, lid: toolInput.lead_id, aid: agencyId });
 
-        logActivity(lead.agency_id, toolInput.lead_id, userId || toolInput.user_id, 'lead_assigned',
+        logActivity(agencyId, toolInput.lead_id, userId || toolInput.user_id, 'lead_assigned',
           `Lead asignado a ${agent.name}${toolInput.reason ? ': ' + toolInput.reason : ''}`, { toolName, reason: toolInput.reason });
 
-        result = await get('SELECT l.*, u.name AS assigned_name FROM leads l LEFT JOIN users u ON l.assigned_to = u.id WHERE l.id = @id', { id: toolInput.lead_id });
+        result = await get('SELECT l.*, u.name AS assigned_name FROM leads l LEFT JOIN users u ON l.assigned_to = u.id WHERE l.id = @id AND l.agency_id = @aid', { id: toolInput.lead_id, aid: agencyId });
         break;
       }
 
       case 'enviar_alerta_equipo': {
         const alertId = uuidv4();
-        const targetUsers = toolInput.user_ids || await all(
+        const targetUsers = toolInput.user_ids || (await all(
           `SELECT id FROM users WHERE agency_id = @aid${toolInput.role ? " AND role = @role" : ""}`,
-          { aid: toolInput.agency_id || agencyId, role: toolInput.role }
-        ).map(u => u.id);
+          { aid: agencyId, role: toolInput.role }
+        )).map(u => u.id);
 
         for (const uid of targetUsers) {
           await run(
             `INSERT INTO notifications (id, agency_id, user_id, lead_id, title, body, type, created_at)
              VALUES (@id, @aid, @uid, @lid, @title, @body, 'alert', NOW())`,
             {
-              id: uuidv4(), aid: toolInput.agency_id || agencyId, uid,
+              id: uuidv4(), aid: agencyId, uid,
               lid: toolInput.lead_id || null,
               title: 'Alerta del Coordinador IA',
               body: toolInput.message,
@@ -164,7 +163,7 @@ export async function executeTool(toolName, toolInput, context) {
       case 'detectar_leads_bloqueados': {
         const threshold = toolInput.hours_threshold || 48;
         const stages = toolInput.pipeline_stages || ['nuevo', 'contactado', 'interesado'];
-        const params = { aid: toolInput.agency_id || agencyId, threshold };
+        const params = { aid: agencyId, threshold };
         const placeholders = stages.map((_, i) => `@stage${i}`);
         stages.forEach((s, i) => { params[`stage${i}`] = s; });
 
@@ -205,6 +204,9 @@ export async function executeTool(toolName, toolInput, context) {
       }
 
       case 'crear_visita': {
+        const targetLead = await get('SELECT id FROM leads WHERE id = @id AND agency_id = @aid', { id: toolInput.lead_id, aid: agencyId });
+        if (!targetLead) { result = { error: 'Lead no encontrado' }; break; }
+
         const visitId = uuidv4();
         const visitData = {
           id: visitId,
@@ -229,9 +231,9 @@ export async function executeTool(toolName, toolInput, context) {
           }
         );
 
-        await run("UPDATE leads SET status = 'visita_agendada', updated_at = NOW() WHERE id = @id", { id: toolInput.lead_id });
+        await run("UPDATE leads SET status = 'visita_agendada', updated_at = NOW() WHERE id = @id AND agency_id = @aid", { id: toolInput.lead_id, aid: agencyId });
 
-        logActivity(agencyId || toolInput.agency_id, toolInput.lead_id, toolInput.user_id, 'visita_creada',
+        logActivity(agencyId, toolInput.lead_id, toolInput.user_id, 'visita_creada',
           `Visita creada por IA para ${toolInput.scheduled_at}`, { toolName, visitData });
 
         result = visitData;
@@ -239,6 +241,9 @@ export async function executeTool(toolName, toolInput, context) {
       }
 
       case 'reagendar_visita': {
+        const targetLead = await get('SELECT id FROM leads WHERE id = @id AND agency_id = @aid', { id: toolInput.lead_id, aid: agencyId });
+        if (!targetLead) { result = { error: 'Lead no encontrado' }; break; }
+
         const existingTasks = await all(
           'SELECT * FROM tasks WHERE lead_id = @lid AND completed = false ORDER BY created_at DESC LIMIT 1',
           { lid: toolInput.lead_id }

@@ -256,7 +256,12 @@ export default function PropertiesPage() {
       setCsv('')
       const created = res.created?.length || 0
       const updated = res.updated?.length || 0
-      toast.success(`${created} importadas, ${updated} actualizadas`)
+      const needsReview = res.needs_review?.length || 0
+      if (needsReview > 0) {
+        toast.error(`${created} importadas, ${updated} actualizadas — ${needsReview} sin datos completos (el portal bloqueó la extracción, revisa y completa manualmente)`)
+      } else {
+        toast.success(`${created} importadas, ${updated} actualizadas`)
+      }
     } catch (err) {
       toast.error(err.message || 'No se pudo importar')
     } finally {

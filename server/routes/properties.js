@@ -720,6 +720,7 @@ router.post('/import/url', async (req, res) => {
     const created = [];
     const updated = [];
     const skipped = [];
+    const needsReview = []; // URLs donde el scraping no consiguió datos reales (bloqueo del portal, timeout, etc.)
     for (const url of urls) {
       const externalSource = await normalizePortal(url);
       const duplicate = await get(
@@ -727,6 +728,14 @@ router.post('/import/url', async (req, res) => {
         { agency_id: req.user.agency_id, external_url: url }
       );
       const scraped = await scrapePortal(url);
+
+      if (!scraped.scraped) {
+        // El scraper no obtuvo datos reales (portal bloqueado, timeout, etc.).
+        // Se guarda igualmente como ficha preliminar, pero avisamos para no
+        // dar una falsa sensación de "importación completa".
+        console.warn(`[IMPORT] Scraping sin datos para ${url} (portal: ${externalSource}, status: ${scraped.scrape_status || 'n/a'}, error: ${scraped.scrape_error || 'n/a'})`);
+        needsReview.push({ url, portal: externalSource, reason: scraped.blocked ? 'bloqueado_por_portal' : 'sin_datos' });
+      }
 
       const importedFields = {
         title: req.body.title || scraped.title || `Propiedad importada desde ${externalSource}`,
@@ -784,7 +793,7 @@ router.post('/import/url', async (req, res) => {
       await logActivity(req, property, 'property_imported', `Propiedad importada desde ${externalSource}`, { url });
       created.push(property);
     }
-    res.status(201).json({ created, updated, skipped });
+    res.status(201).json({ created, updated, skipped, needs_review: needsReview });
   } catch (error) {
     console.error('Error importing properties by URL:', error);
     res.status(500).json({ error: 'Error al importar propiedades por URL.' });

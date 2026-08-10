@@ -54,8 +54,8 @@ router.post('/execute/:agentType', async (req, res) => {
 
     const mergedContext = {
       ...(context || {}),
-      agencyId: context?.agencyId || req.user?.agency_id,
-      userId: context?.userId || req.user?.id,
+      agencyId: req.user?.agency_id,
+      userId: req.user?.id,
     };
 
     const response = await runAgentWithTools({

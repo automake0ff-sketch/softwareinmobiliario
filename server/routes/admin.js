@@ -23,34 +23,34 @@ router.use(requireRole('admin', 'super_admin'));
 
 router.get('/metrics', async (req, res) => {
   try {
-    const totalAgencies = await get('SELECT COUNT(*) as count FROM agencies').count;
-    const activeAgencies = await get("SELECT COUNT(*) as count FROM agencies WHERE plan_status = 'active'").count;
-    const trialAgencies = await get("SELECT COUNT(*) as count FROM agencies WHERE plan_status = 'trialing'").count;
-    const canceledAgencies = await get("SELECT COUNT(*) as count FROM agencies WHERE plan_status = 'canceled'").count;
-    const newThisWeek = await get("SELECT COUNT(*) as count FROM agencies WHERE created_at >= NOW() - INTERVAL '7 days'").count;
+    const totalAgencies = (await get('SELECT COUNT(*) as count FROM agencies')).count;
+    const activeAgencies = (await get("SELECT COUNT(*) as count FROM agencies WHERE plan_status = 'active'")).count;
+    const trialAgencies = (await get("SELECT COUNT(*) as count FROM agencies WHERE plan_status = 'trialing'")).count;
+    const canceledAgencies = (await get("SELECT COUNT(*) as count FROM agencies WHERE plan_status = 'canceled'")).count;
+    const newThisWeek = (await get("SELECT COUNT(*) as count FROM agencies WHERE created_at >= NOW() - INTERVAL '7 days'")).count;
 
-    const planStarter = await get("SELECT COUNT(*) as count FROM agencies WHERE plan = 'starter'").count;
-    const planProfesional = await get("SELECT COUNT(*) as count FROM agencies WHERE plan = 'profesional'").count;
-    const planAgencia = await get("SELECT COUNT(*) as count FROM agencies WHERE plan = 'agencia'").count;
-    const planEnterprise = await get("SELECT COUNT(*) as count FROM agencies WHERE plan = 'enterprise'").count;
+    const planStarter = (await get("SELECT COUNT(*) as count FROM agencies WHERE plan = 'starter'")).count;
+    const planProfesional = (await get("SELECT COUNT(*) as count FROM agencies WHERE plan = 'profesional'")).count;
+    const planAgencia = (await get("SELECT COUNT(*) as count FROM agencies WHERE plan = 'agencia'")).count;
+    const planEnterprise = (await get("SELECT COUNT(*) as count FROM agencies WHERE plan = 'enterprise'")).count;
 
-    const leadsToday = await get("SELECT COUNT(*) as count FROM leads WHERE created_at >= DATE_TRUNC('day', NOW())").count;
-    const leadsTotal = await get('SELECT COUNT(*) as count FROM leads').count;
-    const propertiesTotal = await get('SELECT COUNT(*) as count FROM properties').count;
+    const leadsToday = (await get("SELECT COUNT(*) as count FROM leads WHERE created_at >= DATE_TRUNC('day', NOW())")).count;
+    const leadsTotal = (await get('SELECT COUNT(*) as count FROM leads')).count;
+    const propertiesTotal = (await get('SELECT COUNT(*) as count FROM properties')).count;
 
-    const aiActionsToday = await get("SELECT COUNT(*) as count FROM activities WHERE type = 'ia_response' AND created_at >= DATE_TRUNC('day', NOW())").count;
-    const automationsToday = await get("SELECT COUNT(*) as count FROM automation_logs WHERE created_at >= DATE_TRUNC('day', NOW())").count;
+    const aiActionsToday = (await get("SELECT COUNT(*) as count FROM activities WHERE type = 'ia_response' AND created_at >= DATE_TRUNC('day', NOW())")).count;
+    const automationsToday = (await get("SELECT COUNT(*) as count FROM automation_logs WHERE created_at >= DATE_TRUNC('day', NOW())")).count;
 
-    const conversationsToday = await get("SELECT COUNT(*) as count FROM conversations WHERE created_at >= DATE_TRUNC('day', NOW())").count;
+    const conversationsToday = (await get("SELECT COUNT(*) as count FROM conversations WHERE created_at >= DATE_TRUNC('day', NOW())")).count;
 
-    const usersTotal = await get('SELECT COUNT(*) as count FROM users WHERE role != \'ia_agent\'').count;
-    const comercialTotal = await get("SELECT COUNT(*) as count FROM users WHERE role = 'comercial'").count;
+    const usersTotal = (await get('SELECT COUNT(*) as count FROM users WHERE role != \'ia_agent\'')).count;
+    const comercialTotal = (await get("SELECT COUNT(*) as count FROM users WHERE role = 'comercial'")).count;
 
     const topTemplates = await all(
       'SELECT name, installs FROM automation_templates ORDER BY installs DESC LIMIT 10'
     );
 
-    const mrr = calculateMRR();
+    const mrr = await calculateMRR();
 
     res.json({
       totalAgencies,

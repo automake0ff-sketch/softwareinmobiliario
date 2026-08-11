@@ -122,15 +122,17 @@ app.post('/webhooks/stripe', webhookLimiter, express.raw({ type: 'application/js
   try {
     let event;
     const sig = req.headers['stripe-signature'];
-    if (process.env.STRIPE_SECRET_KEY && sig) {
-      try {
-        const { default: Stripe } = await import('stripe');
-        const stripeInstance = new Stripe(process.env.STRIPE_SECRET_KEY);
-        event = stripeInstance.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
-      } catch (importErr) {
-        event = JSON.parse(req.body.toString());
-      }
+    if (process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET && sig) {
+      // Verificacion de firma real. Si constructEvent lanza (firma invalida,
+      // cuerpo manipulado, secreto incorrecto), el catch de fuera debe
+      // rechazar la peticion con 400 -- NUNCA caer a parsear el body sin
+      // verificar, o cualquiera podria forjar un evento 'checkout.session.completed'
+      // y activarse una suscripcion de pago gratis.
+      const { default: Stripe } = await import('stripe');
+      const stripeInstance = new Stripe(process.env.STRIPE_SECRET_KEY);
+      event = stripeInstance.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
     } else {
+      console.warn('[STRIPE] Webhook sin verificar firma: falta STRIPE_WEBHOOK_SECRET o cabecera stripe-signature. Solo aceptable en desarrollo local.');
       event = JSON.parse(req.body.toString());
     }
     const result = await stripe.handleWebhook(event);
@@ -141,8 +143,60 @@ app.post('/webhooks/stripe', webhookLimiter, express.raw({ type: 'application/js
   }
 });
 
+async function verifyPayPalWebhookSignature(req) {
+  const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
+  const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET;
+  const PAYPAL_WEBHOOK_ID = process.env.PAYPAL_WEBHOOK_ID;
+  const PAYPAL_BASE = process.env.NODE_ENV === 'production'
+    ? 'https://api-m.paypal.com'
+    : 'https://api-m.sandbox.paypal.com';
+
+  if (!PAYPAL_CLIENT_ID || !PAYPAL_CLIENT_SECRET || !PAYPAL_WEBHOOK_ID) {
+    console.warn('[PAYPAL] PAYPAL_WEBHOOK_ID no configurado: no se puede verificar la firma del webhook.');
+    return false;
+  }
+
+  const tokenRes = await fetch(`${PAYPAL_BASE}/v1/oauth2/token`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Basic ${Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`).toString('base64')}`,
+    },
+    body: 'grant_type=client_credentials',
+  });
+  const tokenData = await tokenRes.json();
+  if (!tokenData.access_token) {
+    console.error('[PAYPAL] No se pudo obtener access token para verificar webhook:', tokenData);
+    return false;
+  }
+
+  const verifyRes = await fetch(`${PAYPAL_BASE}/v1/notifications/verify-webhook-signature`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${tokenData.access_token}`,
+    },
+    body: JSON.stringify({
+      auth_algo: req.headers['paypal-auth-algo'],
+      cert_url: req.headers['paypal-cert-url'],
+      transmission_id: req.headers['paypal-transmission-id'],
+      transmission_sig: req.headers['paypal-transmission-sig'],
+      transmission_time: req.headers['paypal-transmission-time'],
+      webhook_id: PAYPAL_WEBHOOK_ID,
+      webhook_event: req.body,
+    }),
+  });
+  const verifyData = await verifyRes.json();
+  return verifyData.verification_status === 'SUCCESS';
+}
+
 app.post('/webhooks/paypal', webhookLimiter, express.json({ type: 'application/json' }), async (req, res) => {
   try {
+    const verified = await verifyPayPalWebhookSignature(req);
+    if (!verified) {
+      console.warn('[PAYPAL] Webhook rechazado: firma invalida o no verificable.');
+      return res.status(401).json({ error: 'Firma de webhook inválida' });
+    }
     const result = await stripe.handlePayPalWebhook(req.body);
     res.json(result);
   } catch (e) {

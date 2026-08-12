@@ -11,8 +11,11 @@ import PaymentModal from '../components/billing/PaymentModal'
 
 const PAYMENT_METHODS = [
   { id: 'stripe', name: 'Tarjeta (Stripe)', desc: 'Pago seguro con tarjeta', icon: CreditCard },
-  { id: 'paypal', name: 'PayPal', desc: 'Paga con tu cuenta de PayPal', icon: Banknote },
   { id: 'transfer', name: 'Transferencia', desc: 'Recibirás datos para transferir', icon: Banknote },
+  // PayPal deshabilitado temporalmente a petición de Alejandro (12 ago 2026):
+  // solo se usará Stripe por ahora. El código del backend sigue intacto en
+  // server/services/stripe.js / server/index.js (/webhooks/paypal) para
+  // reactivarlo cuando se configure PAYPAL_WEBHOOK_ID y se pruebe.
 ]
 
 const PLANS = [

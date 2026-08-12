@@ -20,14 +20,7 @@ const PAYMENT_FORMS = {
       { key: 'cardName', label: 'Titular de la tarjeta', placeholder: 'Nombre completo', type: 'text' },
     ],
   },
-  paypal: {
-    id: 'paypal',
-    title: 'Pago con PayPal',
-    icon: Banknote,
-    fields: [
-      { key: 'paypalEmail', label: 'Email de PayPal', placeholder: 'tu@email.com', type: 'email' },
-    ],
-  },
+  // PayPal deshabilitado temporalmente (ver PricingPage.jsx) — solo Stripe por ahora.
   transfer: {
     id: 'transfer',
     title: 'Transferencia bancaria',

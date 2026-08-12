@@ -123,17 +123,18 @@ export class BillingService {
       return { mock: true, customerId: `mock_cus_${agency.id?.substring(0, 8) || Date.now()}` };
     }
     try {
+      const params = new URLSearchParams({
+        name: agency.name,
+        email: agency.email || '',
+      });
+      params.append('metadata[agency_id]', agency.id || '');
       const resp = await fetch('https://api.stripe.com/v1/customers', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.config.secretKey}`,
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: new URLSearchParams({
-          name: agency.name,
-          email: agency.email || '',
-          metadata: { agency_id: agency.id },
-        }),
+        body: params,
       });
       const data = await resp.json();
       return data;
@@ -200,13 +201,27 @@ export class BillingService {
       };
     }
 
+    let existingCustomerId = null;
+    if (this.config.secretKey && paymentMethod === 'stripe') {
+      const { get: getRow } = await this._db();
+      const existingSub = await getRow(
+        'SELECT stripe_customer_id FROM subscriptions WHERE agency_id = @aid AND stripe_customer_id IS NOT NULL',
+        { aid: agency.id }
+      );
+      existingCustomerId = existingSub?.stripe_customer_id || null;
+    }
+
     try {
       const params = new URLSearchParams({
-        customer: agency.stripeCustomerId || '',
         success_url: `${this.config.appUrl || 'http://localhost:5173'}/pricing?success=true`,
         cancel_url: `${this.config.appUrl || 'http://localhost:5173'}/pricing?canceled=true`,
         mode: 'subscription',
       });
+      if (existingCustomerId) {
+        params.append('customer', existingCustomerId);
+      } else if (agency.email) {
+        params.append('customer_email', agency.email);
+      }
       params.append('metadata[agency_id]', agency.id || '');
       params.append('metadata[plan_id]', planId || '');
       params.append('metadata[interval]', interval || '');

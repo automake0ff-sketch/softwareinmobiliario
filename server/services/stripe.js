@@ -1,7 +1,7 @@
 const PRICES_CENTS = {
-  starter_monthly: 7900, starter_yearly: 6900,
-  profesional_monthly: 19900, profesional_yearly: 16900,
-  agencia_monthly: 49900, agencia_yearly: 41900,
+  starter_monthly: 7900, starter_yearly: 79000,
+  profesional_monthly: 19900, profesional_yearly: 199000,
+  agencia_monthly: 49900, agencia_yearly: 499000,
 }
 
 export const PLAN_ORDER = { starter: 1, profesional: 2, agencia: 3 }
@@ -118,6 +118,27 @@ export class BillingService {
     return await import('../db/db.js');
   }
 
+  // subscriptions.plan_id es UUID (FK a plans.id); el resto de la app usa
+  // slugs ('starter'/'profesional'/'agencia'). Traduce uno a otro.
+  async _planUuid(planSlug) {
+    const { get: getRow } = await this._db();
+    const row = await getRow('SELECT id FROM plans WHERE slug = @slug', { slug: planSlug });
+    if (!row) throw new Error(`Plan '${planSlug}' no encontrado en la tabla plans (¿falta aplicar la migración 00007_seed_plans.sql?)`);
+    return row.id;
+  }
+
+  // agencies.plan / agencies.plan_status son la fuente de verdad real que usa
+  // el resto de la app para limites y features (ver server/middleware/auth.js).
+  // La tabla subscriptions solo guarda metadatos de facturación; sin esta
+  // actualización, un pago completado con éxito no desbloquea nada para el cliente.
+  async _activateAgencyPlan(agencyId, planSlug) {
+    const { run: runQuery } = await this._db();
+    await runQuery(
+      `UPDATE agencies SET plan = @plan, plan_status = 'active', updated_at = NOW() WHERE id = @id`,
+      { plan: planSlug, id: agencyId }
+    );
+  }
+
   async createCustomer(agency) {
     if (!this.config.secretKey) {
       return { mock: true, customerId: `mock_cus_${agency.id?.substring(0, 8) || Date.now()}` };
@@ -149,8 +170,8 @@ export class BillingService {
     const plan = PLANS[planId];
     if (!plan) throw new Error(`Invalid plan: ${planId}`);
 
-    const amount = interval === 'year' ? plan.priceYearly : plan.price;
     const amountCents = interval === 'year' ? plan.priceCentsYearly : plan.priceCentsMonthly;
+    const amount = amountCents / 100;
     const periodDays = interval === 'year' ? 365 : 30;
 
     if (!this.config.secretKey || paymentMethod !== 'stripe') {
@@ -158,6 +179,7 @@ export class BillingService {
       const subId = uuidv4();
       const now = new Date().toISOString();
       const end = new Date(Date.now() + periodDays * 86400000).toISOString();
+      const planUuid = await this._planUuid(planId);
 
       await run(
         `INSERT INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, current_period_start, current_period_end, trial_end, payment_method, created_at, updated_at)
@@ -174,7 +196,7 @@ export class BillingService {
         {
           id: subId,
           agency_id: agency.id,
-          plan_id: planId,
+          plan_id: planUuid,
           status: paymentMethod === 'transfer' ? 'pending' : 'active',
           billing_cycle: interval === 'year' ? 'yearly' : 'monthly',
           period_start: now,
@@ -185,6 +207,11 @@ export class BillingService {
           updated_at: now,
         }
       )
+
+      // Transferencia queda 'pending' hasta confirmar el ingreso -> no activar aun.
+      if (paymentMethod !== 'transfer') {
+        await this._activateAgencyPlan(agency.id, planId);
+      }
 
       return {
         mock: true,
@@ -226,14 +253,23 @@ export class BillingService {
       params.append('metadata[plan_id]', planId || '');
       params.append('metadata[interval]', interval || '');
 
-      if (priceId) {
-        params.append('line_items[0][price]', priceId);
+      // priceId debe ser un Price ID real de Stripe (price_xxx). Si llega un
+      // Product ID (prod_xxx) -- error común al copiar desde el dashboard de
+      // Stripe -- Stripe rechazaría la sesión con 'No such price'. En ese
+      // caso, generamos el precio dinámicamente en vez de fallar.
+      const validPriceId = priceId && priceId.startsWith('price_') ? priceId : null;
+      if (!validPriceId && priceId) {
+        console.warn(`[STRIPE] priceId '${priceId}' no es un Price ID válido (¿es un Product ID 'prod_'? hace falta el 'price_' del dashboard de Stripe > Producto > Precios). Generando precio dinámico como fallback.`);
+      }
+
+      if (validPriceId) {
+        params.append('line_items[0][price]', validPriceId);
         params.append('line_items[0][quantity]', '1');
       } else {
         params.append('line_items[0][price_data][currency]', 'eur');
         params.append('line_items[0][price_data][product_data][name]', `${plan.name} (${interval === 'year' ? 'Anual' : 'Mensual'})`);
         params.append('line_items[0][price_data][unit_amount]', amountCents.toString());
-        params.append('line_items[0][price_data][recurring][interval]', 'month');
+        params.append('line_items[0][price_data][recurring][interval]', interval === 'year' ? 'year' : 'month');
         params.append('line_items[0][quantity]', '1');
       }
 
@@ -264,6 +300,7 @@ export class BillingService {
           if (agencyId && planId) {
             const now = new Date().toISOString();
             const end = new Date(Date.now() + (interval === 'year' ? 365 : 30) * 86400000).toISOString();
+            const planUuid = await this._planUuid(planId);
             await run(
               `INSERT INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, stripe_subscription_id, stripe_customer_id, current_period_start, current_period_end, updated_at)
                VALUES (@id, @agency_id, @plan_id, 'active', @billing_cycle, @stripe_sub, @stripe_cus, @period_start, @period_end, @updated_at)
@@ -279,7 +316,7 @@ export class BillingService {
               {
                 id: uuidv4(),
                 agency_id: agencyId,
-                plan_id: planId,
+                plan_id: planUuid,
           billing_cycle: interval === 'year' ? 'yearly' : 'monthly',
                 stripe_sub: session.subscription,
                 stripe_cus: session.customer,
@@ -288,6 +325,7 @@ export class BillingService {
                 updated_at: now,
               }
             )
+            await this._activateAgencyPlan(agencyId, planId);
             console.log(`[STRIPE] Suscripción activada: ${agencyId} -> ${planId}`);
           }
           break;
@@ -368,6 +406,7 @@ export class BillingService {
           if (agencyId) {
             const planId = resource.plan_id?.includes('starter') ? 'starter' :
                            resource.plan_id?.includes('profesional') ? 'profesional' : 'agencia';
+            const planUuid = await this._planUuid(planId);
             await run(
               `INSERT INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, paypal_subscription_id, paypal_plan_id, updated_at)
                VALUES (@id, @agency_id, @plan_id, 'active', 'monthly', @paypal_sub, @paypal_plan, NOW())
@@ -379,10 +418,11 @@ export class BillingService {
                  paypal_plan_id = EXCLUDED.paypal_plan_id,
                  updated_at = EXCLUDED.updated_at`,
               {
-                id: uuidv4(), agency_id: agencyId, plan_id: planId,
+                id: uuidv4(), agency_id: agencyId, plan_id: planUuid,
                 paypal_sub: resource.id, paypal_plan: resource.plan_id,
               }
             )
+            await this._activateAgencyPlan(agencyId, planId);
           }
           break;
         }

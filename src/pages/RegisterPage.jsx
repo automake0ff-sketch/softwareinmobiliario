@@ -7,23 +7,17 @@ import api from '../lib/api'
 import { useStore } from '../lib/store'
 import { supabase } from '../lib/supabaseClient'
 
-const BotonPago = ({ usuario, idPrecio, cargando }) => {
+const BotonPago = ({ planId, interval, cargando, onProcesando }) => {
   const manejarPago = async () => {
-    if (!usuario?.id || !usuario?.email) {
-      toast.error('Datos de usuario incompletos.');
-      return;
-    }
     try {
-      const respuesta = await fetch('/api/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idUsuarioActual: usuario.id, emailUsuarioActual: usuario.email, idPrecio }),
-      });
-      const datos = await respuesta.json();
-      if (datos.url) window.location.href = datos.url;
-      else toast.error('Error al generar el enlace de pago.');
+      onProcesando(true)
+      const data = await api.post('/billing/create-checkout', { planId, interval: interval || 'month', paymentMethod: 'stripe' })
+      if (data.url) window.location.href = data.url
+      else toast.error('Error al generar el enlace de pago.')
     } catch (error) {
-      toast.error('Error al conectar con la pasarela de pagos.');
+      toast.error(error.message || 'Error al conectar con la pasarela de pagos.')
+    } finally {
+      onProcesando(false)
     }
   };
 
@@ -40,6 +34,12 @@ const PLANS = [
   { id: import.meta.env.VITE_STRIPE_PRICE_AGENCIA || 'agencia', name: 'Agencia', price: 499 }
 ];
 
+function planSlugFromValue(value) {
+  if (value?.includes('profesional') || value === import.meta.env.VITE_STRIPE_PRICE_PROFESIONAL) return 'profesional';
+  if (value?.includes('agencia') || value === import.meta.env.VITE_STRIPE_PRICE_AGENCIA) return 'agencia';
+  return 'starter';
+}
+
 export default function RegisterPage() {
   const navigate = useNavigate()
   const [step, setStep] = useState(1)
@@ -49,6 +49,7 @@ export default function RegisterPage() {
     plan: import.meta.env.VITE_STRIPE_PRICE_STARTER || 'starter', apiWhatsapp: '', apiCorreo: ''
   })
   const [loading, setLoading] = useState(false)
+  const [paying, setPaying] = useState(false)
   const [createdUser, setCreatedUser] = useState(null)
   const { setUser, setAgency } = useStore()
 
@@ -95,9 +96,7 @@ export default function RegisterPage() {
       }
 
       // 2. Registrar en la base de datos local SQLite (servidor Express)
-      let planBackend = 'starter';
-      if (form.plan?.includes('profesional') || form.plan === import.meta.env.VITE_STRIPE_PRICE_PROFESIONAL) planBackend = 'profesional';
-      else if (form.plan?.includes('agencia') || form.plan === import.meta.env.VITE_STRIPE_PRICE_AGENCIA) planBackend = 'agencia';
+      let planBackend = planSlugFromValue(form.plan);
 
       const regRes = await fetch('/api/auth/register', {
         method: 'POST',
@@ -222,7 +221,7 @@ export default function RegisterPage() {
                   </button>
                 ))}
               </div>
-              <BotonPago usuario={createdUser || { id: 'temp', email: form.email }} idPrecio={form.plan} cargando={loading} />
+              <BotonPago planId={planSlugFromValue(form.plan)} interval="month" cargando={paying} onProcesando={setPaying} />
             </motion.div>
           )}
         </AnimatePresence>

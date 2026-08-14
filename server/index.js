@@ -626,7 +626,7 @@ async function start() {
       const agency = await get('SELECT * FROM agencies WHERE id = @aid', { aid: req.user.agency_id });
       if (!agency) return res.status(404).json({ error: 'Agencia no encontrada' });
       if (!PLANS[planId]) return res.status(400).json({ error: 'Plan inválido' });
-      const session = await stripe.createCheckoutSession(agency, planId, interval, paymentMethod, priceId);
+      const session = await stripe.createCheckoutSession(agency, planId, interval, paymentMethod, priceId, req.get('origin') || req.get('referer'));
       res.json(session);
     } catch (e) {
       res.status(500).json({ error: e.message });

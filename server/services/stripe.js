@@ -164,7 +164,7 @@ export class BillingService {
     }
   }
 
-  async createCheckoutSession(agency, planId, interval, paymentMethod, priceId) {
+  async createCheckoutSession(agency, planId, interval, paymentMethod, priceId, requestOrigin) {
     interval = interval || 'month';
     paymentMethod = paymentMethod || 'stripe';
     const plan = PLANS[planId];
@@ -173,6 +173,23 @@ export class BillingService {
     const amountCents = interval === 'year' ? plan.priceCentsYearly : plan.priceCentsMonthly;
     const amount = amountCents / 100;
     const periodDays = interval === 'year' ? 365 : 30;
+
+    // El origin real de la petición (cabecera Origin/Referer del navegador que
+    // hizo el checkout) es más fiable que APP_URL: si APP_URL está mal puesto
+    // en Render (p.ej. apuntando por error al puerto local del backend), el
+    // cliente igualmente vuelve a la URL desde la que realmente pagó.
+    let baseUrl = this.config.appUrl || 'http://localhost:5173';
+    if (requestOrigin) {
+      try {
+        const parsed = new URL(requestOrigin);
+        baseUrl = `${parsed.protocol}//${parsed.host}`;
+      } catch {
+        console.warn(`[STRIPE] requestOrigin inválido, ignorado: ${requestOrigin}`);
+      }
+    }
+    if (process.env.NODE_ENV === 'production' && baseUrl.includes('localhost')) {
+      console.error(`[STRIPE] ALERTA: redirigiendo checkout a una URL localhost en producción (${baseUrl}). Revisa APP_URL en las variables de entorno de Render.`);
+    }
 
     if (!this.config.secretKey || paymentMethod !== 'stripe') {
       const { all, run } = await this._db();
@@ -217,7 +234,7 @@ export class BillingService {
         mock: true,
         sessionId: `mock_cs_${Date.now()}`,
         paymentMethod,
-        url: `${this.config.appUrl || 'http://localhost:5173'}/pricing?success=true`,
+        url: `${baseUrl}/pricing?success=true`,
         plan: plan.name,
         amount,
         amountCents,
@@ -240,8 +257,8 @@ export class BillingService {
 
     try {
       const params = new URLSearchParams({
-        success_url: `${this.config.appUrl || 'http://localhost:5173'}/pricing?success=true`,
-        cancel_url: `${this.config.appUrl || 'http://localhost:5173'}/pricing?canceled=true`,
+        success_url: `${baseUrl}/pricing?success=true`,
+        cancel_url: `${baseUrl}/pricing?canceled=true`,
         mode: 'subscription',
       });
       if (existingCustomerId) {

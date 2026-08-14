@@ -15,7 +15,13 @@
 -- ═══════════════════════════════════════════════════════
 
 ALTER TABLE plans ADD COLUMN IF NOT EXISTS slug TEXT;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_plans_slug ON plans(slug) WHERE slug IS NOT NULL;
+-- Nota: un índice único PARCIAL (WHERE slug IS NOT NULL) no sirve como
+-- objetivo de ON CONFLICT (slug) a menos que el INSERT repita el mismo
+-- WHERE -- Postgres lo rechaza con "no unique or exclusion constraint
+-- matching the ON CONFLICT specification". Constraint UNIQUE normal:
+-- permite múltiples NULLs igualmente (NULL <> NULL), así que no hace
+-- falta el índice parcial para este caso.
+ALTER TABLE plans ADD CONSTRAINT plans_slug_unique UNIQUE (slug);
 
 INSERT INTO plans (slug, name, description, price_monthly, price_yearly, max_offices, max_users, max_leads_per_month, max_agents, max_automations, feature_whatsapp, feature_meta_ads, feature_white_label, feature_api_access, feature_analytics_advanced, feature_priority_support, feature_dedicated_support, sort_order)
 VALUES

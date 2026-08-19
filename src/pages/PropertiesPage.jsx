@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../lib/api'
+import { supabase } from '../lib/supabaseClient'
 import { useStore } from '../lib/store'
 import { formatCurrency, formatDate, getPropertyTypeLabel } from '../utils/formatters'
 
@@ -159,9 +160,11 @@ function StatCard({ value, label, active, onClick }) {
 }
 
 export default function PropertiesPage() {
-  const { properties, fetchProperties, createProperty, updateProperty, leads, fetchLeads } = useStore()
+  const { properties, propertiesPagination, agency, fetchProperties, createProperty, updateProperty, leads, fetchLeads } = useStore()
   const [activeTab, setActiveTab] = useState('all')
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [showFilters, setShowFilters] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [showImport, setShowImport] = useState(false)
@@ -180,40 +183,45 @@ export default function PropertiesPage() {
   const [interestsLoading, setInterestsLoading] = useState(false)
   const [activityLoading, setActivityLoading] = useState(false)
 
+  // Debounce de la búsqueda: evita disparar una petición por cada tecla
   useEffect(() => {
-    fetchProperties?.()
-  }, [fetchProperties])
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 400)
+    return () => clearTimeout(t)
+  }, [search])
+
+  // Volver a página 1 cuando cambian filtros/búsqueda
+  useEffect(() => { setPage(1) }, [activeTab, debouncedSearch])
+
+  function currentListParams() {
+    const params = { page, page_size: activeTab === 'incomplete' ? 200 : 30 }
+    if (debouncedSearch) params.search = debouncedSearch
+    if (activeTab === 'manual') params.source = 'manual'
+    if (activeTab === 'idealista') params.source = 'idealista'
+    if (activeTab === 'sale') params.operation_type = 'sale'
+    if (activeTab === 'rent') params.operation_type = 'rent'
+    if (activeTab === 'available') params.status = 'disponible'
+    return params
+  }
+
+  useEffect(() => {
+    fetchProperties?.(currentListParams())
+  }, [fetchProperties, activeTab, debouncedSearch, page])
 
   const normalized = useMemo(() => properties.map(normalizeProperty), [properties])
 
+  // 'Incompletas' sigue siendo un filtro de cliente (no hay columna que lo
+  // represente en BD) — se pide una página más grande arriba para cubrir
+  // razonablemente bien el caso sin tener que traer todo el listado siempre.
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return normalized.filter((p) => {
-      if (q && !`${p.title} ${p.city} ${p.zone} ${p.external_url}`.toLowerCase().includes(q)) return false
-      if (activeTab === 'manual' && p.source !== 'manual') return false
-      if (activeTab === 'idealista' && p.source !== 'idealista') return false
-      if (activeTab === 'sale' && p.operation !== 'sale') return false
-      if (activeTab === 'rent' && p.operation !== 'rent') return false
-      if (activeTab === 'available' && p.status !== 'disponible' && p.status !== 'available') return false
-      if (activeTab === 'incomplete' && !p.missing.length) return false
-      return true
-    })
-  }, [normalized, search, activeTab])
+    if (activeTab === 'incomplete') return normalized.filter((p) => p.missing.length)
+    return normalized
+  }, [normalized, activeTab])
 
-  const stats = useMemo(() => {
-    const total = normalized.length
-    const avg = total ? Math.round(normalized.reduce((sum, p) => sum + Number(p.price || 0), 0) / total) : 0
-    return {
-      total,
-      available: normalized.filter((p) => ['disponible', 'available'].includes(p.status)).length,
-      reserved: normalized.filter((p) => ['reservado', 'reserved'].includes(p.status)).length,
-      closed: normalized.filter((p) => ['vendido', 'alquilado', 'sold'].includes(p.status)).length,
-      avg,
-      noImages: normalized.filter((p) => !p.images.length).length,
-      noDescription: normalized.filter((p) => !p.description).length,
-      idealista: normalized.filter((p) => p.source === 'idealista').length,
-    }
-  }, [normalized])
+  const [stats, setStats] = useState({ total: 0, available: 0, reserved: 0, closed: 0, avg: 0, noImages: 0, noDescription: 0, idealista: 0 })
+
+  useEffect(() => {
+    api.get('/properties/stats').then(setStats).catch(() => {})
+  }, [properties])
 
   function updateForm(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -232,7 +240,7 @@ export default function PropertiesPage() {
         images: form.images,
         features: form.features,
       })
-      await fetchProperties()
+      await fetchProperties(currentListParams())
       setShowCreate(false)
       setForm(emptyForm)
       toast.success('Propiedad creada')
@@ -250,7 +258,7 @@ export default function PropertiesPage() {
       const endpoint = importMode === 'csv' ? '/properties/import/csv' : '/properties/import/url'
       const payload = importMode === 'csv' ? { csv } : { urls }
       const res = await api.post(endpoint, payload)
-      await fetchProperties()
+      await fetchProperties(currentListParams())
       setShowImport(false)
       setUrls('')
       setCsv('')
@@ -272,7 +280,12 @@ export default function PropertiesPage() {
   async function deleteProperty(property) {
     if (!confirm(`Eliminar "${property.title}"?`)) return
     await api.delete(`/properties/${property.id}`)
-    await fetchProperties()
+    // Si al borrar la ultima propiedad de la pagina esta deja de existir, retroceder una pagina
+    if (properties.length === 1 && page > 1) {
+      setPage((p) => p - 1)
+    } else {
+      await fetchProperties(currentListParams())
+    }
     setSelected(null)
     toast.success('Propiedad eliminada')
   }
@@ -357,7 +370,7 @@ export default function PropertiesPage() {
           </div>
           <div>
             <h1 className="font-syne text-3xl font-bold text-white">Propiedades</h1>
-            <p className="text-sm text-[#9fb3d9]">{filtered.length} inmuebles</p>
+            <p className="text-sm text-[#9fb3d9]">{activeTab === 'incomplete' ? filtered.length : (propertiesPagination?.total ?? filtered.length)} inmuebles</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -512,6 +525,28 @@ export default function PropertiesPage() {
         </div>
       )}
 
+      {activeTab !== 'incomplete' && propertiesPagination && propertiesPagination.totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3 pt-2">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            className="rounded-xl border border-[#27283a] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+          >
+            Anterior
+          </button>
+          <span className="text-sm text-[#9fb3d9]">
+            Página {propertiesPagination.page} de {propertiesPagination.totalPages}
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(propertiesPagination.totalPages, p + 1))}
+            disabled={page >= propertiesPagination.totalPages}
+            className="rounded-xl border border-[#27283a] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+          >
+            Siguiente
+          </button>
+        </div>
+      )}
+
       <AnimatePresence>
         {showCreate && (
           <Modal title="Nueva propiedad" onClose={() => setShowCreate(false)}>
@@ -527,7 +562,7 @@ export default function PropertiesPage() {
               <Input label="Banos" type="number" value={form.bathrooms} onChange={(v) => updateForm('bathrooms', v)} />
               <Input label="Superficie" type="number" value={form.surface} onChange={(v) => updateForm('surface', v)} />
               <Input label="Planta" value={form.floor} onChange={(v) => updateForm('floor', v)} />
-              <Textarea label="URLs de imagenes" value={form.images} onChange={(v) => updateForm('images', v)} placeholder="Una URL por linea o separadas por coma" className="md:col-span-2" />
+              <ImageUploader agencyId={agency?.id} propertyId={selected?.id} value={form.images} onChange={(v) => updateForm('images', v)} />
               <Textarea label="Descripcion" value={form.description} onChange={(v) => updateForm('description', v)} className="md:col-span-2" />
               <div className="md:col-span-2 flex justify-end gap-3">
                 <button type="button" onClick={() => setShowCreate(false)} className="rounded-xl bg-white/5 px-5 py-3 text-sm font-semibold text-white">Cancelar</button>
@@ -736,7 +771,72 @@ const PROPERTY_TYPE_OPTIONS = [
   ['land', 'Terreno'], ['commercial', 'Local comercial'], ['office', 'Oficina'], ['garage', 'Garaje'],
 ]
 
+function ImageUploader({ agencyId, propertyId, value, onChange }) {
+  const [uploading, setUploading] = useState(false)
+
+  async function handleFiles(fileList) {
+    const files = Array.from(fileList || [])
+    if (!files.length) return
+    if (!agencyId) { toast.error('No se pudo determinar la agencia. Recarga la página.'); return }
+
+    const tooLarge = files.filter((f) => f.size > 8 * 1024 * 1024)
+    if (tooLarge.length) {
+      toast.error(`${tooLarge.length === 1 ? 'Una imagen supera' : `${tooLarge.length} imágenes superan`} los 8MB y no se subirán.`)
+    }
+    const validFiles = files.filter((f) => f.size <= 8 * 1024 * 1024 && f.type.startsWith('image/'))
+    if (!validFiles.length) return
+
+    setUploading(true)
+    const uploadedUrls = []
+    try {
+      for (const file of validFiles) {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+        const path = `${agencyId}/${propertyId || 'nueva'}/${Date.now()}-${safeName}`
+        const { error } = await supabase.storage.from('property-images').upload(path, file, {
+          cacheControl: '3600',
+          upsert: false,
+        })
+        if (error) {
+          toast.error(`Error al subir ${file.name}: ${error.message}`)
+          continue
+        }
+        const { data: publicUrlData } = supabase.storage.from('property-images').getPublicUrl(path)
+        if (publicUrlData?.publicUrl) uploadedUrls.push(publicUrlData.publicUrl)
+      }
+    } finally {
+      setUploading(false)
+    }
+
+    if (uploadedUrls.length) {
+      onChange([value, ...uploadedUrls].filter(Boolean).join('\n'))
+      toast.success(`${uploadedUrls.length} ${uploadedUrls.length === 1 ? 'imagen subida' : 'imágenes subidas'}`)
+    }
+  }
+
+  return (
+    <div className="md:col-span-2">
+      <label className="mb-2 block text-sm font-medium text-[#9fb3d9]">Fotos</label>
+      <label className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[#27283a] px-6 py-8 text-center transition-colors hover:border-indigo-400/50 ${uploading ? 'pointer-events-none opacity-60' : ''}`}>
+        <input
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          multiple
+          className="hidden"
+          onChange={(e) => { handleFiles(e.target.files); e.target.value = '' }}
+        />
+        <Upload size={22} className="text-indigo-300" />
+        <span className="text-sm text-[#d7e2f7]">
+          {uploading ? 'Subiendo...' : 'Haz clic para subir fotos desde tu ordenador o móvil'}
+        </span>
+        <span className="text-xs text-[#7f91b3]">JPG, PNG o WEBP · máximo 8MB por imagen</span>
+      </label>
+      <Textarea label="O pega URLs de imagenes ya alojadas" value={value} onChange={onChange} placeholder="Una URL por linea o separadas por coma" className="mt-3" />
+    </div>
+  )
+}
+
 function EditPropertyForm({ property, onSave, onCancel }) {
+  const { agency } = useStore()
   const [form, setForm] = useState({
     title: property.title || '',
     description: property.description || '',
@@ -765,6 +865,7 @@ function EditPropertyForm({ property, onSave, onCancel }) {
     year_built: property.year_built || '',
     energy_certificate: property.energy_certificate || '',
     reference: property.reference || '',
+    images: Array.isArray(property.images) ? property.images.join('\n') : (property.images || ''),
   })
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState({})
@@ -904,6 +1005,10 @@ function EditPropertyForm({ property, onSave, onCancel }) {
             </label>
           ))}
         </div>
+      </Panel>
+
+      <Panel title="Fotos">
+        <ImageUploader agencyId={agency?.id} propertyId={property.id} value={form.images} onChange={(v) => setForm((f) => ({ ...f, images: v }))} />
       </Panel>
 
       <div className="flex justify-end gap-3">

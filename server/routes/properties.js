@@ -657,29 +657,75 @@ function marketingCopy(property, type = 'general') {
   return outputs[type] || outputs.general;
 }
 
+router.get('/stats', async (req, res) => {
+  try {
+    const row = await get(
+      `SELECT
+         COUNT(*)::int AS total,
+         COUNT(*) FILTER (WHERE status IN ('disponible','available'))::int AS available,
+         COUNT(*) FILTER (WHERE status IN ('reservado','reserved'))::int AS reserved,
+         COUNT(*) FILTER (WHERE status IN ('vendido','alquilado','sold'))::int AS closed,
+         COUNT(*) FILTER (WHERE source = 'idealista')::int AS idealista,
+         COUNT(*) FILTER (WHERE images IS NULL OR images = '' OR images = '[]')::int AS no_images,
+         COUNT(*) FILTER (WHERE description IS NULL OR description = '')::int AS no_description,
+         COALESCE(AVG(price) FILTER (WHERE price > 0), 0)::int AS avg_price
+       FROM properties WHERE agency_id = @agency_id`,
+      { agency_id: req.user.agency_id }
+    );
+    res.json({
+      total: row.total,
+      available: row.available,
+      reserved: row.reserved,
+      closed: row.closed,
+      idealista: row.idealista,
+      noImages: row.no_images,
+      noDescription: row.no_description,
+      avg: row.avg_price,
+    });
+  } catch (error) {
+    console.error('Error computing property stats:', error);
+    res.status(500).json({ error: 'Error al obtener estadísticas.' });
+  }
+});
+
 router.get('/', async (req, res) => {
   try {
-    const { status, type, city, zone, min_price, max_price, bedrooms, office_id, search, source, operation_type } = req.query;
+    const { status, type, city, zone, min_price, max_price, bedrooms, office_id, search, source, operation_type, page, page_size } = req.query;
     let sql = 'SELECT * FROM properties WHERE agency_id = @agency_id';
+    let countSql = 'SELECT COUNT(*)::int AS count FROM properties WHERE agency_id = @agency_id';
     const params = { agency_id: req.user.agency_id };
 
-    if (status) { sql += ' AND status = @status'; params.status = await normalizeStatus(status); }
-    if (type) { sql += ' AND type = @type'; params.type = type; }
-    if (source) { sql += ' AND source = @source'; params.source = source; }
-    if (operation_type) { sql += ' AND operation_type = @operation_type'; params.operation_type = await normalizeOperation(operation_type); }
-    if (city) { sql += ' AND city LIKE @city'; params.city = `%${city}%`; }
-    if (zone) { sql += ' AND zone LIKE @zone'; params.zone = `%${zone}%`; }
-    if (min_price) { sql += ' AND price >= @min_price'; params.min_price = Number(min_price); }
-    if (max_price) { sql += ' AND price <= @max_price'; params.max_price = Number(max_price); }
-    if (bedrooms) { sql += ' AND bedrooms >= @bedrooms'; params.bedrooms = Number(bedrooms); }
-    if (office_id) { sql += ' AND office_id = @office_id'; params.office_id = office_id; }
+    if (status) { const clause = ' AND status = @status'; sql += clause; countSql += clause; params.status = await normalizeStatus(status); }
+    if (type) { const clause = ' AND type = @type'; sql += clause; countSql += clause; params.type = type; }
+    if (source) { const clause = ' AND source = @source'; sql += clause; countSql += clause; params.source = source; }
+    if (operation_type) { const clause = ' AND operation_type = @operation_type'; sql += clause; countSql += clause; params.operation_type = await normalizeOperation(operation_type); }
+    if (city) { const clause = ' AND city LIKE @city'; sql += clause; countSql += clause; params.city = `%${city}%`; }
+    if (zone) { const clause = ' AND zone LIKE @zone'; sql += clause; countSql += clause; params.zone = `%${zone}%`; }
+    if (min_price) { const clause = ' AND price >= @min_price'; sql += clause; countSql += clause; params.min_price = Number(min_price); }
+    if (max_price) { const clause = ' AND price <= @max_price'; sql += clause; countSql += clause; params.max_price = Number(max_price); }
+    if (bedrooms) { const clause = ' AND bedrooms >= @bedrooms'; sql += clause; countSql += clause; params.bedrooms = Number(bedrooms); }
+    if (office_id) { const clause = ' AND office_id = @office_id'; sql += clause; countSql += clause; params.office_id = office_id; }
     if (search) {
-      sql += ' AND (title LIKE @search OR description LIKE @search OR city LIKE @search OR zone LIKE @search OR external_url LIKE @search)';
+      const clause = ' AND (title LIKE @search OR description LIKE @search OR city LIKE @search OR zone LIKE @search OR external_url LIKE @search)';
+      sql += clause; countSql += clause;
       params.search = `%${search}%`;
     }
 
-    sql += ' ORDER BY updated_at DESC, created_at DESC';
-    res.json(await all(sql, params));
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(page_size, 10) || 30));
+
+    const { count: total } = await get(countSql, params);
+
+    sql += ' ORDER BY updated_at DESC, created_at DESC LIMIT @limit OFFSET @offset';
+    const properties = await all(sql, { ...params, limit: pageSize, offset: (pageNum - 1) * pageSize });
+
+    res.json({
+      properties,
+      total,
+      page: pageNum,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    });
   } catch (error) {
     console.error('Error listing properties:', error);
     res.status(500).json({ error: 'Error al obtener propiedades.' });

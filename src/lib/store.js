@@ -116,6 +116,7 @@ const initialState = {
   agency: null,
   leads: [],
   properties: [],
+  propertiesPagination: null,
   conversations: [],
   activities: [],
   agents: {},
@@ -186,7 +187,12 @@ export const useStore = create(
         try {
           const data = await api.get('/properties', params)
           const raw = data?.properties ?? data
-          set({ properties: Array.isArray(raw) ? raw : [] })
+          set({
+            properties: Array.isArray(raw) ? raw : [],
+            propertiesPagination: Array.isArray(data)
+              ? null
+              : { total: data?.total ?? 0, page: data?.page ?? 1, pageSize: data?.pageSize ?? 30, totalPages: data?.totalPages ?? 1 },
+          })
         } catch (e) {
           console.error('fetchProperties error:', e)
         } finally {

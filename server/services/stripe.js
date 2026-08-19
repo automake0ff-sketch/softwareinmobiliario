@@ -473,7 +473,14 @@ export class BillingService {
 
   async getSubscription(agencyId) {
     const { all } = await this._db();
-    const subs = await all('SELECT * FROM subscriptions WHERE agency_id = @agency_id ORDER BY created_at DESC LIMIT 1', { agency_id: agencyId });
+    const subs = await all(
+      `SELECT s.*, p.slug AS plan_slug
+       FROM subscriptions s
+       LEFT JOIN plans p ON p.id = s.plan_id
+       WHERE s.agency_id = @agency_id
+       ORDER BY s.created_at DESC LIMIT 1`,
+      { agency_id: agencyId }
+    );
     const sub = subs?.[0];
     if (!sub) {
       const plan = PLANS.starter;
@@ -487,10 +494,11 @@ export class BillingService {
         limits: { leads: plan.leads, agents: plan.agents, offices: plan.offices, users: plan.users, automations: plan.automations },
       };
     }
-    const plan = PLANS[sub.plan_id] || PLANS.starter;
+    const planSlug = sub.plan_slug || 'starter';
+    const plan = PLANS[planSlug] || PLANS.starter;
     return {
       id: sub.id,
-      planId: sub.plan_id,
+      planId: planSlug,
       planName: plan.name,
       price: plan.price,
       status: sub.status,

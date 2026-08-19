@@ -574,9 +574,16 @@ async function start() {
     try {
       const agencyId = req.user.agency_id
       const { PLANS } = await import('./services/plans.js')
-      const subs = await all('SELECT * FROM subscriptions WHERE agency_id = @aid ORDER BY created_at DESC LIMIT 1', { aid: agencyId })
+      const subs = await all(
+        `SELECT s.*, p.slug AS plan_slug
+         FROM subscriptions s
+         LEFT JOIN plans p ON p.id = s.plan_id
+         WHERE s.agency_id = @aid
+         ORDER BY s.created_at DESC LIMIT 1`,
+        { aid: agencyId }
+      )
       const sub = subs?.[0]
-      const planId = sub?.plan_id || 'starter'
+      const planId = sub?.plan_slug || 'starter'
       const plan = PLANS[planId] || PLANS.starter
       const startOfMonth = new Date()
       startOfMonth.setDate(1)

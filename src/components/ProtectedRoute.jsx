@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react'
-import { Navigate, Outlet } from 'react-router-dom'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useStore } from '../lib/store'
 
 const BACKEND = (import.meta.env.VITE_API_URL || '').replace(/\/api$/, '').replace(/\/$/, '')
 
+// Rutas accesibles incluso sin un plan activo (necesarias para poder pagar,
+// o para revisar/cambiar el método de pago si el cobro falló).
+const PLAN_EXEMPT_PATHS = ['/pricing', '/settings']
+
 export default function ProtectedRoute() {
   const [status, setStatus] = useState('loading')
-  const { user: storeUser, setUser, setAgency } = useStore()
+  const { user: storeUser, setUser, setAgency, subscription, fetchSubscription } = useStore()
+  const location = useLocation()
 
   useEffect(() => {
     let mounted = true
@@ -71,7 +76,7 @@ export default function ProtectedRoute() {
 
     check()
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) {
         if (mounted) setStatus('no-auth')
       } else {
@@ -81,9 +86,19 @@ export default function ProtectedRoute() {
 
     return () => {
       mounted = false
-      subscription.unsubscribe()
+      authSub.unsubscribe()
     }
   }, [storeUser?.id, storeUser?.token])
+
+  // En cuanto hay sesión válida, comprobar el estado real del plan por su
+  // cuenta (no depender de que otra pantalla lo haya refrescado antes) —
+  // así una pestaña nueva o un acceso directo a /dashboard siempre tiene
+  // una respuesta fresca en vez de un dato de sesión potencialmente viejo.
+  useEffect(() => {
+    if (status === 'auth' && !subscription) {
+      fetchSubscription()
+    }
+  }, [status, subscription, fetchSubscription])
 
   if (status === 'loading') {
     return (
@@ -105,6 +120,35 @@ export default function ProtectedRoute() {
 
   if (status === 'no-auth') return <Navigate to="/login" replace />
   if (status === 'no-profile') return <Navigate to="/onboarding" replace />
+
+  // Mientras se resuelve el estado real del plan, no bloquear todavía
+  // (evita un parpadeo/redirect falso mientras carga).
+  if (status === 'auth' && subscription === null) {
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        minHeight: '100vh', background: '#080811'
+      }}>
+        <div style={{
+          width: 40, height: 40,
+          border: '3px solid rgba(99,102,241,0.3)',
+          borderTopColor: '#6366f1',
+          borderRadius: '50%',
+          animation: 'spin 0.8s linear infinite'
+        }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+      </div>
+    )
+  }
+
+  // Solo un plan realmente activo (pago confirmado) da acceso al resto de la
+  // app. 'trialing'/'inactive' son los estados por defecto nada más
+  // registrarse — si se dejaran pasar, cualquiera accedería sin pagar nunca,
+  // justo lo contrario de lo que se pide aquí.
+  const planActive = subscription?.status === 'active'
+  if (!planActive && !PLAN_EXEMPT_PATHS.includes(location.pathname)) {
+    return <Navigate to="/pricing" replace />
+  }
 
   return <Outlet />
 }

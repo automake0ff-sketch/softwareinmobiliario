@@ -114,9 +114,9 @@ router.post('/:id/install', checkLimit('automations'), async (req, res) => {
     // 4. Si no está instalada, hace INSERT en automations con is_active=false y template_id referenciando la plantilla
     const automationId = uuidv4();
     await run(
-      `INSERT INTO automations (id, agency_id, name, description, is_active, active,
+      `INSERT INTO automations (id, agency_id, name, description, is_active,
         trigger_type, trigger_event, trigger_config, conditions, actions, run_count, created_at, template_id)
-       VALUES (@id, @agency_id, @name, @description, 0, 0,
+       VALUES (@id, @agency_id, @name, @description, false,
         @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, 0, NOW(), @template_id)`,
       {
         id: automationId,

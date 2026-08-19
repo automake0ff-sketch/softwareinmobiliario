@@ -559,8 +559,8 @@ router.post('/install-template', checkLimit('automations'), async (req, res) => 
     const id = uuidv4()
     const templateId = name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()
     await run(
-      `INSERT INTO automations (id, agency_id, name, description, is_active, active, trigger_type, trigger_event, trigger_config, conditions, actions, run_count, created_at, template_id)
-       VALUES (@id, @agency_id, @name, @description, 1, 1, @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, 0, NOW(), @template_id)`,
+      `INSERT INTO automations (id, agency_id, name, description, is_active, trigger_type, trigger_event, trigger_config, conditions, actions, run_count, created_at, template_id)
+       VALUES (@id, @agency_id, @name, @description, true, @trigger_type, @trigger_type, @trigger_config, @conditions, @actions, 0, NOW(), @template_id)`,
       {
         id, agency_id: agencyId,
         name: template.name, description: template.description,

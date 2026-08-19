@@ -55,8 +55,50 @@ export async function generateAgentResponse(agentType, context) {
   return callClaude(systemPrompt, context);
 }
 
+export async function generatePropertyImprovement(property) {
+  const systemPrompt = `Eres un experto en marketing inmobiliario y copywriting para portales como Idealista y Fotocasa.
+Analiza la ficha de la propiedad y genera una versión mejorada, lista para publicar.
+Responde ÚNICAMENTE con un objeto JSON válido (sin markdown, sin \`\`\`), con esta forma exacta:
+{
+  "title": "título comercial, atractivo, máximo 70 caracteres, sin mayúsculas sostenidas ni signos de exclamación excesivos",
+  "description": "descripción de 3-5 frases, en español, destacando lo que realmente diferencia esta propiedad según los datos dados (no inventes datos que no se han proporcionado)",
+  "strengths": ["2-4 puntos fuertes concretos de ESTA propiedad en concreto, basados en los datos reales"],
+  "next_actions": ["2-3 acciones concretas y accionables para mejorar el anuncio, priorizando lo que más impacto tendría"]
+}`;
+
+  const fields = [
+    `Título actual: ${property.title || 'sin título'}`,
+    `Tipo: ${property.type || 'no especificado'}`,
+    `Operación: ${property.operation_type === 'rent' ? 'alquiler' : 'venta'}`,
+    `Precio: ${property.price ? `${Number(property.price).toLocaleString('es-ES')} €` : 'no especificado'}`,
+    `Ubicación: ${[property.zone, property.city].filter(Boolean).join(', ') || 'no especificada'}`,
+    `Habitaciones: ${property.bedrooms ?? 'no especificado'}`,
+    `Baños: ${property.bathrooms ?? 'no especificado'}`,
+    `Superficie: ${property.surface ? `${property.surface} m²` : 'no especificada'}`,
+    `Planta: ${property.floor ?? 'no especificada'}`,
+    `Ascensor: ${property.has_elevator ? 'sí' : 'no'}`,
+    `Terraza: ${property.has_terrace ? 'sí' : 'no'}`,
+    `Garaje: ${property.has_garage ? 'sí' : 'no'}`,
+    `Piscina: ${property.has_pool ? 'sí' : 'no'}`,
+    `Certificado energético: ${property.energy_certificate || 'no especificado'}`,
+    `Descripción actual: ${property.description || 'sin descripción'}`,
+    `Nº de imágenes: ${property.images ? (Array.isArray(property.images) ? property.images.length : String(property.images).split(/[\n,]/).filter(Boolean).length) : 0}`,
+  ].join('\n');
+
+  const raw = await callClaude(systemPrompt, `Ficha de la propiedad:\n${fields}`);
+  const cleaned = raw.replace(/```json\s*|\s*```/g, '').trim();
+  const parsed = JSON.parse(cleaned);
+  if (!parsed.title || !parsed.description) throw new Error('Respuesta de IA incompleta');
+  return {
+    title: parsed.title,
+    description: parsed.description,
+    strengths: Array.isArray(parsed.strengths) ? parsed.strengths : [],
+    next_actions: Array.isArray(parsed.next_actions) ? parsed.next_actions : [],
+  };
+}
+
 // Compatibility aliases for legacy imports
 export const askClaude = callClaude;
 export const isClientAvailable = () => !!process.env.ANTHROPIC_API_KEY;
 
-export default { callClaude, generateLeadSummary, generatePropertyMatch, generateAgentResponse, askClaude, isClientAvailable };
+export default { callClaude, generateLeadSummary, generatePropertyMatch, generateAgentResponse, generatePropertyImprovement, askClaude, isClientAvailable };

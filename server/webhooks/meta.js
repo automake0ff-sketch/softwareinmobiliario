@@ -7,9 +7,9 @@ import { realtime } from '../services/realtime.js';
 import { PLANS } from '../services/plans.js';
 
 async function checkAgencyMetaAds(agencyId) {
-  const sub = await get('SELECT plan_id, status FROM subscriptions WHERE agency_id = @aid ORDER BY created_at DESC LIMIT 1', { aid: agencyId })
-  if (!sub || sub.status !== 'active') return false
-  const plan = PLANS[sub.plan_id]
+  const agency = await get('SELECT plan, plan_status FROM agencies WHERE id = @aid', { aid: agencyId })
+  if (!agency || agency.plan_status !== 'active') return false
+  const plan = PLANS[agency.plan]
   if (!plan) return false
   return plan.features?.meta_ads === true
 }

@@ -286,7 +286,7 @@ export default function PropertiesPage() {
   async function loadAi() {
     if (!selected) return
     const res = await api.post(`/properties/${selected.id}/improve-ai`, {})
-    setAiResult(res.improved)
+    setAiResult({ ...res.improved, ai_generated: res.ai_generated })
   }
 
   async function loadMatches() {
@@ -1126,9 +1126,17 @@ function AiTab({ aiResult, loadAi }) {
       <button onClick={loadAi} className="mb-4 inline-flex items-center gap-2 rounded-xl bg-violet-500 px-4 py-3 text-sm font-semibold text-white"><Wand2 size={16} /> Generar mejora IA</button>
       {aiResult ? (
         <div className="space-y-4 text-[#d7e2f7]">
+          {aiResult.ai_generated === false && (
+            <p className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
+              Generado con plantilla estándar (la IA no estaba disponible en este momento). Puedes reintentarlo.
+            </p>
+          )}
           <p><strong className="text-white">Titulo:</strong> {aiResult.title}</p>
           <p><strong className="text-white">Descripcion:</strong> {aiResult.description}</p>
           <div><strong className="text-white">Fortalezas:</strong><ul className="mt-2 list-disc pl-5">{aiResult.strengths?.map((x) => <li key={x}>{x}</li>)}</ul></div>
+          {aiResult.next_actions?.length > 0 && (
+            <div><strong className="text-white">Próximos pasos:</strong><ul className="mt-2 list-disc pl-5">{aiResult.next_actions.map((x) => <li key={x}>{x}</li>)}</ul></div>
+          )}
         </div>
       ) : <p className="text-[#9fb3d9]">Genera titulo, descripcion, fortalezas y acciones para dejar el anuncio listo para publicar.</p>}
     </Panel>

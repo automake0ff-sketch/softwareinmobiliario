@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { all, get, run } from '../db/db.js';
 import { auth } from '../middleware/auth.js';
-import { generatePropertyMatch } from '../services/claude.js';
+import { generatePropertyMatch, generatePropertyImprovement } from '../services/claude.js';
 
 const router = Router();
 router.use(auth);
@@ -817,18 +817,28 @@ router.post('/:id/improve-ai', async (req, res) => {
   try {
     const property = await get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!property) return res.status(404).json({ error: 'Propiedad no encontrada.' });
-    const improved = {
-      title: property.title?.startsWith('Propiedad importada') ? `Vivienda destacada en ${property.city || property.zone || 'zona demandada'}` : property.title,
-      description: marketingCopy(property, 'idealista'),
-      strengths: [
-        property.price ? 'Precio definido para filtrar demanda real' : 'Anadir precio para aumentar conversion',
-        property.images ? 'Cuenta con imagenes para mejorar el anuncio' : 'Anadir imagenes reales de la propiedad',
-        property.surface ? 'Superficie informada' : 'Completar superficie para mejorar busquedas',
-      ],
-      next_actions: ['Completar imagen principal', 'Enviar a leads compatibles', 'Publicar copy optimizado en portal'],
-    };
-    await logActivity(req, property, 'property_ai_improved', `Mejora IA generada para ${property.title}`);
-    res.json({ property_id: property.id, improved });
+
+    let improved;
+    let aiGenerated = false;
+    try {
+      improved = await generatePropertyImprovement(property);
+      aiGenerated = true;
+    } catch (aiError) {
+      console.warn(`[IMPROVE-AI] Fallback a plantilla para propiedad ${property.id}: ${aiError.message}`);
+      improved = {
+        title: property.title?.startsWith('Propiedad importada') ? `Vivienda destacada en ${property.city || property.zone || 'zona demandada'}` : property.title,
+        description: marketingCopy(property, 'idealista'),
+        strengths: [
+          property.price ? 'Precio definido para filtrar demanda real' : 'Anadir precio para aumentar conversion',
+          property.images ? 'Cuenta con imagenes para mejorar el anuncio' : 'Anadir imagenes reales de la propiedad',
+          property.surface ? 'Superficie informada' : 'Completar superficie para mejorar busquedas',
+        ],
+        next_actions: ['Completar imagen principal', 'Enviar a leads compatibles', 'Publicar copy optimizado en portal'],
+      };
+    }
+
+    await logActivity(req, property, 'property_ai_improved', `Mejora IA generada para ${property.title}`, { ai_generated: aiGenerated });
+    res.json({ property_id: property.id, improved, ai_generated: aiGenerated });
   } catch (error) {
     res.status(500).json({ error: 'Error al generar mejora IA.' });
   }

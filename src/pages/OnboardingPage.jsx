@@ -136,10 +136,11 @@ export default function OnboardingPage() {
         setAgency({ id: user.id, name: nombreEmpresa, city: ciudad })
       }
 
-      toast.success('¡Configuración guardada! Accediendo al dashboard...')
+      toast.success('¡Configuración guardada! Elige tu plan para empezar...')
       setLaunched(true)
-      // Redirigir directamente — el store ya está actualizado
-      navigate('/dashboard', { replace: true })
+      // Redirigir a Precios: el pago es obligatorio antes de entrar al dashboard
+      // (ProtectedRoute también lo exige, así que esto no es la única barrera).
+      navigate('/pricing', { replace: true })
     } catch (err) {
       console.error('Error saving config:', err)
       toast.error(err.message || 'Error al guardar la configuración')
@@ -513,9 +514,9 @@ export default function OnboardingPage() {
               <div className="text-xs text-[#94A3B8]">Agentes IA</div>
             </div>
           </div>
-          <Link to="/dashboard"
+          <Link to="/pricing"
             className="inline-flex items-center gap-2 px-8 py-3.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl hover:from-indigo-600 hover:to-purple-600 transition-all text-sm font-medium">
-            <Zap size={16} /> Ir al Dashboard
+            <Zap size={16} /> Elegir mi plan
           </Link>
         </motion.div>
       </div>

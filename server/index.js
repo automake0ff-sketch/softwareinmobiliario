@@ -923,6 +923,13 @@ async function start() {
     }).catch(err => {
       console.error('Error starting appointment reminder worker:', err);
     });
+
+    // Start background automation schedule worker (no_response_hours, time_schedule triggers)
+    import('./services/automation-schedule-worker.js').then(({ startAutomationScheduleWorker }) => {
+      startAutomationScheduleWorker(15 * 60 * 1000);
+    }).catch(err => {
+      console.error('Error starting automation schedule worker:', err);
+    });
   });
 }
 

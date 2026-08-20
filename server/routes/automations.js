@@ -247,10 +247,13 @@ router.patch('/:id', validateBody(automationSchema.partial()), async (req, res) 
 // POST /api/automations/trigger - Execute automations in background for a given trigger
 router.post('/trigger', async (req, res) => {
   try {
-    const { trigger_type, lead_id, agency_id, trigger_payload } = req.body
-    const aid = agency_id || req.user?.agency_id
+    const { trigger_type, lead_id, trigger_payload } = req.body
+    const aid = req.user?.agency_id
     if (!trigger_type || !lead_id) {
       return res.status(400).json({ error: 'trigger_type y lead_id son requeridos' })
+    }
+    if (!aid) {
+      return res.status(401).json({ error: 'No autenticado' })
     }
 
     const result = await triggerAutomations({ trigger_type, lead_id, agency_id: aid, trigger_payload })

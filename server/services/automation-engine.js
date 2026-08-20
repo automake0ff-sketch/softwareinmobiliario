@@ -690,8 +690,10 @@ export async function triggerAutomations({ trigger_type, lead_id, agency_id, tri
       throw new Error('trigger_type y lead_id son requeridos')
     }
 
-    // Get lead data from DB
-    const lead = await get('SELECT * FROM leads WHERE id = @id', { id: lead_id })
+    // Get lead data from DB -- SIEMPRE filtrado por agency_id, para que un
+    // lead_id de otra agencia (por el motivo que sea) nunca desencadene
+    // acciones (incluido envio de WhatsApp) usando los datos de ese lead ajeno.
+    const lead = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: lead_id, agency_id: aid })
     if (!lead) throw new Error('Lead no encontrado.')
 
     // Build lead context

@@ -45,10 +45,9 @@ export default function ConversationsPage() {
     if (search.trim()) {
       const q = search.toLowerCase()
       result = result.filter(c =>
-        c.lead_name?.toLowerCase().includes(q) ||
-        c.agent_name?.toLowerCase().includes(q) ||
-        c.last_message?.toLowerCase().includes(q) ||
-        c.lead_phone?.includes(q)
+        c.lead?.name?.toLowerCase().includes(q) ||
+        c.lead?.phone?.includes(q) ||
+        c.last_message?.content?.toLowerCase().includes(q)
       )
     }
     return [...result].sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at))
@@ -156,10 +155,14 @@ export default function ConversationsPage() {
       setActiveMessages(prev => [...prev, tempMsg])
 
       const sentMsg = await api.post(`/conversations/${selectedConvId}/messages`, { content: text })
-      
+
       // Update with server message
       setActiveMessages(prev => prev.map(m => m.id === tempId ? sentMsg : m))
       fetchConversations()
+
+      if (sentMsg.whatsapp_sent === false) {
+        toast.error('Mensaje guardado, pero no se pudo enviar por WhatsApp. Revisa la conexión en Configuración.')
+      }
     } catch (e) {
       toast.error('Error al enviar mensaje')
     }

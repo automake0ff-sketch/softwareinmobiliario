@@ -102,39 +102,54 @@ router.get('/', async (req, res) => {
   try {
     const agencyId = req.user.agency_id;
 
+    // Antes: 1 query para listar conversaciones + 1 query POR CADA conversacion
+    // para traer TODOS sus mensajes solo para calcular el ultimo mensaje y el
+    // contador de no leidos. Con cientos de conversaciones activas eso son
+    // cientos de round-trips en cada carga de la pantalla. Ahora: una sola
+    // consulta con LATERAL joins que calculan ambas cosas directamente en SQL.
     const sql = `
-      SELECT c.*, l.name AS lead_name, l.phone AS lead_phone, l.ia_score AS lead_ia_score, l.pipeline_stage AS lead_pipeline_stage
+      SELECT
+        c.*,
+        l.name AS lead_name, l.phone AS lead_phone, l.ia_score AS lead_ia_score, l.pipeline_stage AS lead_pipeline_stage,
+        lastmsg.id AS last_msg_id, lastmsg.author AS last_msg_author, lastmsg.content AS last_msg_content,
+        lastmsg.message_type AS last_msg_type, lastmsg.is_read AS last_msg_is_read, lastmsg.created_at AS last_msg_created_at,
+        COALESCE(unread.count, 0)::int AS unread_count
       FROM conversations c
       JOIN leads l ON c.lead_id = l.id
+      LEFT JOIN LATERAL (
+        SELECT id, author, content, message_type, is_read, created_at
+        FROM messages WHERE conversation_id = c.id
+        ORDER BY created_at DESC LIMIT 1
+      ) lastmsg ON true
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS count FROM messages
+        WHERE conversation_id = c.id AND author = 'lead' AND is_read = false
+      ) unread ON true
       WHERE c.agency_id = @agency_id
       ORDER BY c.updated_at DESC, c.created_at DESC
     `;
-    const rawConversations = await all(sql, { agency_id: agencyId });
+    const rows = await all(sql, { agency_id: agencyId });
 
-    const conversations = await Promise.all(rawConversations.map(async (c) => {
-      const rows = await all('SELECT * FROM messages WHERE conversation_id = @id ORDER BY created_at ASC', { id: c.id });
-      const messagesList = rows.map(mapMessage);
-      const unreadCount = messagesList.filter(m => m.role === 'lead' && !m.is_read).length;
-
-      return {
-        id: c.id,
-        lead_id: c.lead_id,
-        channel: c.channel,
-        status: c.status,
-        ia_handling: c.ia_handling !== 0,
-        updated_at: c.updated_at || c.created_at,
-        created_at: c.created_at,
-        lead: {
-          id: c.lead_id,
-          name: c.lead_name,
-          phone: c.lead_phone,
-          ia_score: c.lead_ia_score,
-          pipeline_stage: c.lead_pipeline_stage
-        },
-        messages: messagesList,
-        last_message: messagesList[messagesList.length - 1] || null,
-        unread_count: unreadCount
-      };
+    const conversations = rows.map((c) => ({
+      id: c.id,
+      lead_id: c.lead_id,
+      channel: c.channel,
+      status: c.status,
+      ia_handling: c.ia_handling !== 0,
+      updated_at: c.updated_at || c.created_at,
+      created_at: c.created_at,
+      lead: {
+        id: c.lead_id,
+        name: c.lead_name,
+        phone: c.lead_phone,
+        ia_score: c.lead_ia_score,
+        pipeline_stage: c.lead_pipeline_stage
+      },
+      last_message: c.last_msg_id ? mapMessage({
+        id: c.last_msg_id, author: c.last_msg_author, content: c.last_msg_content,
+        message_type: c.last_msg_type, is_read: c.last_msg_is_read, created_at: c.last_msg_created_at,
+      }) : null,
+      unread_count: c.unread_count,
     }));
 
     res.json(conversations);
@@ -190,24 +205,35 @@ router.post('/:id/messages', async (req, res) => {
 
     // WhatsApp config Meta Graph API check
     const agency = await get('SELECT whatsapp_token, whatsapp_phone_id FROM agencies WHERE id = @aid', { aid: agencyId });
+    let whatsappSent = null; // null = no aplica (sin telefono/credenciales), true/false = intento real
     if (agency?.whatsapp_token && agency?.whatsapp_phone_id && lead?.phone) {
       const phone = String(lead.phone).replace(/[\s\-\(\)\+]/g, '');
       const fullPhone = phone.startsWith('34') ? phone : `34${phone}`;
 
-      globalThis.fetch(`https://graph.facebook.com/v18.0/${agency.whatsapp_phone_id}/messages`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${agency.whatsapp_token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: fullPhone,
-          type: 'text',
-          text: { body: content }
-        })
-      }).catch(err => console.error('[WhatsApp Webhook POST] Error sending WhatsApp message:', err));
+      try {
+        const waRes = await globalThis.fetch(`https://graph.facebook.com/v18.0/${agency.whatsapp_phone_id}/messages`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${agency.whatsapp_token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            recipient_type: 'individual',
+            to: fullPhone,
+            type: 'text',
+            text: { body: content }
+          })
+        });
+        whatsappSent = waRes.ok;
+        if (!waRes.ok) {
+          const errBody = await waRes.text().catch(() => '');
+          console.error(`[WhatsApp POST] Meta respondio ${waRes.status}: ${errBody}`);
+        }
+      } catch (err) {
+        whatsappSent = false;
+        console.error('[WhatsApp POST] Error de red enviando mensaje:', err.message);
+      }
     }
     if (realtime) {
       realtime.broadcast('message', {
@@ -216,7 +242,7 @@ router.post('/:id/messages', async (req, res) => {
       });
     }
 
-    res.status(201).json(newMsg);
+    res.status(201).json({ ...newMsg, whatsapp_sent: whatsappSent });
   } catch (error) {
     console.error('Error posting message:', error);
     res.status(500).json({ error: 'Error al enviar mensaje.' });

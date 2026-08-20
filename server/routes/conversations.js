@@ -189,15 +189,15 @@ router.post('/:id/messages', async (req, res) => {
     const lead = await get('SELECT * FROM leads WHERE id = @id', { id: conv.lead_id });
 
     // WhatsApp config Meta Graph API check
-    const agency = await get('SELECT wa_token, wa_phone_id FROM agencies WHERE id = @aid', { aid: agencyId });
-    if (agency?.wa_token && agency?.wa_phone_id && lead?.phone) {
+    const agency = await get('SELECT whatsapp_token, whatsapp_phone_id FROM agencies WHERE id = @aid', { aid: agencyId });
+    if (agency?.whatsapp_token && agency?.whatsapp_phone_id && lead?.phone) {
       const phone = String(lead.phone).replace(/[\s\-\(\)\+]/g, '');
       const fullPhone = phone.startsWith('34') ? phone : `34${phone}`;
 
-      globalThis.fetch(`https://graph.facebook.com/v18.0/${agency.wa_phone_id}/messages`, {
+      globalThis.fetch(`https://graph.facebook.com/v18.0/${agency.whatsapp_phone_id}/messages`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${agency.wa_token}`,
+          Authorization: `Bearer ${agency.whatsapp_token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({

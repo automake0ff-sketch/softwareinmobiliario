@@ -1,6 +1,5 @@
 import { askClaude, isClientAvailable } from '../services/claude.js';
 import { PropIARagRetriever } from '../rag/retriever.js';
-import { runAgentWithTools } from '../tools/agent-runner.js';
 
 const SYSTEM_PROMPT = `Eres el Coordinador IA de PropIA — el cerebro del sistema. Orquestas todos los agentes y tomas decisiones críticas de asignación y priorización.
 
@@ -465,41 +464,6 @@ Responde ÚNICAMENTE con el JSON.`;
     insight: errors.length > 0
       ? `Modo fallback: lead asignado a ${result.assignedTo || 'ninguno'}`
       : `Lead asignado a ${result.assignedTo} (score: ${result.score})${result.isUrgent ? ' [URGENTE]' : ''}`,
-  };
-}
-
-export async function orchestrateWithTools(payload) {
-  const { agencyId, userId } = payload;
-  const errors = [];
-
-  try {
-    const systemPrompt = SYSTEM_PROMPT + `\n\nTienes acceso a herramientas. Puedes obtener leads sin asignar, ver comerciales disponibles, asignar leads, detectar leads bloqueados y enviar alertas al equipo. Úsalas para orquestar el flujo de trabajo de la agencia.`;
-    const userMsg = `Revisa el estado actual de la agencia. Obtén leads sin asignar, comprueba comerciales disponibles, asigna los leads más prioritarios, detecta leads bloqueados, y genera alertas si es necesario. Agency ID: ${agencyId}`;
-
-    const finalResponse = await runAgentWithTools({
-      systemPrompt,
-      userMessage: userMsg,
-      agentType: 'coordinador',
-      context: { agencyId, userId },
-    });
-
-    let parsed;
-    try { parsed = JSON.parse(finalResponse); } catch { parsed = { raw: finalResponse }; }
-
-    return {
-      success: true,
-      toolUsed: true,
-      result: parsed,
-      insight: 'Orquestación completada con tools',
-    };
-  } catch (err) {
-    errors.push(err.message);
-  }
-
-  return {
-    success: false,
-    result: null,
-    insight: `Error en orquestación con tools: ${errors.join(', ')}`,
   };
 }
 

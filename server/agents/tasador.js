@@ -1,5 +1,4 @@
 import { askClaude, isClientAvailable } from '../services/claude.js';
-import { runAgentWithTools } from '../tools/agent-runner.js';
 
 const SYSTEM_PROMPT = `Eres un Tasador IA experto en valoración inmobiliaria. Tu misión es determinar el valor real de mercado de cualquier propiedad.
 
@@ -404,37 +403,6 @@ Responde ÚNICAMENTE con el JSON.`;
       ? `Modo fallback: CMA con ${result.comparablesFound} comparables`
       : `CMA: ${result.comparablesFound} comparables. Precio medio: ${result.avgPricePerM2}€/m²`,
   };
-}
-
-export async function appraiseWithTools(payload) {
-  const { propertyData, agencyId, userId } = payload;
-  const errors = [];
-
-  try {
-    const systemPrompt = SYSTEM_PROMPT + `\n\nTienes acceso a herramientas. Puedes obtener propiedades comparables en la zona y calcular el precio medio de mercado. Úsalas para realizar una tasación precisa basada en datos reales del CRM.`;
-    const userMsg = `Realiza una tasación completa de esta propiedad. Busca comparables en la zona y calcula el precio de mercado.\n\nPropiedad:\n${JSON.stringify(propertyData, null, 2)}`;
-
-    const finalResponse = await runAgentWithTools({
-      systemPrompt,
-      userMessage: userMsg,
-      agentType: 'tasador',
-      context: { agencyId, userId },
-    });
-
-    let parsed;
-    try { parsed = JSON.parse(finalResponse); } catch { parsed = { raw: finalResponse }; }
-
-    return {
-      success: true,
-      toolUsed: true,
-      result: parsed,
-      insight: `Tasación completada con tools. Valor: ${parsed.saleValuation?.estimatedPrice || parsed.estimatedPrice || 'N/A'}`,
-    };
-  } catch (err) {
-    errors.push(err.message);
-  }
-
-  return generateValuationReport(propertyData);
 }
 
 export async function execute(context) {

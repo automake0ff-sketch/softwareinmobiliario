@@ -315,35 +315,9 @@ export const useStore = create(
         return result
       },
 
-      importPropertiesFromIdealista: async (urls) => {
-        const result = await api.post('/properties/import/idealista', { urls })
-        if (result.imported && result.imported.length > 0) {
-          set((s) => ({
-            properties: [...result.imported, ...s.properties],
-          }))
-        }
-        return result
-      },
-
-      importPropertiesFromCsv: async (csvData) => {
-        const result = await api.post('/properties/import/csv', { csv_data: csvData })
-        if (result.imported && result.imported.length > 0) {
-          set((s) => ({
-            properties: [...result.imported, ...s.properties],
-          }))
-        }
-        return result
-      },
-
       fetchCompatibleLeads: async (propertyId) => {
         const data = await api.post(`/properties/${propertyId}/match-leads`)
         return data
-      },
-
-      duplicateProperty: async (id) => {
-        const property = await api.post(`/properties/${id}/duplicate`)
-        set((s) => ({ properties: [property, ...s.properties] }))
-        return property
       },
 
       changePropertyStatus: async (id, status) => {
@@ -356,63 +330,9 @@ export const useStore = create(
         return updated
       },
 
-      shareProperty: async (id) => {
-        const result = await api.post(`/properties/${id}/share`)
-        return result
-      },
-
-      generatePropertyDescription: async (id) => {
-        const result = await api.post(`/properties/${id}/generate-description`)
-        return result
-      },
-
-      previewCsv: async (csvData) => {
-        const result = await api.post('/properties/csv-preview', { csv_data: csvData })
-        return result
-      },
-
       fetchPropertyMetrics: async () => {
         const data = await api.get('/properties', { metrics: 'true' })
         return data
-      },
-
-      fetchPropertyInterests: async (propertyId) => {
-        const data = await api.get(`/properties/${propertyId}/interests`)
-        return data
-      },
-
-      createPropertyInterest: async (propertyId, leadId, channel) => {
-        const data = await api.post(`/properties/${propertyId}/interests`, { lead_id: leadId, channel })
-        return data
-      },
-
-      deletePropertyInterest: async (propertyId, interestId) => {
-        await api.delete(`/properties/${propertyId}/interests/${interestId}`)
-      },
-
-      fetchPropertyStats: async (propertyId) => {
-        const data = await api.get(`/properties/${propertyId}/stats`)
-        return data
-      },
-
-      generateWhatsAppMessage: async (propertyId, phone) => {
-        const data = await api.post(`/properties/${propertyId}/generate-whatsapp`, { phone })
-        return data
-      },
-
-      generateEmailContent: async (propertyId, email) => {
-        const data = await api.post(`/properties/${propertyId}/generate-email`, { email })
-        return data
-      },
-
-      generateSocialPost: async (propertyId) => {
-        const data = await api.post(`/properties/${propertyId}/generate-post`)
-        return data
-      },
-
-      createPropertyAI: async (description) => {
-        const result = await api.post('/properties/create-ai', { description })
-        return result
       },
 
       improvePropertyAI: async (id) => {
@@ -423,11 +343,6 @@ export const useStore = create(
       generateMarketingAsset: async (id, action) => {
         const result = await api.post(`/properties/${id}/marketing`, { action })
         return result
-      },
-
-      fetchInterestedLeads: async (id) => {
-        const data = await api.get(`/properties/${id}/interested-leads`)
-        return data
       },
 
       fetchPropertyActivity: async (id) => {
@@ -442,18 +357,6 @@ export const useStore = create(
 
       selectLead: (lead) => set({ selectedLead: lead, showLeadProfile: true }),
       closeLeadProfile: () => set({ selectedLead: null, showLeadProfile: false }),
-
-      fetchAgencyStats: async () => {
-        set((s) => ({ loading: { ...s.loading, stats: true } }))
-        try {
-          const data = await api.get('/agency/stats')
-          set({ stats: data })
-        } catch {
-          // handled
-        } finally {
-          set((s) => ({ loading: { ...s.loading, stats: false } }))
-        }
-      },
 
       fetchRanking: async () => {
         try {

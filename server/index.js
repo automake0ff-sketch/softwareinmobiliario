@@ -244,8 +244,6 @@ async function start() {
   app.use("/webhooks/meta", webhookLimiter, express.raw({ type: "application/json" }), metaWebhook);
   app.use("/webhooks/whatsapp", webhookLimiter, express.raw({ type: "application/json" }), whatsappWebhook);
   app.use('/api/rag', (await import('./routes/rag.js')).default);
-  app.use('/api/tools', (await import('./routes/tools.js')).default);
-  app.use('/api/mcp', (await import('./routes/mcp.js')).default);
   app.use('/api/automations', (await import('./routes/automations.js')).default);
   app.use('/api/automations', (await import('./routes/automations-execute-realtime.js')).default);
   app.use('/api/destinations', (await import('./routes/destinations.js')).default);

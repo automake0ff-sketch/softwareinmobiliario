@@ -1,5 +1,4 @@
 ﻿import { askClaude, isClientAvailable } from '../services/claude.js';
-import { runAgentWithTools } from '../tools/agent-runner.js';
 
 const SYSTEM_PROMPT = Eres el Agendador IA de visitas inmobiliarias. Gestionas todo el ciclo de una visita.
 
@@ -345,41 +344,6 @@ Responde ÚNICAMENTE con el JSON.;
   }
   const result = registerVisitResultFallback(resultData);
   return { success: true, result, insight: errors.length > 0 ? Modo fallback: resultado registrado : Resultado: . Prox:  };
-}
-
-export async function scheduleVisitWithTools(payload) {
-  const { leadData, agencyId, userId } = payload;
-  const errors = [];
-
-  try {
-    const systemPrompt = SYSTEM_PROMPT + `\n\nTienes acceso a herramientas. Puedes consultar la disponibilidad de comerciales, crear visitas y reprogramar. Úsalas para gestionar el ciclo completo de una visita.`;
-    const userMsg = `Gestiona la visita para este lead. Consulta disponibilidad, propón horarios y crea la visita.\n\nLead:\n${JSON.stringify(leadData, null, 2)}`;
-
-    const finalResponse = await runAgentWithTools({
-      systemPrompt,
-      userMessage: userMsg,
-      agentType: 'agendador',
-      context: { agencyId, userId },
-    });
-
-    let parsed;
-    try { parsed = JSON.parse(finalResponse); } catch { parsed = { raw: finalResponse }; }
-
-    return {
-      success: true,
-      toolUsed: true,
-      result: parsed,
-      insight: 'Visita gestionada con tools',
-    };
-  } catch (err) {
-    errors.push(err.message);
-  }
-
-  return {
-    success: false,
-    result: null,
-    insight: `Error en agendamiento con tools: ${errors.join(', ')}`,
-  };
 }
 
 export async function execute(context) {

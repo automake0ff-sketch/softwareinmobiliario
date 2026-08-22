@@ -1,5 +1,4 @@
 import { askClaude, isClientAvailable } from '../services/claude.js';
-import { runAgentWithTools } from '../tools/agent-runner.js';
 
 const SYSTEM_PROMPT = `Eres el Agente Captador IA de PropIA, especializado en cualificar leads inmobiliarios.
 
@@ -352,37 +351,6 @@ Responde ÚNICAMENTE con el JSON.`;
       ? `Modo fallback: mensaje ${classification.ia_score_label} generado`
       : `Mensaje generado con tono ${result.tone}`,
   };
-}
-
-export async function captureLeadWithTools(payload) {
-  const { leadData, agencyId, userId } = payload;
-  const errors = [];
-
-  try {
-    const systemPrompt = SYSTEM_PROMPT + `\n\nTienes acceso a herramientas. Puedes buscar propiedades compatibles, crear el lead en CRM, detectar duplicados y enviar WhatsApp. Usa las herramientas según necesites para procesar y cualificar el lead.`;
-    const userMsg = `Procesa este lead entrante. Analiza los datos, busca propiedades compatibles si es posible, y crea el lead en el CRM con su clasificación y score.\n\nDatos del lead:\n${JSON.stringify(leadData, null, 2)}`;
-
-    const finalResponse = await runAgentWithTools({
-      systemPrompt,
-      userMessage: userMsg,
-      agentType: 'captador',
-      context: { agencyId, userId },
-    });
-
-    let parsed;
-    try { parsed = JSON.parse(finalResponse); } catch { parsed = { raw: finalResponse }; }
-
-    return {
-      success: true,
-      toolUsed: true,
-      result: parsed,
-      insight: `Lead procesado con tools. Score: ${parsed.ia_score || 'N/A'}. Clasificación: ${parsed.ia_score_label || 'N/A'}`,
-    };
-  } catch (err) {
-    errors.push(err.message);
-  }
-
-  return processIncomingLead(leadData);
 }
 
 export async function execute(context) {

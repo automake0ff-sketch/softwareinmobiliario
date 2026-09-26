@@ -165,7 +165,7 @@ export default function LandingPage() {
                   to="/register"
                   className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-4 py-2 sm:px-5 sm:py-2.5 rounded-lg text-sm font-semibold hover:from-indigo-600 hover:to-purple-700 transition-all shadow-md shadow-indigo-500/10 hover:shadow-indigo-500/20"
                 >
-                  Empezar gratis
+                  Empezar ahora
                 </Link>
               </>
             )}
@@ -629,7 +629,7 @@ export default function LandingPage() {
                 to="/register"
                 className="px-8 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl text-base hover:from-indigo-600 hover:to-purple-700 transition-all shadow-xl shadow-indigo-500/25 flex items-center gap-2"
               >
-                Crear mi cuenta gratis →
+                Crear mi cuenta →
               </Link>
             )}
             <p className="text-xs text-gray-500 mt-2">

@@ -18,10 +18,10 @@ const SECTIONS = [
       <>
         <p>El responsable del tratamiento de los datos personales recogidos a través de PropIA es:</p>
         <ul className="list-disc pl-6 mt-2 space-y-1">
-          <li>Razón social: [PENDIENTE]</li>
-          <li>NIF/CIF: [PENDIENTE]</li>
-          <li>Domicilio: [PENDIENTE]</li>
-          <li>Email de contacto para asuntos de privacidad: [PENDIENTE]</li>
+          <li>Titular: [NOMBRE Y APELLIDOS PENDIENTE] (autónomo)</li>
+          <li>NIF: [PENDIENTE]</li>
+          <li>Domicilio: Sevilla, España</li>
+          <li>Email de contacto para asuntos de privacidad: automake0ff@gmail.com</li>
         </ul>
       </>
     ),
@@ -83,7 +83,7 @@ const SECTIONS = [
     title: '7. Tus derechos',
     body: (
       <>
-        <p>Puedes ejercer en cualquier momento tus derechos de acceso, rectificación, supresión, oposición, limitación del tratamiento y portabilidad de tus datos, escribiendo a [PENDIENTE — email de contacto]. También tienes derecho a presentar una reclamación ante la Agencia Española de Protección de Datos (www.aepd.es).</p>
+        <p>Puedes ejercer en cualquier momento tus derechos de acceso, rectificación, supresión, oposición, limitación del tratamiento y portabilidad de tus datos, escribiendo a automake0ff@gmail.com. También tienes derecho a presentar una reclamación ante la Agencia Española de Protección de Datos (www.aepd.es).</p>
         <p className="mt-2">Si tu agencia cancela su suscripción, puede solicitar la exportación completa de sus leads, conversaciones y propiedades, así como el borrado definitivo de los datos.</p>
       </>
     ),

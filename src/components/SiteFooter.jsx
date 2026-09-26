@@ -5,16 +5,15 @@ import { useStore } from '../lib/store'
 // PrivacyPolicyPage y TermsOfServicePage.
 //
 // ⚠️ ACCIÓN PENDIENTE PARA ALEJANDRO:
-// Los campos entre [CORCHETES] son placeholders. Sustitúyelos por los datos
-// reales de la empresa antes de considerar esto "arreglado" de verdad — un
-// SaaS que procesa datos de clientes (leads, conversaciones de WhatsApp)
-// necesita mostrar esta identidad de forma verificable, y legalmente
-// (LSSICE art. 10 y RGPD) es obligatorio identificarse.
+// Rellenado con lo que confirmaste (autónomo, Sevilla, contacto). Sigue
+// pendiente tu NOMBRE COMPLETO y NIF — como autónomo, la LSSICE (art. 10)
+// exige identificarte con nombre y NIF, no solo "autónomo" y la ciudad.
+// Sin esos dos datos el aviso legal sigue incompleto.
 const LEGAL = {
-  razonSocial: '[RAZÓN SOCIAL / NOMBRE FISCAL PENDIENTE]',
-  nifCif: '[NIF/CIF PENDIENTE]',
-  domicilio: '[DOMICILIO FISCAL PENDIENTE]',
-  emailContacto: '[EMAIL DE CONTACTO PENDIENTE]',
+  razonSocial: '[NOMBRE Y APELLIDOS PENDIENTE] (autónomo)',
+  nifCif: '[NIF PENDIENTE]',
+  domicilio: 'Sevilla, España',
+  emailContacto: 'automake0ff@gmail.com',
 }
 
 export default function SiteFooter() {

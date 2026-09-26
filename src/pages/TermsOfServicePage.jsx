@@ -13,7 +13,7 @@ const SECTIONS = [
     title: '1. Quiénes somos',
     body: (
       <>
-        <p>PropIA es un producto de [PENDIENTE — razón social], con NIF/CIF [PENDIENTE] y domicilio en [PENDIENTE]. Estos términos regulan el acceso y uso de la plataforma PropIA (CRM con agentes de IA para agencias inmobiliarias) por parte de la agencia cliente ("el Cliente").</p>
+        <p>PropIA es un producto de [NOMBRE Y APELLIDOS PENDIENTE], autónomo, con NIF [PENDIENTE] y domicilio en Sevilla, España. Estos términos regulan el acceso y uso de la plataforma PropIA (CRM con agentes de IA para agencias inmobiliarias) por parte de la agencia cliente ("el Cliente").</p>
       </>
     ),
   },
@@ -30,9 +30,7 @@ const SECTIONS = [
     body: (
       <>
         <p>Los precios vigentes de cada plan (Starter, Profesional, Agencia) se muestran en /pricing e incluyen los límites de usuarios, leads y agentes de IA especificados en cada plan. Los precios no incluyen costes de terceros derivados del uso del servicio (por ejemplo, tarifas de conversación de WhatsApp Business/Meta, campañas publicitarias en Meta Ads, integración con portales como Idealista, o consumo adicional del proveedor de modelos de IA), que corren a cargo del Cliente según las tarifas de dichos terceros.</p>
-        <p className="mt-2 font-medium text-amber-300/90">
-          [PENDIENTE — decisión de Alejandro] Actualmente al registrarse la cuenta queda en estado "trialing" pero el acceso al panel se bloquea hasta que hay un pago activo, por lo que hoy no existe un periodo de prueba gratuito real. Esta sección debe redactarse conforme a lo que decidas: o se implementa un periodo de prueba real con fecha de fin, o se elimina cualquier mensaje de "cuenta gratis" en la web y aquí se indica claramente que el pago es necesario desde el primer día.
-        </p>
+        <p className="mt-2">PropIA no ofrece actualmente un periodo de prueba gratuito: el acceso al panel requiere una suscripción activa desde el momento del registro.</p>
       </>
     ),
   },
@@ -50,7 +48,7 @@ const SECTIONS = [
   },
   {
     title: '8. Propiedad intelectual',
-    body: <p>PropIA y su código, marca y diseño son propiedad de [PENDIENTE — razón social]. El Cliente conserva la propiedad de sus propios datos (leads, propiedades, conversaciones).</p>,
+    body: <p>PropIA y su código, marca y diseño son propiedad de [NOMBRE Y APELLIDOS PENDIENTE]. El Cliente conserva la propiedad de sus propios datos (leads, propiedades, conversaciones).</p>,
   },
   {
     title: '9. Limitación de responsabilidad',
@@ -58,7 +56,7 @@ const SECTIONS = [
   },
   {
     title: '10. Legislación aplicable',
-    body: <p>Estos términos se rigen por la legislación española. Cualquier controversia se someterá a los juzgados y tribunales de [PENDIENTE — domicilio/jurisdicción], salvo que la normativa de consumidores establezca un fuero distinto.</p>,
+    body: <p>Estos términos se rigen por la legislación española. Cualquier controversia se someterá a los juzgados y tribunales de Sevilla, salvo que la normativa de consumidores establezca un fuero distinto.</p>,
   },
 ]
 

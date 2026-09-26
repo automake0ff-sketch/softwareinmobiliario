@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useStore } from '../lib/store'
+import SiteFooter from '../components/SiteFooter'
 import {
   ChevronDown,
   Check,
@@ -228,8 +229,17 @@ export default function LandingPage() {
               <div className="w-3 h-3 rounded-full bg-red-500/40" />
               <div className="w-3 h-3 rounded-full bg-yellow-500/40" />
               <div className="w-3 h-3 rounded-full bg-green-500/40" />
+              {/* ⚠️ Alejandro: antes ponía "app.propia.ai/dashboard", pero
+                  propia.ai/.com/.es ya están registrados por terceros (no
+                  podéis compraros ese dominio) y el producto real vive en
+                  softwareinmobiliario.vercel.app. Este texto ahora refleja
+                  la URL real para no crear una discrepancia de marca frente
+                  al producto que la gente realmente usa. Si más adelante
+                  compráis un dominio propio (p.ej. propiacrm.com o
+                  usepropia.com, ambos libres), actualizad esto y
+                  vercel.json/DNS a la vez. */}
               <div className="ml-4 text-[10px] text-gray-500 font-mono tracking-wider bg-[#131322] px-3 py-1 rounded border border-[#1E1E2E]">
-                app.propia.ai/dashboard
+                softwareinmobiliario.vercel.app/dashboard
               </div>
             </div>
             
@@ -629,39 +639,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* FOOTER */}
-      <footer className="relative z-10 border-t border-[#1E1E2E]/60 bg-[#080811] py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center">
-              <span className="text-white font-extrabold text-sm">P</span>
-            </div>
-            <span className="text-lg font-bold tracking-tight text-white font-syne">
-              Prop<span className="bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">IA</span>
-            </span>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2.5 text-sm text-gray-400">
-            <Link to="/" className="hover:text-white transition-colors">Inicio</Link>
-            <Link to="/pricing" className="hover:text-white transition-colors">Precios</Link>
-            {user ? (
-              <Link to="/dashboard" className="hover:text-white transition-colors">Dashboard</Link>
-            ) : (
-              <>
-                <Link to="/login" className="hover:text-white transition-colors">Iniciar sesión</Link>
-                <Link to="/register" className="hover:text-white transition-colors">Registrarse</Link>
-              </>
-            )}
-            <span className="w-1.5 h-1.5 rounded-full bg-gray-700 hidden md:inline-block" />
-            <Link to="/privacy-policy" className="hover:text-white transition-colors">Política de privacidad</Link>
-            <Link to="/terms-of-service" className="hover:text-white transition-colors">Términos de servicio</Link>
-          </div>
-
-          <div className="text-xs text-gray-600">
-            © 2025 PropIA. Todos los derechos reservados.
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   )
 }

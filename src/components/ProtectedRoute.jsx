@@ -7,7 +7,9 @@ const BACKEND = (import.meta.env.VITE_API_URL || '').replace(/\/api$/, '').repla
 
 // Rutas accesibles incluso sin un plan activo (necesarias para poder pagar,
 // o para revisar/cambiar el método de pago si el cobro falló).
-const PLAN_EXEMPT_PATHS = ['/pricing', '/settings']
+// Nota: /pricing ya no vive dentro de ProtectedRoute (ahora es pública),
+// así que este listado solo cubre rutas protegidas que deben quedar exentas.
+const PLAN_EXEMPT_PATHS = ['/settings']
 
 export default function ProtectedRoute() {
   const [status, setStatus] = useState('loading')

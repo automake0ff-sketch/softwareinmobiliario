@@ -120,6 +120,7 @@ export default function PricingPage() {
   const [modalMethod, setModalMethod] = useState(null)
   const subscription = useStore(s => s.subscription)
   const fetchSubscription = useStore(s => s.fetchSubscription)
+  const currentUser = useStore(s => s.user)
   const userPlan = subscription?.planId || null
   const planStatus = subscription?.status || null
 
@@ -297,6 +298,14 @@ export default function PricingPage() {
 
                 <button
                   onClick={async () => {
+                    // Antes: un visitante sin cuenta que pulsaba "Contratar"
+                    // disparaba una llamada autenticada que fallaba en
+                    // silencio (toast de error genérico). Ahora lo mandamos
+                    // primero a crear su cuenta con el plan ya preseleccionado.
+                    if (!currentUser) {
+                      window.location.href = `/register?plan=${plan.id}${annual ? '&interval=year' : ''}`
+                      return
+                    }
                     const method = selectedMethods[plan.id] || 'stripe'
                     if ((plan.id === 'starter' || plan.id === 'profesional' || plan.id === 'agencia') && method === 'stripe') {
                       const loadingToast = toast.loading('Redirigiendo a la pasarela de pago...');

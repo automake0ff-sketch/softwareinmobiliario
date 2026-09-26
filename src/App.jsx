@@ -26,6 +26,9 @@ const TemplatesPage = lazy(() => import('./pages/TemplatesPage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const PublicAppointmentPage = lazy(() => import('./pages/PublicAppointmentPage'))
 const LandingPage = lazy(() => import('./pages/LandingPage'))
+const PrivacyPolicyPage = lazy(() => import('./pages/PrivacyPolicyPage'))
+const TermsOfServicePage = lazy(() => import('./pages/TermsOfServicePage'))
+const PublicPricingPage = lazy(() => import('./pages/PublicPricingPage'))
 
 // Premium self-contained loading fallback
 const PageLoader = () => (
@@ -121,6 +124,12 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/onboarding" element={<OnboardingPage />} />
           <Route path="/appointment/:token" element={<PublicAppointmentPage />} />
+          {/* Públicas: deben ser visibles sin sesión (visitantes, prospectos,
+              revisión legal). Antes vivían dentro de ProtectedRoute y por eso
+              cualquier visitante sin cuenta acababa redirigido a /login. */}
+          <Route path="/pricing" element={<PublicPricingPage />} />
+          <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+          <Route path="/terms-of-service" element={<TermsOfServicePage />} />
 
           {/* Protected routes - require auth + completed onboarding */}
           <Route element={<ProtectedRoute />}>
@@ -137,7 +146,6 @@ export default function App() {
               <Route path="/analytics" element={<AnalyticsPage />} />
               <Route path="/team" element={<TeamPage />} />
               <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/pricing" element={<PricingPage />} />
               <Route path="/admin" element={<AdminPage />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Route>

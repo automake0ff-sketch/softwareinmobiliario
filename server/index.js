@@ -627,11 +627,11 @@ async function start() {
 
   app.post('/api/billing/create-checkout', auth, async (req, res) => {
     try {
-      const { planId, interval, paymentMethod, priceId } = req.body;
+      const { planId, interval, paymentMethod, priceId, promoCode } = req.body;
       const agency = await get('SELECT * FROM agencies WHERE id = @aid', { aid: req.user.agency_id });
       if (!agency) return res.status(404).json({ error: 'Agencia no encontrada' });
       if (!PLANS[planId]) return res.status(400).json({ error: 'Plan inválido' });
-      const session = await stripe.createCheckoutSession(agency, planId, interval, paymentMethod, priceId, req.get('origin') || req.get('referer'));
+      const session = await stripe.createCheckoutSession(agency, planId, interval, paymentMethod, priceId, req.get('origin') || req.get('referer'), promoCode);
       res.json(session);
     } catch (e) {
       res.status(500).json({ error: e.message });

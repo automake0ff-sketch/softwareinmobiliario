@@ -164,13 +164,32 @@ export class BillingService {
     }
   }
 
-  async createCheckoutSession(agency, planId, interval, paymentMethod, priceId, requestOrigin) {
+  // Código de demo para cerrar ventas: aplica un precio fijo mensual
+  // reducido en el checkout, sin tocar el precio público de /pricing.
+  // No es un descuento de Stripe (coupon) — sustituye directamente el
+  // importe que se envía a Stripe, así que la suscripción queda
+  // recurrente a ese precio mientras no se cancele. Válido solo para
+  // 'starter' + facturación mensual; se ignora en cualquier otro caso
+  // para no poder abaratar planes superiores desde el cliente.
+  static DEMO_CODES = {
+    DEMO25: { planId: 'starter', amountCents: 2500 },
+  }
+
+  async createCheckoutSession(agency, planId, interval, paymentMethod, priceId, requestOrigin, promoCode) {
     interval = interval || 'month';
     paymentMethod = paymentMethod || 'stripe';
     const plan = PLANS[planId];
     if (!plan) throw new Error(`Invalid plan: ${planId}`);
 
-    const amountCents = interval === 'year' ? plan.priceCentsYearly : plan.priceCentsMonthly;
+    let amountCents = interval === 'year' ? plan.priceCentsYearly : plan.priceCentsMonthly;
+    let demoApplied = false;
+    if (promoCode && interval === 'month') {
+      const demo = BillingService.DEMO_CODES[String(promoCode).toUpperCase()];
+      if (demo && demo.planId === planId) {
+        amountCents = demo.amountCents;
+        demoApplied = true;
+      }
+    }
     const amount = amountCents / 100;
     const periodDays = interval === 'year' ? 365 : 30;
 
@@ -239,6 +258,7 @@ export class BillingService {
         amount,
         amountCents,
         interval,
+        demoApplied,
         message: paymentMethod === 'transfer'
           ? 'Solicitud recibida. Te enviaremos los datos de transferencia por email.'
           : undefined,
@@ -299,7 +319,7 @@ export class BillingService {
         body: params,
       });
       const data = await resp.json();
-      return { ...data, paymentMethod };
+      return { ...data, paymentMethod, demoApplied };
     } catch (e) {
       return { mock: true, sessionId: `mock_cs_${Date.now()}`, paymentMethod, error: e.message };
     }

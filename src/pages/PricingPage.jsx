@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Check, Zap, Building2, Crown, Star,
@@ -8,6 +9,17 @@ import toast from 'react-hot-toast'
 import api from '../lib/api'
 import { useStore } from '../lib/store'
 import PaymentModal from '../components/billing/PaymentModal'
+
+// Código de demo comercial: enlace tipo /pricing?demo=DEMO25 para enseñar en
+// una llamada de ventas un precio especial en el plan Starter. No aparece en
+// la web pública — solo se activa si alguien llega con ese parámetro en la
+// URL (el enlace lo comparte Alejandro directamente con el prospecto). El
+// precio real que se cobra lo valida el backend (server/services/stripe.js,
+// BillingService.DEMO_CODES) — esto es solo la parte visual + el envío del
+// código al checkout.
+const DEMO_CODES = {
+  DEMO25: { planId: 'starter', price: 25 },
+}
 
 const PAYMENT_METHODS = [
   { id: 'stripe', name: 'Tarjeta (Stripe)', desc: 'Pago seguro con tarjeta', icon: CreditCard },
@@ -123,6 +135,13 @@ export default function PricingPage() {
   const currentUser = useStore(s => s.user)
   const userPlan = subscription?.planId || null
   const planStatus = subscription?.status || null
+  const [searchParams] = useSearchParams()
+  const demoCode = (searchParams.get('demo') || '').toUpperCase()
+  const activeDemo = DEMO_CODES[demoCode] || null
+  useEffect(() => {
+    if (activeDemo) setAnnual(false)
+  }, [demoCode])
+
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -205,8 +224,9 @@ export default function PricingPage() {
           {PLANS.map((plan, i) => {
             const Icon = plan.icon
             const isPopular = plan.popular
-            const displayPrice = annual ? plan.priceYearly : plan.price
-            const displayPeriod = annual ? '/año' : '/mes'
+            const isDemoForThisPlan = activeDemo && activeDemo.planId === plan.id
+            const displayPrice = isDemoForThisPlan ? activeDemo.price : (annual ? plan.priceYearly : plan.price)
+            const displayPeriod = isDemoForThisPlan ? '/mes' : (annual ? '/año' : '/mes')
             return (
               <motion.div
                 key={plan.id}
@@ -249,7 +269,14 @@ export default function PricingPage() {
                     </span>
                     <span className="text-sm text-[#64748B] ml-1">{displayPeriod}</span>
                   </div>
-                  {annual ? (
+                  {isDemoForThisPlan ? (
+                    <div className="mt-2 space-y-1">
+                      <p className="text-xs font-semibold text-amber-400 flex items-center gap-1.5">
+                        <span className="inline-block w-2 h-2 bg-amber-400 rounded-full" />
+                        Precio especial de demo (antes {plan.price}€/mes)
+                      </p>
+                    </div>
+                  ) : annual ? (
                     <div className="mt-2 space-y-1">
                       <p className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
                         <span className="inline-block w-2 h-2 bg-emerald-400 rounded-full" />
@@ -323,6 +350,7 @@ export default function PricingPage() {
                           interval: annual ? 'year' : 'month',
                           paymentMethod: 'stripe',
                           priceId,
+                          promoCode: isDemoForThisPlan ? demoCode : undefined,
                         });
                         toast.dismiss(loadingToast);
                         if (data.url) {

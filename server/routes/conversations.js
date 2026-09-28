@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { all, get, run } from '../db/db.js';
 import { auth } from '../middleware/auth.js';
 import { realtime } from '../services/realtime.js';
+import { setAiPaused } from '../services/message-policy.js';
 
 // Auto-run schema migrations for conversations/messages tables.
 // is_read en messages: la tabla canónica (supabase/migrations/00001_schema.sql)
@@ -49,6 +50,7 @@ router.post('/', async (req, res) => {
       'SELECT * FROM conversations WHERE lead_id = @lead_id AND channel = @channel AND agency_id = @agency_id',
       { lead_id, channel, agency_id: agencyId }
     );
+    const leadAiPaused = lead.ai_paused === true;
 
     if (existing) {
       const rows = await all('SELECT * FROM messages WHERE conversation_id = @id ORDER BY created_at ASC', { id: existing.id });
@@ -58,7 +60,7 @@ router.post('/', async (req, res) => {
         lead_id: existing.lead_id,
         channel: existing.channel,
         status: existing.status || 'active',
-        ia_handling: existing.ia_handling !== 0,
+        ia_handling: !leadAiPaused,
         messages,
         created_at: existing.created_at,
         updated_at: existing.updated_at || existing.created_at,
@@ -110,7 +112,7 @@ router.get('/', async (req, res) => {
     const sql = `
       SELECT
         c.*,
-        l.name AS lead_name, l.phone AS lead_phone, l.ia_score AS lead_ia_score, l.pipeline_stage AS lead_pipeline_stage,
+        l.name AS lead_name, l.phone AS lead_phone, l.ia_score AS lead_ia_score, l.pipeline_stage AS lead_pipeline_stage, l.ai_paused AS lead_ai_paused,
         lastmsg.id AS last_msg_id, lastmsg.author AS last_msg_author, lastmsg.content AS last_msg_content,
         lastmsg.message_type AS last_msg_type, lastmsg.is_read AS last_msg_is_read, lastmsg.created_at AS last_msg_created_at,
         COALESCE(unread.count, 0)::int AS unread_count
@@ -135,7 +137,7 @@ router.get('/', async (req, res) => {
       lead_id: c.lead_id,
       channel: c.channel,
       status: c.status,
-      ia_handling: c.ia_handling !== 0,
+      ia_handling: !c.lead_ai_paused,
       updated_at: c.updated_at || c.created_at,
       created_at: c.created_at,
       lead: {
@@ -198,6 +200,13 @@ router.post('/:id/messages', async (req, res) => {
     );
     await run('UPDATE conversations SET updated_at = NOW() WHERE id = @id', { id: conversationId });
 
+    // Una persona responde a mano: la IA deja de contestar en esta conversación
+    // (evita que bot y comercial hablen a la vez). Se reactiva desde el CRM.
+    await run(
+      'UPDATE leads SET ai_paused = true, ai_paused_at = NOW() WHERE id = @id AND agency_id = @aid AND COALESCE(ai_paused, false) = false',
+      { id: conv.lead_id, aid: agencyId }
+    );
+
     const newMsg = mapMessage({ id: msgId, author: 'agent', content, message_type: 'text', is_read: true, created_at: new Date().toISOString() });
 
     // Fetch lead details
@@ -250,6 +259,9 @@ router.post('/:id/messages', async (req, res) => {
 });
 
 // PATCH /api/conversations/:id - Toggle ia_handling
+// Antes solo guardaba el valor en conversations.ia_handling pero el motor de
+// IA nunca lo consultaba: el interruptor no hacía nada. Ahora escribe en
+// leads.ai_paused, que sí consulta message-policy.js antes de responder.
 router.patch('/:id', async (req, res) => {
   try {
     const { ia_handling } = req.body;
@@ -265,6 +277,7 @@ router.patch('/:id', async (req, res) => {
       id: conversationId,
       agency_id: agencyId
     });
+    if (conv.lead_id) await setAiPaused(agencyId, conv.lead_id, !ia_handling);
 
     res.json({ ok: true, id: conversationId, ia_handling: !!ia_handling });
   } catch (error) {

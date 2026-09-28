@@ -190,7 +190,7 @@ export default function LandingPage() {
           </h1>
 
           <p className="text-base sm:text-lg text-gray-400 max-w-3xl mx-auto mb-10 leading-relaxed">
-            12 agentes IA que captan, cualifican y cierran leads por ti. Respuesta automática en menos de 2 minutos, a cualquier hora.
+            Agentes IA que captan, cualifican y cierran leads por ti. Respuesta automática en menos de 2 minutos, a cualquier hora.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">

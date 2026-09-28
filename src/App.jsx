@@ -18,6 +18,7 @@ const AgentsIAPage = lazy(() => import('./pages/AgentsIAPage'))
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
 const PricingPage = lazy(() => import('./pages/PricingPage'))
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'))
+const ControlPage = lazy(() => import('./pages/ControlPage'))
 const TeamPage = lazy(() => import('./pages/TeamPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
@@ -144,6 +145,7 @@ export default function App() {
               <Route path="/automations/templates" element={<TemplatesPage />} />
               <Route path="/agents" element={<AgentsIAPage />} />
               <Route path="/analytics" element={<AnalyticsPage />} />
+              <Route path="/control" element={<ControlPage />} />
               <Route path="/team" element={<TeamPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/admin" element={<AdminPage />} />

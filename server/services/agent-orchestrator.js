@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { askAI, parseAgentReply } from './openrouter.js';
 import { ActionExecutor } from './action-executor.js';
 import { getAgentSystemPrompt, AGENT_META } from '../agents/index.js';
+import { calculateMortgage, formatMortgageMessage, extractPriceFromContext, buildNotificationMessage } from './finance-calc.js';
 
 export class AgentOrchestrator {
   constructor(agencyId) {
@@ -19,13 +20,13 @@ export class AgentOrchestrator {
     const agentType = this.decideAgent(trigger, lead, payload);
     if (!agentType) return [];
 
-    const result = await this.runAgent(agentType, ctx, lead);
+    const result = await this.runAgent(agentType, ctx, lead, payload);
 
     // Si el agente decide escalar → activar siguiente agente
     if (result.data?.escalate && result.data?.escalate_reason) {
       const nextAgent = this.getEscalationAgent(agentType, lead);
       if (nextAgent) {
-        const escalationResult = await this.runAgent(nextAgent, ctx, lead);
+        const escalationResult = await this.runAgent(nextAgent, ctx, lead, payload);
         return [result, escalationResult];
       }
     }
@@ -92,8 +93,38 @@ export class AgentOrchestrator {
     return escalationMap[currentAgent] || null;
   }
 
-  async runAgent(agentType, ctx, lead) {
+  async runAgent(agentType, ctx, lead, payload = {}) {
     const t0 = Date.now();
+
+    // 'financiero' y 'notificador' no necesitan un LLM: uno es aritmética (y un
+    // LLM "calculando" una hipoteca es un riesgo real de dato incorrecto
+    // enviado a un cliente), el otro es un aviso interno con formato fijo.
+    // Saltarse la llamada a la IA aquí también quita coste y latencia.
+    if (agentType === 'financiero' || agentType === 'notificador') {
+      let finalMessage, data = null;
+      if (agentType === 'financiero') {
+        const price = extractPriceFromContext(ctx, payload);
+        const calc = price ? calculateMortgage({ price }) : null;
+        finalMessage = formatMortgageMessage(calc, ctx.lead_name);
+        data = calc ? { mortgage_calc: calc } : null;
+      } else {
+        finalMessage = buildNotificationMessage(ctx, payload);
+      }
+
+      const executor = new ActionExecutor(this.agencyId);
+      const actionsExecuted = await executor.executeFromAgentData(
+        agentType, String(lead.id), ctx, finalMessage, data
+      );
+      const leadsUpdated = await this.updateLeadFromAgentData(String(lead.id), agentType, data || {});
+      await this.logActivity(String(lead.id), agentType, finalMessage, data);
+      await this.updateAgentStats(agentType);
+
+      return {
+        agentType, success: true, message: finalMessage, data,
+        actionsExecuted, leadsUpdated, durationMs: Date.now() - t0, aiSkipped: true,
+      };
+    }
+
     const systemPrompt = await getAgentSystemPrompt(agentType);
     if (!systemPrompt) {
       return {

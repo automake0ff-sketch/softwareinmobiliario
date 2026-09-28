@@ -7,6 +7,10 @@ import { SlackSender } from './slack-sender.js';
 import { CalendarManager } from './calendar-manager.js';
 import { realtime } from './realtime.js';
 import { allowProactiveWhatsApp } from './ai-budget.js';
+import {
+  outboundDecision, queueForApproval, withConsentFooter, markConsentNotice,
+  LEAD_FACING_AGENTS, PROACTIVE_AGENTS,
+} from './message-policy.js';
 
 export class ActionExecutor {
   constructor(agencyId) {
@@ -22,29 +26,63 @@ export class ActionExecutor {
   ) {
     const actions = [];
 
-    // ── SIEMPRE: guardar mensaje en conversación si hay texto ──────
-    if (message && message.length > 5) {
-      await this.saveMessageToConversation(leadId, agentType, message);
-      actions.push('Mensaje guardado en conversación');
+    // ── POLÍTICA DE ENVÍO (baja RGPD, traspaso a humano, aprobación) ─────
+    // Solo aplica a agentes que hablan con el lead. 'notificador' es un aviso
+    // interno para el equipo y no debe llegar nunca al cliente.
+    const leadFacing = LEAD_FACING_AGENTS.includes(agentType);
+    let policy = { decision: 'send', lead: null };
+    if (leadFacing && message && message.length > 5) {
+      policy = await outboundDecision(this.agencyId, leadId);
     }
 
-    // ── ENVIAR POR WHATSAPP si está configurado ────────────────────
-    const shouldSendWA = message && ctx.phone && ctx.wa_token && ctx.wa_phone_id &&
-      ['captador','vendedor','agendador','nurturing','documentador','financiero','notificador'].includes(agentType);
+    if (leadFacing && policy.decision !== 'send') {
+      // No hablamos con el lead: sin WhatsApp ni email; el resto de acciones
+      // internas (tareas, avisos al equipo, actualización del lead) sigue.
+      ctx = { ...ctx, email: null };
+      if (policy.decision === 'hold') {
+        await queueForApproval({
+          agencyId: this.agencyId, leadId, agentType,
+          phone: ctx.phone ? String(ctx.phone) : null,
+          content: message, reason: policy.reason,
+        });
+        actions.push('Borrador pendiente de aprobación');
+      } else {
+        actions.push(policy.reason === 'opt_out'
+          ? 'No enviado: el lead se dio de baja'
+          : 'No enviado: conversación en manos de una persona');
+      }
+    } else {
+      const proactive = PROACTIVE_AGENTS.includes(agentType);
+      const finalMessage = leadFacing && message
+        ? withConsentFooter(message, policy.lead, proactive)
+        : message;
 
-    // Agentes que escriben por iniciativa propia (no responden a un mensaje
-    // entrante): tienen tope mensual por plan para no disparar el coste de Meta.
-    const PROACTIVE_AGENTS = ['nurturing', 'notificador', 'documentador', 'financiero'];
-    const proactiveBlocked = shouldSendWA && PROACTIVE_AGENTS.includes(agentType) &&
-      !(await allowProactiveWhatsApp(this.agencyId));
+      // ── SIEMPRE: guardar mensaje en conversación si hay texto ──────
+      if (finalMessage && finalMessage.length > 5) {
+        await this.saveMessageToConversation(leadId, agentType, finalMessage);
+        actions.push('Mensaje guardado en conversación');
+      }
 
-    if (proactiveBlocked) {
-      actions.push('WhatsApp proactivo no enviado: tope mensual del plan alcanzado');
-    } else if (shouldSendWA) {
-      const wa = new WhatsAppSender(String(ctx.wa_token), String(ctx.wa_phone_id));
-      const sent = await wa.sendText(String(ctx.phone), message);
-      if (sent) actions.push('WhatsApp enviado ✓');
-      else actions.push('WhatsApp: no enviado (verificar credenciales)');
+      // ── ENVIAR POR WHATSAPP si está configurado ────────────────────
+      const shouldSendWA = leadFacing && finalMessage && ctx.phone && ctx.wa_token && ctx.wa_phone_id;
+
+      // Agentes que escriben por iniciativa propia: tope mensual por plan
+      // para no disparar el coste de Meta.
+      const proactiveBlocked = shouldSendWA && proactive &&
+        !(await allowProactiveWhatsApp(this.agencyId));
+
+      if (proactiveBlocked) {
+        actions.push('WhatsApp proactivo no enviado: tope mensual del plan alcanzado');
+      } else if (shouldSendWA) {
+        const wa = new WhatsAppSender(String(ctx.wa_token), String(ctx.wa_phone_id));
+        const sent = await wa.sendText(String(ctx.phone), finalMessage);
+        if (sent) {
+          actions.push('WhatsApp enviado ✓');
+          if (policy.lead && !policy.lead.consent_notice_sent) await markConsentNotice(leadId);
+        } else {
+          actions.push('WhatsApp: no enviado (verificar credenciales)');
+        }
+      }
     }
 
     // ── ACCIONES ESPECÍFICAS POR AGENTE ───────────────────────────

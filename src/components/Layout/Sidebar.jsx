@@ -16,6 +16,7 @@ import {
   Lock,
   Puzzle,
   Shield,
+  ClipboardCheck,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useStore, SECTION_PLAN_REQUIREMENTS, PLAN_ORDER } from '../../lib/store'
@@ -33,6 +34,7 @@ const navigation = [
   { to: '/automations/templates', label: 'Plantillas', icon: Puzzle, minPlan: null },
   { to: '/agents', label: 'Agentes IA', icon: Bot, minPlan: null },
   { to: '/analytics', label: 'Analytics', icon: BarChart3, minPlan: 'profesional' },
+  { to: '/control', label: 'Control y ROI', icon: ClipboardCheck, minPlan: null },
   { to: '/team', label: 'Equipo', icon: Users2, minPlan: 'profesional' },
   { to: '/settings', label: 'Configuración', icon: Settings, minPlan: null },
   { to: '/pricing', label: 'Planes', icon: CreditCard, minPlan: null },

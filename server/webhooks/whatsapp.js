@@ -1,5 +1,8 @@
 import { Router } from 'express';
 import { setAgencyContext } from '../services/ai-budget.js';
+import { detectConsentCommand, setOptOut, OPT_OUT_CONFIRMATION, OPT_IN_CONFIRMATION } from '../services/message-policy.js';
+import { WhatsAppSender } from '../services/whatsapp-sender.js';
+import { assignLead } from '../services/lead-assignment.js';
 import crypto from 'crypto';
 import https from 'https';
 import { v4 as uuidv4 } from 'uuid';
@@ -238,22 +241,27 @@ async function handleIncomingMessage(message, metadata, contacts) {
     const contactName = contacts?.[0]?.profile?.name || from;
     const phoneNumber = from;
 
-    let existingLead = await get('SELECT * FROM leads WHERE phone = @phone', { phone: phoneNumber });
-
     const phoneNumberId = metadata?.phone_number_id;
     const displayPhoneNumber = metadata?.display_phone_number;
     let agency = null;
     if (phoneNumberId) {
-      agency = await get('SELECT id, name FROM agencies WHERE whatsapp_phone_id = @pid', { pid: String(phoneNumberId) });
+      agency = await get('SELECT id, name, whatsapp_token, whatsapp_phone_id FROM agencies WHERE whatsapp_phone_id = @pid', { pid: String(phoneNumberId) });
     }
     if (!agency && displayPhoneNumber) {
-      agency = await get('SELECT id, name FROM agencies WHERE whatsapp_number = @wnum', { wnum: displayPhoneNumber });
+      agency = await get('SELECT id, name, whatsapp_token, whatsapp_phone_id FROM agencies WHERE whatsapp_number = @wnum', { wnum: displayPhoneNumber });
     }
     if (agency) setAgencyContext(agency.id);
     if (!agency) {
       console.log('[WHATSAPP] No agency found for phone_number_id:', phoneNumberId, '/ number:', displayPhoneNumber);
       return;
     }
+
+    // El lead se busca DENTRO de la agencia: antes se buscaba por teléfono en toda
+    // la base, así que el mismo número escribiendo a dos agencias mezclaba datos.
+    let existingLead = await get(
+      'SELECT * FROM leads WHERE phone = @phone AND agency_id = @aid ORDER BY created_at DESC LIMIT 1',
+      { phone: phoneNumber, aid: agency.id }
+    );
 
     let leadId;
     if (existingLead) {
@@ -266,6 +274,7 @@ async function handleIncomingMessage(message, metadata, contacts) {
          VALUES (@id, @agency_id, @name, @phone, @source, @status, NOW(), NOW())`,
         { id: leadId, agency_id: agency.id, name: contactName, phone: phoneNumber, source: 'whatsapp', status: 'nuevo' }
       );
+      try { await assignLead(agency.id, leadId); } catch (e) { console.error('[WHATSAPP] assignLead:', e.message); }
       existingLead = await get('SELECT * FROM leads WHERE id = @id', { id: leadId });
     }
 
@@ -334,6 +343,35 @@ async function handleIncomingMessage(message, metadata, contacts) {
         phone: phoneNumber,
         message: text,
       });
+    }
+
+    // ── Baja / alta (RGPD) ──────────────────────────────────────────────
+    const consentCmd = detectConsentCommand(text);
+    if (consentCmd) {
+      const optOut = consentCmd === 'opt_out';
+      await setOptOut(agency.id, leadId, optOut);
+      await run(
+        `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
+         VALUES (@id, @agency_id, @lead_id, @type, @description, @metadata, NOW())`,
+        {
+          id: uuidv4(), agency_id: agency.id, lead_id: leadId,
+          type: optOut ? 'whatsapp_opt_out' : 'whatsapp_opt_in',
+          description: optOut ? 'El lead se dio de baja de los mensajes automáticos' : 'El lead reactivó los mensajes automáticos',
+          metadata: JSON.stringify({ from: phoneNumber }),
+        }
+      );
+      if (agency.whatsapp_token && agency.whatsapp_phone_id) {
+        const wa = new WhatsAppSender(String(agency.whatsapp_token), String(agency.whatsapp_phone_id));
+        await wa.sendText(phoneNumber, optOut ? OPT_OUT_CONFIRMATION : OPT_IN_CONFIRMATION);
+      }
+      console.log(`[WHATSAPP] ${optOut ? 'BAJA' : 'ALTA'} de ${phoneNumber}`);
+      return;
+    }
+
+    // Sin IA (y sin coste) si el lead se dio de baja o una persona lleva la conversación
+    if (existingLead?.whatsapp_opt_out || existingLead?.ai_paused) {
+      console.log(`[WHATSAPP] Mensaje de ${phoneNumber} sin respuesta automática (${existingLead.ai_paused ? 'traspaso a humano' : 'baja'})`);
+      return;
     }
 
     defaultQueue.add('process_message', {

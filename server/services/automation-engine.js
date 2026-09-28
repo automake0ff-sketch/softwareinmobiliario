@@ -1,4 +1,5 @@
-import { setAgencyContext } from './ai-budget.js'
+import { setAgencyContext, allowProactiveWhatsApp } from './ai-budget.js'
+import { outboundDecision, queueForApproval, withConsentFooter, markConsentNotice } from './message-policy.js'
 import { v4 as uuidv4 } from 'uuid'
 import { all, get, run } from '../db/db.js'
 import { callOpenRouter, parseAgentReply, interpolate } from './openrouter.js'
@@ -79,6 +80,35 @@ async function sendWhatsApp(phone, message, agencyId, ctx = {}) {
     console.error('[WhatsApp] Error:', e.message)
     return false
   }
+}
+
+// Punto único de entrega de mensajes de automatizaciones al lead: respeta la baja
+// (RGPD), el traspaso a humano y el modo "aprobar antes de enviar", añade el
+// aviso de baja y aplica el tope mensual de WhatsApp proactivo del plan.
+async function deliverToLead({ phone, message, agencyId, leadId, ctx = {}, agentType = 'automation', save = true, send = true }) {
+  const out = { sent: false, saved: false, held: false, blocked: false }
+  if (!message || !leadId || !agencyId) return out
+  const policy = await outboundDecision(agencyId, leadId)
+  if (policy.decision === 'block') { out.blocked = true; return out }
+  if (policy.decision === 'hold') {
+    await queueForApproval({ agencyId, leadId, agentType, phone, content: message, reason: policy.reason })
+    out.held = true
+    return out
+  }
+  const text = withConsentFooter(message, policy.lead, true)
+  if (save) {
+    saveMessageToConversation(leadId, agencyId, text, 'ia_agent', agentType)
+    out.saved = true
+  }
+  if (send && phone) {
+    if (!(await allowProactiveWhatsApp(agencyId))) {
+      console.warn(`[AUTOMATION] tope de WhatsApp proactivo alcanzado para agencia ${agencyId}`)
+      return out
+    }
+    out.sent = await sendWhatsApp(phone, text, agencyId, ctx)
+    if (out.sent && !policy.lead?.consent_notice_sent) await markConsentNotice(leadId)
+  }
+  return out
 }
 
 async function saveMessageToConversation(leadId, agencyId, content, senderType, senderId) {
@@ -274,13 +304,13 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
           const autoSend = config.auto_send_whatsapp !== false
           const saveConv = config.save_to_conversation !== false
 
-          if (saveConv && finalMessage) {
-            saveMessageToConversation(leadId, agencyId, finalMessage, 'ia_agent', agentType)
-            savedToDb = true
-          }
-
-          if (autoSend && finalMessage && leadContext.phone) {
-            whatsappSent = await sendWhatsApp(leadContext.phone, finalMessage, agencyId, leadContext)
+          if (finalMessage) {
+            const delivery = await deliverToLead({
+              phone: leadContext.phone, message: finalMessage, agencyId, leadId,
+              ctx: leadContext, agentType, save: saveConv, send: autoSend,
+            })
+            whatsappSent = delivery.sent
+            savedToDb = delivery.saved
           }
 
           await run(
@@ -355,8 +385,10 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
         const msg = fill(config.message || config.message_template || 'Hola {{lead_name}}!')
         let sent = false
         if (!testMode && leadId && agencyId && leadContext.phone) {
-          sent = await sendWhatsApp(leadContext.phone, msg, agencyId)
-          saveMessageToConversation(leadId, agencyId, msg, 'ia_agent', 'automation')
+          const delivery = await deliverToLead({
+            phone: leadContext.phone, message: msg, agencyId, leadId, agentType: 'automation',
+          })
+          sent = delivery.sent
           logActivity(agencyId, leadId, 'message_sent', '💬 WhatsApp enviado',
             msg.substring(0, 300),
             { phone: leadContext.phone, sent }, null)
@@ -590,8 +622,9 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
           const { message: docMsg } = parseAgentReply(msg)
           const finalDocMsg = docMsg || msg
 
-          saveMessageToConversation(leadId, agencyId, finalDocMsg, 'ia_agent', 'documentador')
-          if (leadContext.phone) await sendWhatsApp(leadContext.phone, finalDocMsg, agencyId)
+          await deliverToLead({
+            phone: leadContext.phone, message: finalDocMsg, agencyId, leadId, agentType: 'documentador',
+          })
 
           logActivity(agencyId, leadId, 'document_request', '📋 Documentos solicitados',
             `Se solicitaron: ${docTypes.join(', ')}`,
@@ -634,7 +667,10 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
               model: 'smart', temperature: 0.7, maxTokens: 600,
             })
             const { message: propMsg } = parseAgentReply(msg)
-            if (leadContext.phone) await sendWhatsApp(leadContext.phone, propMsg || msg, agencyId)
+            await deliverToLead({
+              phone: leadContext.phone, message: propMsg || msg, agencyId, leadId,
+              agentType: 'vendedor', save: false,
+            })
           }
         }
         return { success: true, result: 'Propiedades enviadas al lead', aiUsed: true }

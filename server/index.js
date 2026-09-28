@@ -1,4 +1,3 @@
-import { getAIUsageSummary } from './services/ai-budget.js';
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
@@ -10,6 +9,9 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, mkdirSync, readFileSync } from 'fs';
 import crypto from 'crypto';
+import { getAIUsageSummary } from './services/ai-budget.js';
+import { outboundDecision, queueForApproval, withConsentFooter, markConsentNotice } from './services/message-policy.js';
+import { WhatsAppSender } from './services/whatsapp-sender.js';
 import { initDB, all, get, run, saveDB } from './db/db.js';
 import { defaultQueue, JobQueue } from './services/queue.js';
 import { initRealtime, RealtimeService } from './services/realtime.js';
@@ -241,6 +243,8 @@ async function start() {
   app.use('/api/agents', agentsRouter);
   app.use('/api/agency', agencyRouter);
   app.use('/api/conversations', conversationsRouter);
+  app.use('/api/control', (await import('./routes/control.js')).default);
+  app.use('/api/webhooks/portal-leads', webhookLimiter, (await import('./webhooks/portal-leads.js')).default);
   app.use('/api', appointmentsRouter);
   app.use("/webhooks/meta", webhookLimiter, express.raw({ type: "application/json" }), metaWebhook);
   app.use("/webhooks/whatsapp", webhookLimiter, express.raw({ type: "application/json" }), whatsappWebhook);
@@ -345,11 +349,28 @@ async function start() {
           `Lead asignado automáticamente a ${comercial.name}`, { comercialId: comercial.id, source });
       }
 
-      const welcomeMessage = `¡Hola ${lead.name}! 👋 Soy el asistente virtual de ${process.env.AGENCY_NAME || 'InmoTech Realty'}. Hemos recibido tu información y estamos buscando las mejores propiedades para ti. ¿En qué puedo ayudarte?`;
+      // Bienvenida: usa las credenciales de la PROPIA agencia (antes salía por un
+      // cliente global de WhatsApp), respeta baja/traspaso/aprobación y añade el
+      // aviso de baja del primer mensaje.
+      const agencyRow = await get('SELECT name, whatsapp_token, whatsapp_phone_id FROM agencies WHERE id = @id', { id: agencyId });
+      const agencyName = agencyRow?.name || 'la agencia';
+      const welcomeBase = `¡Hola ${lead.name}! 👋 Soy el asistente virtual de ${agencyName}. Hemos recibido tu información y estamos buscando las mejores propiedades para ti. ¿En qué puedo ayudarte?`;
 
-      if (lead.phone) {
+      const policy = await outboundDecision(agencyId, leadId);
+      let welcomeText = null;
+      let welcomeState = 'not_sent';
+      if (policy.decision === 'hold') {
+        await queueForApproval({ agencyId, leadId, agentType: 'captador', phone: lead.phone, content: welcomeBase, reason: policy.reason });
+        welcomeState = 'pending_approval';
+      } else if (policy.decision === 'send' && lead.phone && agencyRow?.whatsapp_token && agencyRow?.whatsapp_phone_id) {
+        const text = withConsentFooter(welcomeBase, policy.lead, false);
         try {
-          await waClient.sendText(lead.phone, welcomeMessage);
+          const sender = new WhatsAppSender(String(agencyRow.whatsapp_token), String(agencyRow.whatsapp_phone_id));
+          if (await sender.sendText(String(lead.phone), text)) {
+            welcomeText = text;
+            welcomeState = 'sent';
+            await markConsentNotice(leadId);
+          }
         } catch (e) {
           console.error('[QUEUE] Welcome send error:', e.message);
         }
@@ -364,14 +385,23 @@ async function start() {
           channel: source === 'meta_ads' ? 'web' : 'whatsapp',
         }
       );
-      await run(
-        `INSERT INTO messages (id, conversation_id, author, content, message_type, is_read, created_at)
-         VALUES (@id, @conversation_id, 'agent', @content, 'text', true, NOW())`,
-        { id: uuidv4(), conversation_id: convId, content: welcomeMessage }
-      );
+      if (job.data.initialMessage) {
+        await run(
+          `INSERT INTO messages (id, conversation_id, author, content, message_type, is_read, created_at)
+           VALUES (@id, @conversation_id, 'lead', @content, 'text', false, NOW())`,
+          { id: uuidv4(), conversation_id: convId, content: String(job.data.initialMessage).slice(0, 1000) }
+        );
+      }
+      if (welcomeText) {
+        await run(
+          `INSERT INTO messages (id, conversation_id, author, content, message_type, is_read, created_at)
+           VALUES (@id, @conversation_id, 'agent', @content, 'text', true, NOW())`,
+          { id: uuidv4(), conversation_id: convId, content: welcomeText }
+        );
+      }
 
       logActivity(agencyId, leadId, null, 'ia_welcome',
-        `Mensaje de bienvenida enviado a ${lead.name}`, { source, utm });
+        `Bienvenida a ${lead.name}: ${welcomeState === 'sent' ? 'enviada' : welcomeState === 'pending_approval' ? 'pendiente de aprobación' : 'no enviada'}`, { source, utm, welcomeState });
 
       if (realtime) {
         realtime.broadcastActivity({
@@ -1087,6 +1117,48 @@ async function runMigration() {
     { type: 'column', table: 'agencies', column: 'bot_tone', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS bot_tone TEXT DEFAULT 'profesional'` },
     { type: 'column', table: 'agencies', column: 'working_hours', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS working_hours TEXT DEFAULT '{"start":"09:00","end":"20:00","days":[1,2,3,4,5]}'` },
     { type: 'column', table: 'agencies', column: 'webhook_custom', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS webhook_custom TEXT` },
+    // ── Control de mensajes, aprobación, RGPD, portales ─────────────────
+    { type: 'column', table: 'agencies', column: 'ai_mode', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS ai_mode TEXT DEFAULT 'auto'` },
+    { type: 'column', table: 'agencies', column: 'portal_inbox_token', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS portal_inbox_token TEXT` },
+    { type: 'column', table: 'agencies', column: 'auto_assign', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS auto_assign BOOLEAN DEFAULT true` },
+    { type: 'column', table: 'leads', column: 'portal', sql: `ALTER TABLE leads ADD COLUMN IF NOT EXISTS portal TEXT` },
+    { type: 'column', table: 'leads', column: 'whatsapp_opt_out', sql: `ALTER TABLE leads ADD COLUMN IF NOT EXISTS whatsapp_opt_out BOOLEAN DEFAULT false` },
+    { type: 'column', table: 'leads', column: 'opt_out_at', sql: `ALTER TABLE leads ADD COLUMN IF NOT EXISTS opt_out_at TIMESTAMPTZ` },
+    { type: 'column', table: 'leads', column: 'ai_paused', sql: `ALTER TABLE leads ADD COLUMN IF NOT EXISTS ai_paused BOOLEAN DEFAULT false` },
+    { type: 'column', table: 'leads', column: 'ai_paused_at', sql: `ALTER TABLE leads ADD COLUMN IF NOT EXISTS ai_paused_at TIMESTAMPTZ` },
+    { type: 'column', table: 'leads', column: 'consent_notice_sent', sql: `ALTER TABLE leads ADD COLUMN IF NOT EXISTS consent_notice_sent BOOLEAN DEFAULT false` },
+    { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS pending_messages (
+      id UUID PRIMARY KEY,
+      agency_id UUID NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+      agent_type TEXT,
+      phone TEXT,
+      content TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      reason TEXT,
+      decided_by UUID,
+      decided_at TIMESTAMPTZ,
+      sent_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_pending_messages ON pending_messages(agency_id, status, created_at)` },
+    { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS portal_inbound_log (
+      id UUID PRIMARY KEY,
+      agency_id UUID NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      portal TEXT,
+      from_email TEXT,
+      subject TEXT,
+      parsed TEXT,
+      status TEXT NOT NULL,
+      lead_id UUID,
+      raw_excerpt TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_portal_inbound_log ON portal_inbound_log(agency_id, created_at)` },
+    // Sin RLS estas tablas quedarían legibles con la clave anónima de Supabase.
+    // Se activa sin políticas: el backend (rol propietario) las sigue usando.
+    { type: 'sql', sql: `ALTER TABLE pending_messages ENABLE ROW LEVEL SECURITY` },
+    { type: 'sql', sql: `ALTER TABLE portal_inbound_log ENABLE ROW LEVEL SECURITY` },
     { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS automation_templates (
       id UUID PRIMARY KEY,
       name TEXT NOT NULL,

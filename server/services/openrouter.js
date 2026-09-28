@@ -1,9 +1,13 @@
+import { resolveModel, recordUsage } from './ai-budget.js'
+
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
 
 const MODELS = {
   fast: 'openai/gpt-4o-mini',
   smart: 'openai/gpt-4o',
-  reason: 'anthropic/claude-opus-4-5',
+  // Antes: claude-opus-4-5 (el más caro) para tasador/analista. Ahora GPT-4o por
+  // defecto; se puede subir de nuevo con AI_MODEL_REASON sin tocar código.
+  reason: process.env.AI_MODEL_REASON || 'openai/gpt-4o',
   cheap: 'google/gemini-flash-1.5',
 }
 
@@ -21,6 +25,8 @@ export async function callOpenRouter({
     throw new Error('OPENROUTER_API_KEY no configurada. Añádela al archivo .env')
   }
 
+  const resolved = await resolveModel(model)
+  model = resolved.model
   const modelName = MODELS[model] || model
 
   const body = {
@@ -47,21 +53,18 @@ export async function callOpenRouter({
 
   if (!res.ok) {
     const err = await res.text()
-    if (res.status === 402 && !modelName.endsWith(':free')) {
-      console.warn(`[OpenRouter] Insufficient credits for model ${modelName}. Retrying with free fallback model (openrouter/free)...`)
-      return callOpenRouter({
-        messages,
-        model: 'openrouter/free',
-        temperature,
-        maxTokens,
-        responseFormat,
-        stream,
-      })
+    // Sin créditos: degradamos al modelo barato de pago. NUNCA a modelos
+    // gratuitos (peor calidad y las conversaciones de clientes podrían usarse
+    // para entrenar; incompatible con lo prometido en la política de privacidad).
+    if (res.status === 402 && modelName !== MODELS.fast) {
+      console.warn(`[OpenRouter] Créditos insuficientes para ${modelName}. Reintentando con ${MODELS.fast}.`)
+      return callOpenRouter({ messages, model: 'fast', temperature, maxTokens, responseFormat, stream })
     }
     throw new Error(`OpenRouter error ${res.status}: ${err}`)
   }
 
   const data = await res.json()
+  await recordUsage(modelName, data.usage)
   return data.choices?.[0]?.message?.content ?? ''
 }
 
@@ -74,6 +77,8 @@ export async function* streamOpenRouter({
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) throw new Error('OPENROUTER_API_KEY no configurada')
 
+  const resolved = await resolveModel(model)
+  model = resolved.model
   const modelName = MODELS[model] || model
 
   const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
@@ -90,18 +95,14 @@ export async function* streamOpenRouter({
       temperature,
       max_tokens: maxTokens,
       stream: true,
+      stream_options: { include_usage: true },
     }),
   })
 
   if (!res.ok) {
-    if (res.status === 402 && !modelName.endsWith(':free')) {
-      console.warn(`[OpenRouter] Insufficient credits for stream model ${modelName}. Retrying with free fallback model (openrouter/free)...`)
-      yield* streamOpenRouter({
-        messages,
-        model: 'openrouter/free',
-        temperature,
-        maxTokens,
-      })
+    if (res.status === 402 && modelName !== MODELS.fast) {
+      console.warn(`[OpenRouter] Créditos insuficientes (stream) para ${modelName}. Reintentando con ${MODELS.fast}.`)
+      yield* streamOpenRouter({ messages, model: 'fast', temperature, maxTokens })
       return
     }
     throw new Error(`OpenRouter stream error ${res.status}`)
@@ -127,6 +128,7 @@ export async function* streamOpenRouter({
       if (json === '[DONE]') return
       try {
         const parsed = JSON.parse(json)
+        if (parsed.usage) await recordUsage(modelName, parsed.usage)
         const delta = parsed.choices?.[0]?.delta?.content
         if (delta) yield delta
       } catch { /* skip malformed chunks */ }

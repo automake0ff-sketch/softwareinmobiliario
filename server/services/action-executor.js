@@ -6,6 +6,7 @@ import { TelegramSender } from './telegram-sender.js';
 import { SlackSender } from './slack-sender.js';
 import { CalendarManager } from './calendar-manager.js';
 import { realtime } from './realtime.js';
+import { allowProactiveWhatsApp } from './ai-budget.js';
 
 export class ActionExecutor {
   constructor(agencyId) {
@@ -31,7 +32,15 @@ export class ActionExecutor {
     const shouldSendWA = message && ctx.phone && ctx.wa_token && ctx.wa_phone_id &&
       ['captador','vendedor','agendador','nurturing','documentador','financiero','notificador'].includes(agentType);
 
-    if (shouldSendWA) {
+    // Agentes que escriben por iniciativa propia (no responden a un mensaje
+    // entrante): tienen tope mensual por plan para no disparar el coste de Meta.
+    const PROACTIVE_AGENTS = ['nurturing', 'notificador', 'documentador', 'financiero'];
+    const proactiveBlocked = shouldSendWA && PROACTIVE_AGENTS.includes(agentType) &&
+      !(await allowProactiveWhatsApp(this.agencyId));
+
+    if (proactiveBlocked) {
+      actions.push('WhatsApp proactivo no enviado: tope mensual del plan alcanzado');
+    } else if (shouldSendWA) {
       const wa = new WhatsAppSender(String(ctx.wa_token), String(ctx.wa_phone_id));
       const sent = await wa.sendText(String(ctx.phone), message);
       if (sent) actions.push('WhatsApp enviado ✓');

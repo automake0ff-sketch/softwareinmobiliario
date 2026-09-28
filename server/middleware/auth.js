@@ -1,5 +1,6 @@
 import { get, run } from '../db/db.js';
 import jwt from 'jsonwebtoken';
+import { setAgencyContext } from '../services/ai-budget.js';
 
 const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
 // Compatibilidad temporal: JWTs propios emitidos antes de la migración a Supabase Auth
@@ -108,6 +109,7 @@ export async function auth(req, res, next) {
     }
 
     req.user = buildReqUser(user);
+    setAgencyContext(req.user.agency_id); // imputa el gasto de IA a esta agencia
     next();
   } catch (err) {
     console.error('[AUTH] Error verificando/aprovisionando usuario:', err.message);

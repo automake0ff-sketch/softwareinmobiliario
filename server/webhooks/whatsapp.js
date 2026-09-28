@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { setAgencyContext } from '../services/ai-budget.js';
 import crypto from 'crypto';
 import https from 'https';
 import { v4 as uuidv4 } from 'uuid';
@@ -248,6 +249,7 @@ async function handleIncomingMessage(message, metadata, contacts) {
     if (!agency && displayPhoneNumber) {
       agency = await get('SELECT id, name FROM agencies WHERE whatsapp_number = @wnum', { wnum: displayPhoneNumber });
     }
+    if (agency) setAgencyContext(agency.id);
     if (!agency) {
       console.log('[WHATSAPP] No agency found for phone_number_id:', phoneNumberId, '/ number:', displayPhoneNumber);
       return;

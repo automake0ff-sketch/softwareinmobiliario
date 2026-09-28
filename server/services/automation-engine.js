@@ -1,3 +1,4 @@
+import { setAgencyContext } from './ai-budget.js'
 import { v4 as uuidv4 } from 'uuid'
 import { all, get, run } from '../db/db.js'
 import { callOpenRouter, parseAgentReply, interpolate } from './openrouter.js'
@@ -213,6 +214,7 @@ export async function executeAction(action, leadContext, options = {}) {
   const { type, config = {} } = action
   const { testMode = false } = options
   const agencyId = options.agencyId || leadContext.agency_id || leadContext.agencyId
+  setAgencyContext(agencyId) // imputa el gasto de IA de esta ejecución a la agencia
   const leadId = leadContext.lead_id
   const fill = (t) => interpolate(t || '', leadContext)
 

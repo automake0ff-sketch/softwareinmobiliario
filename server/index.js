@@ -1,3 +1,4 @@
+import { getAIUsageSummary } from './services/ai-budget.js';
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
@@ -624,6 +625,15 @@ async function start() {
       res.status(500).json({ error: 'Error al obtener estado del plan' })
     }
   })
+
+  // Consumo de IA y WhatsApp proactivo del mes (para el panel y para vigilar costes)
+  app.get('/api/billing/ai-usage', auth, async (req, res) => {
+    try {
+      res.json(await getAIUsageSummary(req.user.agency_id));
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
 
   app.post('/api/billing/create-checkout', auth, async (req, res) => {
     try {

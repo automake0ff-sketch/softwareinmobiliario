@@ -5,6 +5,7 @@ import { all, get, run } from '../db/db.js';
 import { defaultQueue } from '../services/queue.js';
 import { realtime } from '../services/realtime.js';
 import { PLANS } from '../services/plans.js';
+import { setAgencyContext } from '../services/ai-budget.js';
 
 async function checkAgencyMetaAds(agencyId) {
   const agency = await get('SELECT plan, plan_status FROM agencies WHERE id = @aid', { aid: agencyId })
@@ -98,6 +99,7 @@ async function processMetaLead(leadData, pageId) {
     if (pageId) {
       agency = await get('SELECT id, name FROM agencies WHERE meta_page_id = @pid', { pid: String(pageId) });
     }
+    if (agency) setAgencyContext(agency.id);
     if (!agency) {
       console.log(`[META] No agency found for page_id: ${pageId}. Lead discarded.`);
       return;

@@ -27,14 +27,12 @@ const AGENTS_DATA = [
     color: 'from-emerald-500 to-emerald-600', lightColor: 'bg-emerald-50 text-emerald-600',
     description: 'Escanea portales inmobiliarios y redes sociales para captar leads calificados automáticamente.',
     fullDescription: 'El Captador IA monitorea 24/7 los principales portales inmobiliarios, redes sociales y fuentes de tráfico para identificar y capturar leads potenciales. Utiliza NLP para calificar el interés y la capacidad de compra antes de ingresarlos al CRM.',
-    stats: { leadsMonth: 342, avgResponse: '1.2s', sources: 6, conversionRate: 23, dailyHistory: [65, 72, 58, 84, 71, 48, 63] },
   },
   {
     id: 'vendedor', name: 'Vendedor IA', title: 'Conversión y ventas', icon: 'Handshake',
     color: 'from-blue-500 to-blue-600', lightColor: 'bg-blue-50 text-blue-600',
     description: 'Automatiza el proceso de ventas y califica leads en tiempo real.',
     fullDescription: 'El Vendedor IA gestiona todo el ciclo de ventas digital: desde el primer contacto hasta el cierre. Realiza llamadas automatizadas, envía seguimientos personalizados y califica leads por probabilidad de compra usando modelos predictivos.',
-    stats: { leadsMonth: 187, avgResponse: '3.7s', sources: 4, conversionRate: 31, dailyHistory: [42, 38, 51, 44, 39, 41, 37] },
   },
   {
     id: 'coordinador', name: 'Coordinador IA', title: 'Orquestación del sistema', icon: 'Brain',
@@ -42,28 +40,24 @@ const AGENTS_DATA = [
     isBrain: true,
     description: 'Cerebro del sistema. Orquesta y optimiza el flujo entre todos los agentes.',
     fullDescription: 'El Coordinador IA es el cerebro del ecosistema. Supervisa, orquesta y optimiza el trabajo de todos los demás agentes. Asigna tareas según carga de trabajo, detecta cuellos de botella y rebalancea el flujo en tiempo real para máxima eficiencia.',
-    stats: { leadsMonth: 421, avgResponse: '0.4s', sources: 12, conversionRate: 41, dailyHistory: [82, 79, 88, 85, 80, 83, 78] },
   },
   {
     id: 'copywriter', name: 'Copywriter IA', title: 'Redacción y contenido', icon: 'PenLine',
     color: 'from-amber-500 to-amber-600', lightColor: 'bg-amber-50 text-amber-600',
     description: 'Genera contenido persuasivo y descripciones de propiedades.',
     fullDescription: 'El Copywriter IA redacta descripciones de propiedades optimizadas para conversión, mensajes de seguimiento personalizados, respuestas automáticas y contenido para redes sociales.',
-    stats: { leadsMonth: 89, avgResponse: '0.8s', sources: 3, conversionRate: 28, dailyHistory: [31, 28, 35, 42, 38, 34, 41] },
   },
   {
     id: 'tasador', name: 'Tasador IA', title: 'Valoración de propiedades', icon: 'Calculator',
     color: 'from-cyan-500 to-cyan-600', lightColor: 'bg-cyan-50 text-cyan-600',
     description: 'Calcula valoraciones precisas de propiedades en segundos.',
     fullDescription: 'El Tasador IA utiliza modelos de machine learning entrenados con miles de transacciones para calcular valoraciones precisas en segundos. Considera ubicación, metros, estado, comparables de mercado y tendencias del barrio.',
-    stats: { leadsMonth: 156, avgResponse: '2.1s', sources: 5, conversionRate: 19, dailyHistory: [22, 18, 25, 20, 15, 21, 19] },
   },
   {
     id: 'analista', name: 'Analista IA', title: 'Inteligencia de negocio', icon: 'BarChart3',
     color: 'from-rose-500 to-rose-600', lightColor: 'bg-rose-50 text-rose-600',
     description: 'Analiza datos y genera insights accionables para la agencia.',
     fullDescription: 'El Analista IA procesa todos los datos del CRM para generar informes inteligentes, detectar tendencias del mercado, predecir estacionalidad y recomendar acciones estratégicas.',
-    stats: { leadsMonth: 203, avgResponse: '1.5s', sources: 8, conversionRate: 34, dailyHistory: [18, 22, 16, 28, 21, 23, 20] },
   },
 ]
 
@@ -801,8 +795,6 @@ function ActivityFeed({ activities, feedRef, tick }) {
 
 function AgentModal({ agent, onClose, dbAgent }) {
   const AgentIcon = AGENT_ICONS[agent.icon] || Bot
-  const s = agent.stats || {}
-  const maxVal = Math.max(...(s.dailyHistory || [1]))
 
   return (
     <motion.div
@@ -849,45 +841,15 @@ function AgentModal({ agent, onClose, dbAgent }) {
 
           <p className="text-sm text-white/60 leading-relaxed mb-5">{agent.fullDescription}</p>
 
-          <div className="grid grid-cols-4 gap-2 mb-5">
-            <ModalStat label="Leads/mes" value={s.leadsMonth} />
-            <ModalStat label="Respuesta" value={s.avgResponse} />
-            <ModalStat label="Fuentes" value={s.sources} />
-            <ModalStat label="Conversión" value={`${s.conversionRate}%`} />
-          </div>
-
-          <div className="mb-5">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-white">Rendimiento diario (7 días)</span>
-              <span className="text-[10px] text-white/40">hoy: {s.dailyHistory?.[s.dailyHistory.length - 1] ?? 0}</span>
-            </div>
-            <div className="flex items-end gap-1.5 h-24">
-              {(s.dailyHistory || []).map((val, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ height: 0 }}
-                  animate={{ height: `${(val / maxVal) * 100}%` }}
-                  transition={{ delay: i * 0.06, type: 'spring', stiffness: 200, damping: 20 }}
-                  className={clsx('flex-1 rounded-t-sm', `bg-gradient-to-t ${agent.color}`, i === s.dailyHistory.length - 1 ? 'opacity-100' : 'opacity-60')}
-                />
-              ))}
-            </div>
-            <div className="flex items-center justify-between mt-1.5">
-              {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((d, i) => (
-                <span key={d} className="text-[9px] text-white/40 flex-1 text-center">{d}</span>
-              ))}
-            </div>
-          </div>
-
-          {dbAgent && (
-            <div className="mb-4 p-3 bg-black/20 rounded-lg">
+          {dbAgent ? (
+            <div className="mb-5 p-3 bg-black/20 rounded-lg">
               <div className="flex items-center gap-2 text-[11px] text-white/40 mb-2">
                 <Database size={11} />
                 <span>Estado: {dbAgent.is_active ? 'Activo' : 'Inactivo'}</span>
                 <span className="mx-1">·</span>
                 <span>Ejecuciones: {dbAgent.metrics?.executions || 0}</span>
               </div>
-              {dbAgent.stats && (
+              {dbAgent.stats ? (
                 <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-white/5 text-center">
                   <div>
                     <div className="text-[10px] text-white/40 uppercase font-medium">Leads Hoy</div>
@@ -904,21 +866,20 @@ function AgentModal({ agent, onClose, dbAgent }) {
                     </div>
                   </div>
                 </div>
+              ) : (
+                <p className="text-[11px] text-white/40 pt-2 mt-2 border-t border-white/5 text-center">
+                  Todavía sin actividad registrada para este agente.
+                </p>
               )}
             </div>
+          ) : (
+            <p className="text-[11px] text-white/40 mb-5 p-3 bg-black/20 rounded-lg text-center">
+              Sin datos todavía — este agente aún no se ha ejecutado.
+            </p>
           )}
         </div>
       </motion.div>
     </motion.div>
-  )
-}
-
-function ModalStat({ label, value }) {
-  return (
-    <div className="bg-white/[0.03] rounded-lg p-2.5 text-center">
-      <div className="text-xs font-bold text-white">{value}</div>
-      <div className="text-[9px] text-white/40 uppercase tracking-wider mt-0.5">{label}</div>
-    </div>
   )
 }
 

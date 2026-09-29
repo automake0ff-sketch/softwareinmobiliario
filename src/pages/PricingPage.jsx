@@ -11,14 +11,17 @@ import { useStore } from '../lib/store'
 import PaymentModal from '../components/billing/PaymentModal'
 
 // Código de demo comercial: enlace tipo /pricing?demo=DEMO25 para enseñar en
-// una llamada de ventas un precio especial en el plan Starter. No aparece en
-// la web pública — solo se activa si alguien llega con ese parámetro en la
-// URL (el enlace lo comparte Alejandro directamente con el prospecto). El
-// precio real que se cobra lo valida el backend (server/services/stripe.js,
-// BillingService.DEMO_CODES) — esto es solo la parte visual + el envío del
-// código al checkout.
+// una llamada de ventas precios especiales en los tres planes a la vez. No
+// aparece en la web pública — solo se activa si alguien llega con ese
+// parámetro en la URL (el enlace lo comparte Alejandro directamente con el
+// prospecto). El precio real que se cobra lo valida el backend
+// (server/services/stripe.js, BillingService.DEMO_CODES) — esto es solo la
+// parte visual + el envío del código al checkout.
+// ⚠️ Los precios de profesional/agencia son una propuesta mía, proporcional
+// al descuento que ya definiste para Starter (25€ sobre 79€) — ajústalos si
+// quieres otra cifra; solo hay que cambiarlos aquí y en ai-budget/stripe.js.
 const DEMO_CODES = {
-  DEMO25: { planId: 'starter', price: 25 },
+  DEMO25: { starter: 25, profesional: 65, agencia: 159 },
 }
 
 const PAYMENT_METHODS = [
@@ -44,6 +47,7 @@ const PLANS = [
       '3 Agentes IA',
       '10 automatizaciones',
       'WhatsApp Business',
+      'Entrada de leads por email (Idealista, Fotocasa...)',
       'CRM + Pipeline Kanban',
       'Soporte por email',
     ],
@@ -61,6 +65,7 @@ const PLANS = [
       '8 Agentes IA',
       'Automatizaciones ilimitadas',
       'WhatsApp + Meta Ads',
+      'Entrada de leads por email (Idealista, Fotocasa...)',
       'Analytics avanzado',
       'API básica',
       'Soporte prioritario',
@@ -78,7 +83,7 @@ const PLANS = [
       'Leads ilimitados',
       '12 Agentes IA',
       'Automatizaciones ilimitadas',
-      'WhatsApp + Meta Ads + Idealista',
+      'WhatsApp + Meta Ads + entrada de leads por email de portales',
       'White-label completo',
       'Dominio personalizado',
       'API completa',
@@ -137,9 +142,9 @@ export default function PricingPage() {
   const planStatus = subscription?.status || null
   const [searchParams] = useSearchParams()
   const demoCode = (searchParams.get('demo') || '').toUpperCase()
-  const activeDemo = DEMO_CODES[demoCode] || null
+  const activeDemoCode = DEMO_CODES[demoCode] || null
   useEffect(() => {
-    if (activeDemo) setAnnual(false)
+    if (activeDemoCode) setAnnual(false)
   }, [demoCode])
 
 
@@ -224,8 +229,9 @@ export default function PricingPage() {
           {PLANS.map((plan, i) => {
             const Icon = plan.icon
             const isPopular = plan.popular
-            const isDemoForThisPlan = activeDemo && activeDemo.planId === plan.id
-            const displayPrice = isDemoForThisPlan ? activeDemo.price : (annual ? plan.priceYearly : plan.price)
+            const isDemoForThisPlan = activeDemoCode && activeDemoCode[plan.id] !== undefined
+            const demoPrice = isDemoForThisPlan ? activeDemoCode[plan.id] : null
+            const displayPrice = isDemoForThisPlan ? demoPrice : (annual ? plan.priceYearly : plan.price)
             const displayPeriod = isDemoForThisPlan ? '/mes' : (annual ? '/año' : '/mes')
             return (
               <motion.div
@@ -263,7 +269,10 @@ export default function PricingPage() {
                 <p className="text-sm text-[#94A3B8] mt-1 mb-4">{plan.desc}</p>
 
                 <div className="mb-5">
-                  <div className="flex items-baseline gap-1">
+                  <div className="flex items-baseline gap-2">
+                    {isDemoForThisPlan && (
+                      <span className="text-xl text-[#64748B] line-through decoration-2">{plan.price}€</span>
+                    )}
                     <span className="text-4xl font-bold text-[#F1F5F9] tracking-tight">
                       {displayPrice}<span className="text-xl text-[#94A3B8] font-normal">€</span>
                     </span>
@@ -273,7 +282,11 @@ export default function PricingPage() {
                     <div className="mt-2 space-y-1">
                       <p className="text-xs font-semibold text-amber-400 flex items-center gap-1.5">
                         <span className="inline-block w-2 h-2 bg-amber-400 rounded-full" />
-                        Precio especial de demo (antes {plan.price}€/mes)
+                        Precio especial de demo — precio normal {plan.price}€/mes
+                      </p>
+                      <p className="text-[11px] text-[#64748B] leading-snug">
+                        Válido para cuentas nuevas contratadas a través de este enlace. Se factura mes a mes a {demoPrice}€
+                        mientras la suscripción siga activa; sin permanencia, cancela cuando quieras.
                       </p>
                     </div>
                   ) : annual ? (
@@ -401,11 +414,6 @@ export default function PricingPage() {
 
 
         <div className="mt-10 p-6 bg-[#13131A] border border-[#1E1E2E] rounded-2xl flex items-center justify-center flex-wrap gap-6">
-          <div className="flex items-center gap-2 text-sm text-[#94A3B8]">
-            <Users size={16} className="text-indigo-400" />
-            <span><strong className="text-[#F1F5F9]">+500</strong> agencias activas</span>
-          </div>
-          <div className="w-px h-6 bg-[#1E1E2E]" />
           <div className="flex items-center gap-2 text-sm text-[#94A3B8]">
             <Shield size={16} className="text-indigo-400" />
             <span><strong className="text-[#F1F5F9]">Sin permanencia</strong></span>

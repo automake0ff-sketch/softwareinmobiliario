@@ -44,7 +44,15 @@ const SECTIONS = [
   },
   {
     title: '7. Cancelación y exportación de datos',
-    body: <p>El Cliente puede cancelar su suscripción en cualquier momento desde el panel de configuración, sin permanencia. Tras la cancelación, el Cliente puede solicitar la exportación completa de sus leads, conversaciones y propiedades dentro de los [PENDIENTE] días siguientes a la baja, transcurridos los cuales los datos podrán ser eliminados conforme a la política de privacidad.</p>,
+    body: (
+      <>
+        <p>El Cliente puede cancelar su suscripción en cualquier momento desde el panel de configuración, sin permanencia.</p>
+        <p className="mt-2">Tras la cancelación, el Cliente dispone de 30 días para solicitar la exportación completa de sus leads, conversaciones y propiedades (descarga en formato JSON desde el panel, en Control y ROI, o escribiendo a automake0ff@gmail.com). Pasado ese plazo, los datos se eliminan de forma permanente, salvo lo que la ley obligue a conservar (facturación).</p>
+        <p className="mt-2 text-amber-300/80 text-xs">
+          ⚠️ El plazo de 30 días es una propuesta mía razonable, no un dato ya confirmado por la empresa — cámbialo si prefieres otro número.
+        </p>
+      </>
+    ),
   },
   {
     title: '8. Propiedad intelectual',

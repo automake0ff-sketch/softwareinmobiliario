@@ -168,11 +168,15 @@ export class BillingService {
   // reducido en el checkout, sin tocar el precio público de /pricing.
   // No es un descuento de Stripe (coupon) — sustituye directamente el
   // importe que se envía a Stripe, así que la suscripción queda
-  // recurrente a ese precio mientras no se cancele. Válido solo para
-  // 'starter' + facturación mensual; se ignora en cualquier otro caso
-  // para no poder abaratar planes superiores desde el cliente.
+  // recurrente a ese precio mientras no se cancele. Solo válido con
+  // facturación mensual; ignorado en anual.
+  // ⚠️ Los importes de profesional/agencia son una propuesta mía
+  // (proporcional al descuento que ya definiste para Starter) — ajústalos
+  // si quieres otra cifra; cambia también los mismos valores en
+  // src/pages/PricingPage.jsx (DEMO_CODES) para que la web y el cobro
+  // real coincidan.
   static DEMO_CODES = {
-    DEMO25: { planId: 'starter', amountCents: 2500 },
+    DEMO25: { starter: 2500, profesional: 6500, agencia: 15900 },
   }
 
   async createCheckoutSession(agency, planId, interval, paymentMethod, priceId, requestOrigin, promoCode) {
@@ -185,8 +189,9 @@ export class BillingService {
     let demoApplied = false;
     if (promoCode && interval === 'month') {
       const demo = BillingService.DEMO_CODES[String(promoCode).toUpperCase()];
-      if (demo && demo.planId === planId) {
-        amountCents = demo.amountCents;
+      const demoAmountCents = demo?.[planId];
+      if (demoAmountCents !== undefined) {
+        amountCents = demoAmountCents;
         demoApplied = true;
       }
     }

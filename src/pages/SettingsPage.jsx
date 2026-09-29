@@ -612,12 +612,12 @@ export default function SettingsPage() {
         ],
       },
       {
-        id: 'idealista', title: 'Idealista', icon: '🏠',
-        description: 'Configura la API de Idealista para importar propiedades automáticamente',
+        id: 'idealista', title: 'Idealista (API oficial) — próximamente', icon: '🏠',
+        description: 'Esta integración vía API todavía no está activa: los datos que pongas aquí se guardan pero no se usan. Para recibir leads de Idealista/Fotocasa hoy mismo, usa la URL de entrada de portales en Control y ROI → Ajustes de automatización (funciona ya, en cualquier plan).',
         fields: [
-          { key: 'idealista_api_key', label: 'API Key / Client ID', type: 'password', placeholder: 'Tu API key de Idealista' },
-          { key: 'idealista_api_secret', label: 'API Secret', type: 'password', placeholder: 'Tu API secret de Idealista' },
-          { key: 'idealista_office_id', label: 'ID de agencia/oficina', type: 'text', placeholder: 'Opcional' },
+          { key: 'idealista_api_key', label: 'API Key / Client ID (no activo aún)', type: 'password', placeholder: 'Tu API key de Idealista' },
+          { key: 'idealista_api_secret', label: 'API Secret (no activo aún)', type: 'password', placeholder: 'Tu API secret de Idealista' },
+          { key: 'idealista_office_id', label: 'ID de agencia/oficina (no activo aún)', type: 'text', placeholder: 'Opcional' },
         ],
       },
     ]

@@ -256,4 +256,45 @@ router.get('/roi', async (req, res) => {
   }
 })
 
+// ── Exportación de datos (RGPD, y por si el cliente cancela) ────────────────
+// Todo lo que la agencia tiene en PropIA, en un único JSON descargable:
+// leads, conversaciones+mensajes, propiedades. Pensado para portabilidad
+// (Art. 20 RGPD), no como backup periódico.
+router.get('/export', requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const aid = req.user.agency_id
+    const agency = await get('SELECT name FROM agencies WHERE id = @id', { id: aid })
+
+    const [leads, properties, conversations, messages, activities] = await Promise.all([
+      all('SELECT * FROM leads WHERE agency_id = @aid ORDER BY created_at', { aid }),
+      all('SELECT * FROM properties WHERE agency_id = @aid ORDER BY created_at', { aid }),
+      all('SELECT * FROM conversations WHERE agency_id = @aid ORDER BY created_at', { aid }),
+      all(
+        `SELECT m.* FROM messages m
+         JOIN conversations c ON c.id = m.conversation_id
+         WHERE c.agency_id = @aid ORDER BY m.created_at`,
+        { aid }
+      ),
+      all('SELECT * FROM activities WHERE agency_id = @aid ORDER BY created_at', { aid }),
+    ])
+
+    const payload = {
+      exported_at: new Date().toISOString(),
+      agency: agency?.name || null,
+      counts: {
+        leads: leads.length, properties: properties.length,
+        conversations: conversations.length, messages: messages.length, activities: activities.length,
+      },
+      leads, properties, conversations, messages, activities,
+    }
+
+    const filename = `propia-export-${aid}-${new Date().toISOString().slice(0, 10)}.json`
+    res.setHeader('Content-Type', 'application/json')
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+    res.send(JSON.stringify(payload, null, 2))
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 export default router

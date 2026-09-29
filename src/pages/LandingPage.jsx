@@ -44,6 +44,7 @@ export default function LandingPage() {
         '3 Agentes IA activos',
         '10 automatizaciones activas',
         'Canal de WhatsApp Business',
+        'Entrada de leads por email (Idealista, Fotocasa...)',
         'CRM + Pipeline Kanban',
         'Soporte estándar'
       ],
@@ -63,6 +64,7 @@ export default function LandingPage() {
         '8 Agentes IA activos',
         'Automatizaciones ilimitadas',
         'WhatsApp + Meta Ads',
+        'Entrada de leads por email (Idealista, Fotocasa...)',
         'Analytics avanzado',
         'Soporte prioritario'
       ],
@@ -81,7 +83,7 @@ export default function LandingPage() {
         'Leads ilimitados',
         '12 Agentes IA activos',
         'Automatizaciones ilimitadas',
-        'WhatsApp + Meta Ads + Idealista',
+        'WhatsApp + Meta Ads + entrada de leads por email de portales',
         'White-label completo',
         'Soporte dedicado 24/7'
       ],

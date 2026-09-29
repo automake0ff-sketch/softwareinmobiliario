@@ -33,6 +33,7 @@ export default function ControlPage() {
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState({})
   const [busyId, setBusyId] = useState(null)
+  const [exporting, setExporting] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -95,6 +96,26 @@ export default function ControlPage() {
     if (!settings?.portal_inbox_url && !settings?.portal_inbox_path) return
     navigator.clipboard.writeText(settings.portal_inbox_url || settings.portal_inbox_path)
     toast.success('URL copiada')
+  }
+
+  const exportData = async () => {
+    setExporting(true)
+    try {
+      const data = await api.get('/control/export')
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `propia-export-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      toast.error('No se pudo generar la exportación')
+    } finally {
+      setExporting(false)
+    }
   }
 
   if (loading) {
@@ -205,6 +226,20 @@ export default function ControlPage() {
               <Copy size={14} />
             </button>
           </div>
+        </div>
+
+        <div className="pt-2 border-t border-gray-100 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-gray-800">Exportar todos mis datos</p>
+            <p className="text-xs text-gray-500 mt-0.5">Descarga en JSON de tus leads, conversaciones, propiedades y actividad.</p>
+          </div>
+          <button
+            onClick={exportData}
+            disabled={exporting}
+            className="shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 disabled:opacity-50"
+          >
+            {exporting ? 'Generando…' : 'Descargar JSON'}
+          </button>
         </div>
       </div>
 

@@ -159,25 +159,12 @@ export default function Sidebar() {
             </NavLink>
           )
         })}
-        {(user?.role === 'admin' || user?.role === 'super_admin') && (
-          <NavLink to="/admin" className="block mt-2">
-            <div className={clsx(
-              'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group relative w-full',
-              pathname.startsWith('/admin')
-                ? 'bg-[#1A1A24] text-[#F1F5F9]'
-                : 'text-[#64748B] hover:text-[#F1F5F9] hover:bg-[#13131A]'
-            )}>
-              {pathname.startsWith('/admin') && (
-                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-gradient-to-b from-amber-500 to-orange-600" />
-              )}
-              <Shield size={20} className={clsx(
-                'shrink-0',
-                pathname.startsWith('/admin') ? 'text-amber-400' : 'text-[#64748B] group-hover:text-amber-400'
-              )} />
-              {sidebarOpen && <span className="truncate flex-1 text-left">Admin SaaS</span>}
-            </div>
-          </NavLink>
-        )}
+        {/* El enlace "Admin SaaS" que había aquí se ha quitado: el rol 'admin'
+            lo tiene CUALQUIER cliente al registrar su agencia (ver
+            server/routes/register.js), así que mostrarlo por rol lo enseñaba
+            a todos los clientes, no solo a Alejandro. El backend ya lo
+            protege por email (requirePlatformAdmin); accede escribiendo
+            /admin directamente en la URL con tu cuenta. */}
       </nav>
 
       <div className="border-t border-[#1E1E2E] p-3 shrink-0">

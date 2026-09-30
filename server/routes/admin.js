@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { all, get } from '../db/db.js';
-import { auth, requireRole } from '../middleware/auth.js';
+import { auth, requirePlatformAdmin } from '../middleware/auth.js';
 
 const PLAN_ORDER = { starter: 1, profesional: 2, agencia: 3, enterprise: 4 };
 
@@ -19,7 +19,7 @@ async function calculateMRR() {
 
 const router = Router();
 router.use(auth);
-router.use(requireRole('admin', 'super_admin'));
+router.use(requirePlatformAdmin); // NO 'admin': ese rol lo tiene cualquier cliente de pago
 
 router.get('/metrics', async (req, res) => {
   try {

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useStore } from '../lib/store'
+import api from '../lib/api'
 import SiteFooter from '../components/SiteFooter'
 import {
   ChevronDown,
@@ -20,6 +21,68 @@ import {
   Activity,
   Play
 } from 'lucide-react'
+
+function LeadMagnetSection() {
+  const [email, setEmail] = useState('')
+  const [name, setName] = useState('')
+  const [status, setStatus] = useState('idle') // idle | loading | done | error
+
+  const submit = async (e) => {
+    e.preventDefault()
+    if (!email.includes('@')) return
+    setStatus('loading')
+    try {
+      await api.post('/marketing/lead-magnet', { email, name, source: 'landing_checklist' })
+      setStatus('done')
+    } catch {
+      setStatus('error')
+    }
+  }
+
+  return (
+    <section className="relative z-10 py-16 sm:py-20 bg-[#0b0b14] border-y border-[#1E1E2E]/60">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <span className="text-xs font-bold text-indigo-400 uppercase tracking-widest bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/20">
+          Guía gratuita
+        </span>
+        <h2 className="mt-4 text-2xl sm:text-3xl font-bold text-white font-syne">
+          7 señales de que tu inmobiliaria está perdiendo leads de WhatsApp
+        </h2>
+        <p className="mt-3 text-[#94A3B8] text-sm sm:text-base">
+          Checklist corto y sin humo: cómo saber si estás dejando dinero sobre la mesa antes de plantearte automatizar nada.
+        </p>
+
+        {status === 'done' ? (
+          <p className="mt-6 text-emerald-400 text-sm font-medium">
+            Hecho — te la enviaremos a {email} en cuanto la tengamos lista para envío automático.
+          </p>
+        ) : (
+          <form onSubmit={submit} className="mt-6 flex flex-col sm:flex-row gap-2 max-w-lg mx-auto">
+            <input
+              type="text" placeholder="Tu nombre (opcional)" value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="flex-1 px-4 py-2.5 rounded-lg bg-[#13131A] border border-[#1E1E2E] text-sm text-white placeholder:text-[#64748B] focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+            />
+            <input
+              type="email" required placeholder="tu@email.com" value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="flex-1 px-4 py-2.5 rounded-lg bg-[#13131A] border border-[#1E1E2E] text-sm text-white placeholder:text-[#64748B] focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+            />
+            <button
+              type="submit" disabled={status === 'loading'}
+              className="px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors disabled:opacity-50 shrink-0"
+            >
+              {status === 'loading' ? 'Enviando…' : 'Quiero la guía'}
+            </button>
+          </form>
+        )}
+        {status === 'error' && (
+          <p className="mt-3 text-red-400 text-xs">No se pudo enviar, inténtalo de nuevo en un momento.</p>
+        )}
+      </div>
+    </section>
+  )
+}
 
 export default function LandingPage() {
   const user = useStore(state => state.user)
@@ -341,6 +404,9 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+
+      {/* SECCIÓN 1.5 — LEAD MAGNET (captura de email de marketing) */}
+      <LeadMagnetSection />
 
       {/* SECCIÓN 2 — PROBLEMA vs SOLUCIÓN */}
       <section className="relative z-10 py-20 sm:py-28 bg-[#0b0b14] border-y border-[#1E1E2E]/60">

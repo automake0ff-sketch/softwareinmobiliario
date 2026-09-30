@@ -244,6 +244,7 @@ async function start() {
   app.use('/api/agency', agencyRouter);
   app.use('/api/conversations', conversationsRouter);
   app.use('/api/control', (await import('./routes/control.js')).default);
+  app.use('/api/marketing', (await import('./routes/marketing.js')).default);
   app.use('/api/webhooks/portal-leads', webhookLimiter, (await import('./webhooks/portal-leads.js')).default);
   app.use('/api', appointmentsRouter);
   app.use("/webhooks/meta", webhookLimiter, express.raw({ type: "application/json" }), metaWebhook);
@@ -1157,6 +1158,16 @@ async function runMigration() {
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_portal_inbound_log ON portal_inbound_log(agency_id, created_at)` },
     // Sin RLS estas tablas quedarían legibles con la clave anónima de Supabase.
     // Se activa sin políticas: el backend (rol propietario) las sigue usando.
+    { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS marketing_leads (
+      id UUID PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      name TEXT,
+      agency_name TEXT,
+      source TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )` },
+    { type: 'sql', sql: `ALTER TABLE marketing_leads ENABLE ROW LEVEL SECURITY` },
     { type: 'sql', sql: `ALTER TABLE pending_messages ENABLE ROW LEVEL SECURITY` },
     { type: 'sql', sql: `ALTER TABLE portal_inbound_log ENABLE ROW LEVEL SECURITY` },
     { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS automation_templates (

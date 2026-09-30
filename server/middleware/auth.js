@@ -139,4 +139,31 @@ export function requireSuperAdmin(req, res, next) {
   next();
 }
 
-export default { auth, requireRole, requireSuperAdmin, getAgencyFromUser };
+// Panel de administración de LA PLATAFORMA (Alejandro), no de una agencia
+// cliente. IMPORTANTE: el rol 'admin' es el que recibe automáticamente el
+// dueño de CUALQUIER agencia al registrarse (ver server/routes/register.js) —
+// así que 'admin' NO distingue al operador de PropIA de un cliente de pago.
+// 'super_admin' tampoco sirve solo: el CHECK de la tabla users no admite ese
+// valor todavía, así que ningún usuario puede tenerlo hoy. Por eso este
+// guard mira el EMAIL de quien ha iniciado sesión contra una lista fija en
+// una variable de entorno — sin esa variable puesta, nadie entra (ni
+// siquiera Alejandro), lo cual es más seguro que dejarlo abierto por error.
+const PLATFORM_ADMIN_EMAILS = new Set(
+  String(process.env.PLATFORM_ADMIN_EMAILS || '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean)
+);
+
+export function requirePlatformAdmin(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ error: 'No autenticado.' });
+  }
+  const email = String(req.user.email || '').toLowerCase();
+  if (!email || !PLATFORM_ADMIN_EMAILS.has(email)) {
+    return res.status(403).json({ error: 'Panel solo para el operador de la plataforma.' });
+  }
+  next();
+}
+
+export default { auth, requireRole, requireSuperAdmin, requirePlatformAdmin, getAgencyFromUser };

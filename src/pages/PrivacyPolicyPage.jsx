@@ -18,7 +18,7 @@ const SECTIONS = [
       <>
         <p>El responsable del tratamiento de los datos personales recogidos a través de PropIA es:</p>
         <ul className="list-disc pl-6 mt-2 space-y-1">
-          <li>Titular: [NOMBRE Y APELLIDOS PENDIENTE] (autónomo)</li>
+          <li>Titular: Alejandro Cabrera Cabrera (autónomo)</li>
           <li>NIF: [PENDIENTE]</li>
           <li>Domicilio: Sevilla, España</li>
           <li>Email de contacto para asuntos de privacidad: automake0ff@gmail.com</li>

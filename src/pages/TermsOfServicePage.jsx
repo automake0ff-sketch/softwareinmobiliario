@@ -13,7 +13,7 @@ const SECTIONS = [
     title: '1. Quiénes somos',
     body: (
       <>
-        <p>PropIA es un producto de [NOMBRE Y APELLIDOS PENDIENTE], autónomo, con NIF [PENDIENTE] y domicilio en Sevilla, España. Estos términos regulan el acceso y uso de la plataforma PropIA (CRM con agentes de IA para agencias inmobiliarias) por parte de la agencia cliente ("el Cliente").</p>
+        <p>PropIA es un producto de Alejandro Cabrera Cabrera, autónomo, con NIF [PENDIENTE] y domicilio en Sevilla, España. Estos términos regulan el acceso y uso de la plataforma PropIA (CRM con agentes de IA para agencias inmobiliarias) por parte de la agencia cliente ("el Cliente").</p>
       </>
     ),
   },
@@ -56,7 +56,7 @@ const SECTIONS = [
   },
   {
     title: '8. Propiedad intelectual',
-    body: <p>PropIA y su código, marca y diseño son propiedad de [NOMBRE Y APELLIDOS PENDIENTE]. El Cliente conserva la propiedad de sus propios datos (leads, propiedades, conversaciones).</p>,
+    body: <p>PropIA y su código, marca y diseño son propiedad de Alejandro Cabrera Cabrera. El Cliente conserva la propiedad de sus propios datos (leads, propiedades, conversaciones).</p>,
   },
   {
     title: '9. Limitación de responsabilidad',

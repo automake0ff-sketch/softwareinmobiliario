@@ -5,12 +5,11 @@ import { useStore } from '../lib/store'
 // PrivacyPolicyPage y TermsOfServicePage.
 //
 // ⚠️ ACCIÓN PENDIENTE PARA ALEJANDRO:
-// Rellenado con lo que confirmaste (autónomo, Sevilla, contacto). Sigue
-// pendiente tu NOMBRE COMPLETO y NIF — como autónomo, la LSSICE (art. 10)
-// exige identificarte con nombre y NIF, no solo "autónomo" y la ciudad.
-// Sin esos dos datos el aviso legal sigue incompleto.
+// Solo falta tu NIF — como autónomo, la LSSICE (art. 10) exige
+// identificarte con nombre Y NIF. Sin el NIF el aviso legal sigue
+// incompleto aunque el nombre ya esté puesto.
 const LEGAL = {
-  razonSocial: '[NOMBRE Y APELLIDOS PENDIENTE] (autónomo)',
+  razonSocial: 'Alejandro Cabrera Cabrera (autónomo)',
   nifCif: '[NIF PENDIENTE]',
   domicilio: 'Sevilla, España',
   emailContacto: 'automake0ff@gmail.com',

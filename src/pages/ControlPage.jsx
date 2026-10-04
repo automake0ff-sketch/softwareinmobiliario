@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import toast from 'react-hot-toast'
+import { Link } from 'react-router-dom'
 import {
   Clock, Users, CalendarCheck, Trophy, MessageSquare, Ban,
   Check, X, Copy, ShieldAlert, Bot, UserCheck, RefreshCw,
+  AlertTriangle, CalendarClock, ArrowRight,
 } from 'lucide-react'
 import api from '../lib/api'
 
@@ -34,23 +36,53 @@ export default function ControlPage() {
   const [editing, setEditing] = useState({})
   const [busyId, setBusyId] = useState(null)
   const [exporting, setExporting] = useState(false)
+  const [followUps, setFollowUps] = useState({ items: [], counts: null })
+  const [doneId, setDoneId] = useState(null)
 
   const load = useCallback(async () => {
     try {
-      const [roiData, approvalsData, settingsData] = await Promise.all([
+      const [roiData, approvalsData, settingsData, followUpsData] = await Promise.all([
         api.get('/control/roi', { days: 30 }),
         api.get('/control/approvals', { status: 'pending' }),
         api.get('/control/settings'),
+        api.get('/control/follow-ups', { scope: 'all' }),
       ])
       setRoi(roiData)
       setApprovals(approvalsData.items || [])
       setSettings(settingsData)
+      setFollowUps(followUpsData)
     } catch (e) {
       toast.error('No se pudo cargar el panel de control')
     } finally {
       setLoading(false)
     }
   }, [])
+
+  const completeFollowUp = async (id) => {
+    setDoneId(id)
+    try {
+      await api.post(`/control/follow-ups/${id}/complete`)
+      setFollowUps((f) => ({
+        items: f.items.filter((t) => t.id !== id),
+        counts: f.counts,
+      }))
+    } catch (e) {
+      toast.error('No se pudo marcar como hecho')
+    } finally {
+      setDoneId(null)
+    }
+  }
+
+  const fmtDue = (d) => {
+    if (!d) return 'Sin fecha'
+    const date = new Date(d)
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const diffDays = Math.round((date.setHours(0, 0, 0, 0) - today) / 86400000)
+    if (diffDays < 0) return `Vencida hace ${Math.abs(diffDays)} día${Math.abs(diffDays) === 1 ? '' : 's'}`
+    if (diffDays === 0) return 'Hoy'
+    if (diffDays === 1) return 'Mañana'
+    return new Date(d).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
+  }
 
   useEffect(() => { load() }, [load])
 
@@ -132,6 +164,68 @@ export default function ControlPage() {
         <button onClick={load} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500">
           <RefreshCw size={16} />
         </button>
+      </div>
+
+      {/* Seguimientos pendientes — un solo sitio para todas las oportunidades,
+          en vez de dispersas entre WhatsApp, email y la memoria de cada agente */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-sm font-semibold text-gray-700">Seguimientos pendientes</h2>
+          {followUps.counts && (
+            <div className="flex items-center gap-3 text-xs">
+              {Number(followUps.counts.overdue) > 0 && (
+                <span className="flex items-center gap-1 text-red-600 font-medium">
+                  <AlertTriangle size={12} /> {followUps.counts.overdue} vencidas
+                </span>
+              )}
+              {Number(followUps.counts.today) > 0 && (
+                <span className="flex items-center gap-1 text-amber-600 font-medium">
+                  <CalendarClock size={12} /> {followUps.counts.today} hoy
+                </span>
+              )}
+              <span className="text-gray-400">{followUps.counts.total} en total</span>
+            </div>
+          )}
+        </div>
+        <p className="text-xs text-gray-500 mb-4">Próxima acción, responsable y fecha de recontacto de cada oportunidad activa, todo junto.</p>
+
+        {followUps.items.length === 0 ? (
+          <p className="text-sm text-gray-400 py-6 text-center">No hay seguimientos pendientes.</p>
+        ) : (
+          <div className="space-y-2">
+            {followUps.items.slice(0, 12).map((t) => {
+              const overdue = t.due_date && new Date(t.due_date) < new Date().setHours(0, 0, 0, 0)
+              return (
+                <div key={t.id} className="flex items-center gap-3 border border-gray-100 rounded-lg px-3 py-2.5">
+                  <button
+                    onClick={() => completeFollowUp(t.id)}
+                    disabled={doneId === t.id}
+                    title="Marcar como hecho"
+                    className="shrink-0 w-5 h-5 rounded-full border-2 border-gray-300 hover:border-emerald-500 hover:bg-emerald-50 disabled:opacity-50"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <Link to={`/leads/${t.lead_id}`} className="text-sm font-medium text-gray-800 hover:text-indigo-600 truncate">
+                        {t.lead_name || 'Lead'}
+                      </Link>
+                      {t.assigned_to_name && <span className="text-xs text-gray-400 shrink-0">· {t.assigned_to_name}</span>}
+                    </div>
+                    <p className="text-xs text-gray-500 truncate">{t.title}{t.ia_next_action ? ` — ${t.ia_next_action}` : ''}</p>
+                  </div>
+                  <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${overdue ? 'bg-red-50 text-red-600' : 'bg-gray-50 text-gray-600'}`}>
+                    {fmtDue(t.due_date)}
+                  </span>
+                  <Link to={`/leads/${t.lead_id}`} className="shrink-0 text-gray-300 hover:text-indigo-600">
+                    <ArrowRight size={15} />
+                  </Link>
+                </div>
+              )
+            })}
+            {followUps.items.length > 12 && (
+              <p className="text-xs text-gray-400 text-center pt-1">y {followUps.items.length - 12} más…</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ROI */}

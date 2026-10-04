@@ -297,4 +297,67 @@ router.get('/export', requireRole('admin', 'manager'), async (req, res) => {
   }
 })
 
+// ── Seguimientos pendientes (todas las oportunidades, un solo sitio) ───────
+// La tabla `tasks` ya existía y varios agentes/automatizaciones ya escriben
+// en ella (próxima acción + responsable + fecha), pero no había NINGÚN
+// sitio en el panel que las juntase: cada tarea solo se veía abriendo el
+// lead uno a uno. Con varias oportunidades activas a la vez, eso es
+// exactamente cómo se pierde el seguimiento -- se queda disperso entre
+// WhatsApp, email y la cabeza de cada agente.
+router.get('/follow-ups', async (req, res) => {
+  try {
+    const aid = req.user.agency_id
+    const scope = ['overdue', 'today', 'upcoming', 'all'].includes(req.query.scope) ? req.query.scope : 'all'
+    const mine = req.query.mine === 'true'
+
+    const where = ['l.agency_id = @aid', 't.completed = false']
+    const params = { aid }
+    if (scope === 'overdue') where.push(`t.due_date < CURRENT_DATE`)
+    else if (scope === 'today') where.push(`t.due_date::date = CURRENT_DATE`)
+    else if (scope === 'upcoming') where.push(`t.due_date::date > CURRENT_DATE`)
+    if (mine) { where.push('t.assigned_to = @uid'); params.uid = req.user.id }
+
+    const rows = await all(
+      `SELECT t.id, t.title, t.description, t.due_date, t.lead_id,
+              l.name AS lead_name, l.phone AS lead_phone, l.pipeline_stage, l.ia_next_action,
+              u.name AS assigned_to_name
+       FROM tasks t
+       JOIN leads l ON l.id = t.lead_id
+       LEFT JOIN users u ON u.id = t.assigned_to
+       WHERE ${where.join(' AND ')}
+       ORDER BY (t.due_date IS NULL), t.due_date ASC
+       LIMIT 200`,
+      params
+    )
+    const counts = await get(
+      `SELECT
+         COUNT(*) FILTER (WHERE t.due_date < CURRENT_DATE) AS overdue,
+         COUNT(*) FILTER (WHERE t.due_date::date = CURRENT_DATE) AS today,
+         COUNT(*) FILTER (WHERE t.due_date IS NULL) AS no_date,
+         COUNT(*) AS total
+       FROM tasks t JOIN leads l ON l.id = t.lead_id
+       WHERE l.agency_id = @aid AND t.completed = false`,
+      { aid }
+    )
+    res.json({ items: rows, counts })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+router.post('/follow-ups/:id/complete', async (req, res) => {
+  try {
+    const row = await get(
+      `SELECT t.id FROM tasks t JOIN leads l ON l.id = t.lead_id
+       WHERE t.id = @id AND l.agency_id = @aid`,
+      { id: req.params.id, aid: req.user.agency_id }
+    )
+    if (!row) return res.status(404).json({ error: 'Tarea no encontrada.' })
+    await run('UPDATE tasks SET completed = true WHERE id = @id', { id: row.id })
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 export default router

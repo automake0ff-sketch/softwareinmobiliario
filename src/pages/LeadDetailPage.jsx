@@ -92,27 +92,6 @@ function ActivityIcon({ type }) {
   )
 }
 
-function extractDisplayText(raw) {
-  if (!raw) return raw
-  try {
-    const data = JSON.parse(raw)
-    const contenido = data?.contenido_generado
-    if (typeof contenido === 'string' && contenido.trim()) return contenido.trim()
-    if (contenido && typeof contenido === 'object') {
-      const priorityKeys = ['whatsapp', 'mensaje', 'mensaje_whatsapp', 'respuesta', 'texto', 'contenido', 'body', 'text']
-      for (const k of priorityKeys) {
-        if (typeof contenido[k] === 'string' && contenido[k].trim()) return contenido[k].trim()
-      }
-      for (const v of Object.values(contenido)) {
-        if (typeof v === 'string' && v.trim()) return v.trim()
-      }
-    }
-    if (data?.analisis_ejecutivo) return data.analisis_ejecutivo
-  } catch {
-    // Aún streameando (JSON incompleto) o no es JSON — mostrar tal cual
-  }
-  return raw
-}
 
 export default function LeadDetailPage() {
   const { id } = useParams()
@@ -167,9 +146,6 @@ export default function LeadDetailPage() {
   const [savingTask, setSavingTask] = useState(false)
 
   // Agent execution floating states
-  const [runningAgent, setRunningAgent] = useState(null)
-  const [agentOutput, setAgentOutput] = useState('')
-  const [agentsList, setAgentsList] = useState([])
 
   // Auto email states
   const [autoEmailLoading, setAutoEmailLoading] = useState(false)
@@ -189,9 +165,6 @@ export default function LeadDetailPage() {
   const [qualifierLoading, setQualifierLoading] = useState(false)
 
   // Sales agent result
-  const [salesAgentResult, setSalesAgentResult] = useState(null)
-  const [salesAgentLoading, setSalesAgentLoading] = useState(false)
-  const [salesAgentSuggestion, setSalesAgentSuggestion] = useState(null)
 
   // WhatsApp panel states
   const [showWaModal, setShowWaModal] = useState(false)
@@ -346,10 +319,6 @@ export default function LeadDetailPage() {
     setLoading(true)
     loadLeadDetails()
 
-    // Fetch agents list for quick execution
-    api.get('/agents').then(data => {
-      if (Array.isArray(data)) setAgentsList(data)
-    }).catch(console.error)
 
     // Fetch agency config for WhatsApp message
     api.get('/agency/config').then(cfg => {
@@ -555,111 +524,6 @@ export default function LeadDetailPage() {
     }
   }
 
-  // ─── SALES AGENT ──────────────────────────────────────────────────────────
-  const handleSalesAgent = async (action, channel, message, propertyId) => {
-    if (!lead) return
-    if (!action) {
-      setSalesAgentLoading(true)
-      try {
-        const suggestion = await api.post(`/leads/${lead.id}/sales-agent`, { execute: false })
-        setSalesAgentSuggestion(suggestion)
-        toast.success(`Acción sugerida: ${suggestion.action_info?.label || suggestion.action}`)
-      } catch (e) {
-        toast.error(e.message || 'Error al obtener sugerencia')
-      } finally {
-        setSalesAgentLoading(false)
-      }
-      return
-    }
-    setSalesAgentLoading(true)
-    try {
-      const result = await api.post(`/leads/${lead.id}/sales-agent`, {
-        execute: true, action, channel, message, property_id: propertyId,
-      })
-      setSalesAgentResult(result)
-      toast.success(`Acción "${action}" ejecutada`)
-      loadLeadDetails()
-    } catch (e) {
-      toast.error(e.message || 'Error al ejecutar acción')
-    } finally {
-      setSalesAgentLoading(false)
-    }
-  }
-
-  // Run AI Agent (Captador / Vendedor)
-  const handleTriggerAgent = async (agentType) => {
-    if (!lead) return
-    setRunningAgent(agentType)
-    setAgentOutput('')
-
-    // Find agent configured in DB
-    const agent = agentsList.find(a => a.type === agentType)
-    if (!agent) {
-      toast.error(`El agente ${agentType} no está activo o configurado. Actívalo en la pestaña Agentes.`);
-      setRunningAgent(null)
-      return
-    }
-
-    try {
-      // Use the chat stream route with a standard message
-      const res = await fetch(`/api/agents/${agent.id}/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...api.authHeaders },
-        body: JSON.stringify({
-          message: agentType === 'captador'
-            ? `Cualifica al lead ${lead.name} de origen ${lead.source || 'manual'} interesado en ${lead.property_interest || 'no especificado'}. Asigna score inicial.`
-            : `El lead ${lead.name} está interesado. Intenta agendar una visita.`,
-          lead_context: {
-            lead_id: lead.id,
-            name: lead.name,
-            phone: lead.phone,
-            score: lead.ia_score,
-            stage: lead.pipeline_stage || lead.status,
-            summary: lead.ia_summary,
-            budget: lead.budget,
-            zone: lead.zone,
-            agency_name: 'PropIA Premium'
-          },
-          stream: true
-        })
-      })
-
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let fullText = ''
-      let lineBuffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        lineBuffer += decoder.decode(value, { stream: true })
-        const lines = lineBuffer.split('\n')
-        lineBuffer = lines.pop() ?? ''
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          const json = line.slice(6)
-          if (json === '[DONE]') break
-          try {
-            const { chunk, error } = JSON.parse(json)
-            if (error) { fullText += `\nError: ${error}`; break }
-            if (chunk) {
-              fullText += chunk
-              setAgentOutput(fullText)
-            }
-          } catch { /* skip parse */ }
-        }
-      }
-
-      toast.success(`Ejecución de ${agentType} completada`)
-      loadLeadDetails() // reload all details after execution updates DB
-    } catch (e) {
-      console.error(e)
-      toast.error('Error al ejecutar el agente de IA')
-    } finally {
-      setRunningAgent(null)
-    }
-  }
-
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -745,22 +609,6 @@ export default function LeadDetailPage() {
 
         {/* Dynamic streaming float alert */}
         <AnimatePresence>
-          {runningAgent && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="mt-4 p-4 rounded-xl border border-indigo-500/20 bg-indigo-500/10 backdrop-blur-sm space-y-2 overflow-hidden"
-            >
-              <div className="flex items-center gap-2 text-xs font-semibold text-indigo-300">
-                <Bot size={14} className="animate-pulse" />
-                <span>Agente {runningAgent === 'captador' ? 'Captador' : 'Vendedor'} IA ejecutándose en streaming...</span>
-              </div>
-              <pre className="text-xs text-white/90 whitespace-pre-wrap font-sans leading-relaxed">
-                {extractDisplayText(agentOutput) || 'Llamando a Claude OpenRouter...'}
-              </pre>
-            </motion.div>
-          )}
         </AnimatePresence>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6 pt-6 border-t border-white/5">
@@ -924,14 +772,6 @@ export default function LeadDetailPage() {
                 >
                   {qualifierLoading ? <Loader2 size={14} className="animate-spin" /> : <Bot size={14} />}
                   {qualifierLoading ? 'Cualificando...' : 'Cualificador IA'}
-                </button>
-                <button
-                  onClick={() => handleSalesAgent()}
-                  disabled={salesAgentLoading}
-                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-xl transition-all text-xs font-semibold shadow-md shadow-blue-600/10"
-                >
-                  {salesAgentLoading ? <Loader2 size={14} className="animate-spin" /> : <Handshake size={14} />}
-                  {salesAgentLoading ? 'Analizando...' : 'Vendedor IA'}
                 </button>
               </div>
               <button
@@ -1479,112 +1319,11 @@ export default function LeadDetailPage() {
                       className="flex-1 px-3 py-2 text-[11px] font-semibold text-white bg-pink-600 hover:bg-pink-500 rounded-xl transition-all flex items-center justify-center gap-1">
                       <Calendar size={12} /> Agendar cita
                     </button>
-                    <button onClick={() => { setQualifierResult(null); handleSalesAgent() }}
-                      className="flex-1 px-3 py-2 text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition-all flex items-center justify-center gap-1">
-                      <Bot size={12} /> Activar Vendedor IA
-                    </button>
                   </div>
                 )}
                 <button onClick={() => setQualifierResult(null)}
                   className="w-full py-2.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-all">
                   Aceptar y cerrar
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Sales Agent Suggestion Panel */}
-      <AnimatePresence>
-        {salesAgentSuggestion && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-neutral-900 border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl relative">
-              <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
-                <h3 className="text-sm font-bold font-syne text-white flex items-center gap-2">
-                  <Handshake size={16} className="text-blue-400" />
-                  Vendedor IA - Acción sugerida
-                </h3>
-                <button onClick={() => setSalesAgentSuggestion(null)} className="p-1 rounded-lg text-white/40 hover:text-white hover:bg-white/10">
-                  <X size={16} />
-                </button>
-              </div>
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl">
-                  <Sparkles size={16} className="text-blue-400" />
-                  <div>
-                    <p className="text-sm font-semibold text-white">{salesAgentSuggestion.action_info?.label || salesAgentSuggestion.action}</p>
-                    <p className="text-xs text-blue-300">{salesAgentSuggestion.reason}</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="p-2 bg-black/40 rounded-xl"><span className="text-white/50">Canal</span><p className="text-white font-medium capitalize">{salesAgentSuggestion.channel_recommended}</p></div>
-                  <div className="p-2 bg-black/40 rounded-xl"><span className="text-white/50">Seguimiento</span><p className="text-white font-medium">{salesAgentSuggestion.follow_up_days} días</p></div>
-                </div>
-                <div className="p-3 bg-black/40 rounded-xl">
-                  <p className="text-[10px] font-semibold text-white/40 uppercase mb-1">Mensaje sugerido</p>
-                  <p className="text-xs text-white/80 whitespace-pre-wrap">{salesAgentSuggestion.message}</p>
-                </div>
-                <p className="text-xs text-white/50">Próxima acción: {salesAgentSuggestion.next_action}</p>
-                <div className="flex gap-2 pt-1">
-                  <button onClick={() => {
-                    handleSalesAgent(salesAgentSuggestion.action, salesAgentSuggestion.channel_recommended, salesAgentSuggestion.message, salesAgentSuggestion.property_id)
-                    setSalesAgentSuggestion(null)
-                  }} disabled={salesAgentLoading}
-                    className="flex-1 px-4 py-2.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded-xl transition-all flex items-center justify-center gap-1.5">
-                    {salesAgentLoading ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-                    Ejecutar acción
-                  </button>
-                  <button onClick={() => setSalesAgentSuggestion(null)}
-                    className="flex-1 px-4 py-2.5 text-xs font-semibold text-white/60 bg-white/5 hover:bg-white/10 rounded-xl transition-all">
-                    Cancelar
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Sales Agent Result Panel */}
-      <AnimatePresence>
-        {salesAgentResult && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-neutral-900 border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl relative">
-              <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
-                <h3 className="text-sm font-bold font-syne text-white flex items-center gap-2">
-                  <CheckCircle size={16} className="text-ok" />
-                  Resultado Vendedor IA
-                </h3>
-                <button onClick={() => setSalesAgentResult(null)} className="p-1 rounded-lg text-white/40 hover:text-white hover:bg-white/10">
-                  <X size={16} />
-                </button>
-              </div>
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 p-3 bg-black/40 rounded-xl">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${salesAgentResult.sent ? 'bg-ok/10 text-ok' : 'bg-warn/10 text-warn'}`}>
-                    {salesAgentResult.sent ? <CheckCircle size={20} /> : <X size={20} />}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-white capitalize">Acción: {salesAgentResult.action}</p>
-                    <p className="text-xs text-white/50">Canal: {salesAgentResult.channel} · {salesAgentResult.sent ? 'Enviado' : 'No enviado'}</p>
-                  </div>
-                </div>
-                {salesAgentResult.appointment_suggestion && (
-                  <div className="p-3 bg-pink-500/10 border border-pink-500/20 rounded-xl">
-                    <p className="text-xs text-pink-300 font-medium">Cita sugerida: {new Date(salesAgentResult.appointment_suggestion.starts_at).toLocaleString('es-ES')}</p>
-                  </div>
-                )}
-                {salesAgentResult.qualifier_result && (
-                  <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl">
-                    <p className="text-xs text-indigo-300">Lead cualificado: {salesAgentResult.qualifier_result.score}/100 ({salesAgentResult.qualifier_result.level})</p>
-                  </div>
-                )}
-                <button onClick={() => setSalesAgentResult(null)}
-                  className="w-full py-2.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition-all">
-                  Aceptar
                 </button>
               </div>
             </motion.div>

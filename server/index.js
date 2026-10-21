@@ -406,27 +406,9 @@ async function start() {
         leadsTrend = 'down';
       }
 
-      const messagesToday = (await get("SELECT COUNT(*) as count FROM messages m JOIN conversations c ON m.conversation_id = c.id JOIN leads l ON c.lead_id = l.id WHERE l.agency_id = @aid AND m.created_at >= @today", { aid, today }))?.count || 0;
-      const messagesYesterday = (await get("SELECT COUNT(*) as count FROM messages m JOIN conversations c ON m.conversation_id = c.id JOIN leads l ON c.lead_id = l.id WHERE l.agency_id = @aid AND m.created_at >= @yesterday AND m.created_at < @today", { aid, yesterday, today }))?.count || 0;
-
-      let messagesPctChange = '0%';
-      let messagesTrend = 'up';
-      if (messagesYesterday > 0) {
-        const diff = messagesToday - messagesYesterday;
-        const pct = Math.round((diff / messagesYesterday) * 100);
-        messagesPctChange = (pct >= 0 ? '+' : '') + pct + '%';
-        messagesTrend = pct >= 0 ? 'up' : 'down';
-      } else if (messagesToday > 0) {
-        messagesPctChange = '+100%';
-        messagesTrend = 'up';
-      } else {
-        messagesPctChange = '0%';
-        messagesTrend = 'down';
-      }
-
-      const automationsRun = (await get("SELECT COUNT(*) as count FROM activities WHERE agency_id = @aid AND type = 'automation' AND created_at >= @today", { aid, today }))?.count || 0;
-
-      const activeAgents = (await get("SELECT COUNT(*) as count FROM ai_agents WHERE agency_id = @aid AND status = 'active'", { aid }))?.count || 0;
+      const leadsNuevos = (await get("SELECT COUNT(*) as count FROM leads WHERE agency_id = @aid AND status = 'nuevo'", { aid }))?.count || 0;
+      const upcomingVisits = (await get("SELECT COUNT(*) as count FROM appointments WHERE agency_id = @aid AND status IN ('scheduled','confirmed','reschedule_requested') AND starts_at >= @now", { aid, now: new Date().toISOString() }))?.count || 0;
+      const availableProps = (await get("SELECT COUNT(*) as count FROM properties WHERE agency_id = @aid AND status = 'disponible'", { aid }))?.count || 0;
 
       const pipelineStats = await all("SELECT status, COUNT(*) as count FROM leads WHERE agency_id = @aid GROUP BY status", { aid });
       const totalPipeline = pipelineStats.reduce((sum, s) => sum + s.count, 0);
@@ -445,10 +427,10 @@ async function start() {
 
       res.json({
         liveStats: [
-          { id: 1, label: 'Agentes IA activos', value: activeAgents, icon: 'Bot', change: '', trend: 'up' },
+          { id: 1, label: 'Leads sin contactar', value: leadsNuevos, icon: 'Users', change: '', trend: 'up' },
           { id: 2, label: 'Leads hoy', value: leadsToday, icon: 'Users', change: leadsPctChange, trend: leadsTrend },
-          { id: 3, label: 'Mensajes enviados hoy', value: messagesToday, icon: 'MessageSquare', change: messagesPctChange, trend: messagesTrend },
-          { id: 4, label: 'Automatizaciones ejecutadas', value: automationsRun, icon: 'Zap', change: '', trend: 'up' },
+          { id: 3, label: 'Visitas próximas', value: upcomingVisits, icon: 'Calendar', change: '', trend: 'up' },
+          { id: 4, label: 'Propiedades disponibles', value: availableProps, icon: 'Home', change: '', trend: 'up' },
         ],
         totalLeads,
         totalProperties,

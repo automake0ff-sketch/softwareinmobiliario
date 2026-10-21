@@ -49,7 +49,7 @@ function LeadMagnetSection() {
           7 señales de que tu inmobiliaria está perdiendo leads
         </h2>
         <p className="mt-3 text-[#94A3B8] text-sm sm:text-base">
-          Checklist corto y sin humo: cómo saber si estás dejando dinero sobre la mesa antes de plantearte automatizar nada.
+          Checklist corto y sin humo: cómo saber si estás dejando dinero sobre la mesa antes de plantearte cambiar de herramienta.
         </p>
 
         {status === 'done' ? (
@@ -104,9 +104,8 @@ export default function LandingPage() {
         '1 oficina activa',
         'Hasta 5 usuarios humanos',
         '500 leads nuevos al mes',
-        '3 Agentes IA activos',
-        '10 automatizaciones activas',
         'Entrada de leads por email (Idealista, Fotocasa...)',
+        'Mejora de anuncios con IA',
         'CRM + Pipeline Kanban',
         'Soporte estándar'
       ],
@@ -123,10 +122,7 @@ export default function LandingPage() {
         '3 oficinas activas',
         'Hasta 15 usuarios humanos',
         '2.000 leads nuevos al mes',
-        '8 Agentes IA activos',
-        'Automatizaciones ilimitadas',
         'Entrada de leads por email (Idealista, Fotocasa...)',
-        'Analytics avanzado',
         'Soporte prioritario'
       ],
       cta: 'Empezar ahora',
@@ -142,8 +138,6 @@ export default function LandingPage() {
         'Oficinas ilimitadas',
         'Usuarios ilimitados',
         'Leads ilimitados',
-        '12 Agentes IA activos',
-        'Automatizaciones ilimitadas',
         'Entrada de leads por email de portales',
         'White-label completo',
         'Soporte dedicado 24/7'
@@ -172,7 +166,7 @@ export default function LandingPage() {
     },
     {
       q: '¿En cuánto tiempo está funcionando?',
-      a: 'En menos de 10 minutos tras el registro. Puedes activar tu cuenta, cargar tus primeras propiedades y poner en marcha el Captador IA de inmediato.'
+      a: 'En menos de 10 minutos tras el registro. Puedes activar tu cuenta, cargar tus primeras propiedades y empezar a gestionar tus contactos de inmediato.'
     }
   ]
 
@@ -242,14 +236,14 @@ export default function LandingPage() {
           </div>
 
           <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-white mb-6 leading-[1.15]">
-            Tu agencia inmobiliaria con{' '}
+            Tu inmobiliaria,{' '}
             <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-300 bg-clip-text text-transparent">
-              IA trabajando 24/7
+              más simple y ordenada
             </span>
           </h1>
 
           <p className="text-base sm:text-lg text-gray-400 max-w-3xl mx-auto mb-10 leading-relaxed">
-            Agentes IA que captan, cualifican y cierran leads por ti. Respuesta automática en menos de 2 minutos, a cualquier hora.
+            Gestiona tus inmuebles, tus contactos y tus visitas en un solo sitio, y redacta anuncios con IA en segundos.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">
@@ -325,14 +319,14 @@ export default function LandingPage() {
                       <div className="text-[10px] text-emerald-400 mt-0.5">+24% este mes</div>
                     </div>
                     <div className="bg-[#13131A] border border-[#1E1E2E] p-3 rounded-xl">
-                      <div className="text-[10px] text-gray-400 uppercase tracking-wider">Tasa Respuesta</div>
-                      <div className="text-lg sm:text-2xl font-bold text-indigo-400 mt-1">1.8m</div>
-                      <div className="text-[10px] text-indigo-300 mt-0.5">Automático 24/7</div>
+                      <div className="text-[10px] text-gray-400 uppercase tracking-wider">Visitas esta semana</div>
+                      <div className="text-lg sm:text-2xl font-bold text-indigo-400 mt-1">12</div>
+                      <div className="text-[10px] text-indigo-300 mt-0.5">Con aviso por email</div>
                     </div>
                     <div className="bg-[#13131A] border border-[#1E1E2E] p-3 rounded-xl">
-                      <div className="text-[10px] text-gray-400 uppercase tracking-wider">Trabajo Auto.</div>
-                      <div className="text-lg sm:text-2xl font-bold text-purple-400 mt-1">68.4%</div>
-                      <div className="text-[10px] text-purple-300 mt-0.5">Por Agentes IA</div>
+                      <div className="text-[10px] text-gray-400 uppercase tracking-wider">Anuncios con IA</div>
+                      <div className="text-lg sm:text-2xl font-bold text-purple-400 mt-1">24</div>
+                      <div className="text-[10px] text-purple-300 mt-0.5">Este mes</div>
                     </div>
                   </div>
                   
@@ -365,25 +359,25 @@ export default function LandingPage() {
                     {/* AI Insights & Agent Activity */}
                     <div className="bg-[#13131A] border border-[#1E1E2E] p-4 rounded-xl flex flex-col gap-3 overflow-hidden">
                       <div className="text-xs font-semibold text-white border-b border-[#1E1E2E] pb-2">
-                        IA Feed de Actividad
+                        Actividad reciente
                       </div>
                       <div className="flex flex-col gap-2">
                         <div className="flex gap-2 items-start text-[10px] text-gray-400">
                           <span className="text-xs">🎯</span>
                           <div>
-                            <span className="font-semibold text-white">Captador IA</span> cualificó lead <span className="text-indigo-400">Sofía G.</span> con Score: <strong className="text-emerald-400">92/100</strong>
+                            <span className="font-semibold text-white">Nuevo contacto</span> desde Idealista: <span className="text-indigo-400">Sofía G.</span> con Score: <strong className="text-emerald-400">92/100</strong>
                           </div>
                         </div>
                         <div className="flex gap-2 items-start text-[10px] text-gray-400">
                           <span className="text-xs">💼</span>
                           <div>
-                            <span className="font-semibold text-white">Vendedor IA</span> propuso visita para chalet en Pozuelo.
+                            <span className="font-semibold text-white">Visita agendada</span> para chalet en Pozuelo.
                           </div>
                         </div>
                         <div className="flex gap-2 items-start text-[10px] text-gray-400">
                           <span className="text-xs">🧠</span>
                           <div>
-                            <span className="font-semibold text-white">Coordinador IA</span> asignó lead caliente a comercial Andrés.
+                            <span className="font-semibold text-white">Lead asignado</span> a Andrés.
                           </div>
                         </div>
                       </div>
@@ -425,7 +419,7 @@ export default function LandingPage() {
                 ANTES
               </h3>
               <p className="text-gray-400 text-sm sm:text-base leading-relaxed">
-                Responder leads a las 3am, seguimientos manuales, leads perdidos por no responder a tiempo.
+                Contactos repartidos entre portales, hojas de cálculo y notas, seguimientos olvidados y visitas sin confirmar.
               </p>
             </div>
 
@@ -439,7 +433,7 @@ export default function LandingPage() {
                 DESPUÉS
               </h3>
               <p className="text-gray-400 text-sm sm:text-base leading-relaxed">
-                PropIA responde en 2 minutos, 24/7, califica automáticamente y avisa al equipo cuando hay oportunidad de cierre.
+                PropIA reúne los leads de tus portales, te recuerda cada seguimiento y confirma las visitas por email.
               </p>
             </div>
 
@@ -453,7 +447,7 @@ export default function LandingPage() {
                 RESULTADO
               </h3>
               <p className="text-gray-400 text-sm sm:text-base leading-relaxed">
-                Más del 60% del trabajo de captación automatizado desde el día 1.
+                Menos tiempo en administración y ningún lead olvidado.
               </p>
             </div>
           </div>
@@ -465,13 +459,13 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-3xl mx-auto mb-16">
             <span className="text-xs font-bold text-indigo-400 uppercase tracking-widest bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/20">
-              Equipo Virtual Starter
+              Todo lo esencial
             </span>
             <h2 className="text-3xl sm:text-4xl font-extrabold text-white mt-4 font-syne">
-              Los 3 agentes principales
+              Lo que necesitas, sin complicaciones
             </h2>
             <p className="text-gray-400 mt-4 max-w-xl mx-auto">
-              Descubre a los especialistas virtuales que vienen incluidos en el plan Starter para automatizar tu embudo.
+              Tres herramientas pensadas para el día a día de una inmobiliaria.
             </p>
           </div>
 
@@ -483,10 +477,10 @@ export default function LandingPage() {
                 <Target size={24} />
               </div>
               <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
-                🎯 Captador IA
+                🏠 Inmuebles
               </h3>
               <p className="text-gray-400 text-sm sm:text-base leading-relaxed">
-                Responde a nuevos leads en &lt;2 minutos. Hace las preguntas clave y asigna un score de probabilidad de compra automáticamente.
+                Tu cartera con fotos y estado. La IA redacta y mejora el anuncio de cada inmueble en segundos.
               </p>
             </div>
 
@@ -497,10 +491,10 @@ export default function LandingPage() {
                 <Briefcase size={24} />
               </div>
               <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
-                💼 Vendedor IA
+                👥 Contactos y seguimiento
               </h3>
               <p className="text-gray-400 text-sm sm:text-base leading-relaxed">
-                Gestiona objeciones, hace seguimiento y propone visitas. Escala al equipo humano cuando detecta señal de cierre.
+                Pipeline claro desde el primer contacto hasta el cierre. Los leads de Idealista y Fotocasa entran solos por email.
               </p>
             </div>
 
@@ -511,10 +505,10 @@ export default function LandingPage() {
                 <Brain size={24} />
               </div>
               <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
-                🧠 Coordinador IA
+                📅 Visitas y recordatorios
               </h3>
               <p className="text-gray-400 text-sm sm:text-base leading-relaxed">
-                Asigna leads al comercial adecuado, detecta urgencias y genera el briefing matutino de cada comercial.
+                Agenda visitas y el cliente recibe la confirmación y los recordatorios por email, sin que tú hagas nada.
               </p>
             </div>
           </div>

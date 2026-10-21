@@ -28,9 +28,6 @@ export const SECTION_PLAN_REQUIREMENTS = {
   '/pipeline': { minPlan: 'starter', message: '' },
   '/leads': { minPlan: 'starter', message: '' },
   '/properties': { minPlan: 'starter', message: '' },
-  '/agents': { minPlan: 'starter', message: '' },
-  '/automations': { minPlan: 'starter', message: '' },
-  '/analytics': { minPlan: 'profesional', message: 'Analytics avanzado disponible desde plan Profesional' },
   '/team': { minPlan: 'profesional', message: 'Gestión de equipo disponible desde plan Profesional' },
   '/settings': { minPlan: 'starter', message: '' },
 }
@@ -38,8 +35,6 @@ export const SECTION_PLAN_REQUIREMENTS = {
 export const FEATURE_PLAN_MAP = {
   leads: 'starter',
   users: 'starter',
-  agents: 'starter',
-  automations: 'starter',
   meta_ads: 'profesional',
   fullAnalytics: 'profesional',
   apiAccess: 'profesional',

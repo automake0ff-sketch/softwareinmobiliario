@@ -12,17 +12,12 @@ const PipelinePage = lazy(() => import('./pages/PipelinePage'))
 const LeadsPage = lazy(() => import('./pages/LeadsPage'))
 const LeadDetailPage = lazy(() => import('./pages/LeadDetailPage'))
 const PropertiesPage = lazy(() => import('./pages/PropertiesPage'))
-const AutomationsPage = lazy(() => import('./pages/AutomationsPage'))
-const AgentsIAPage = lazy(() => import('./pages/AgentsIAPage'))
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
 const PricingPage = lazy(() => import('./pages/PricingPage'))
-const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'))
-const ControlPage = lazy(() => import('./pages/ControlPage'))
 const TeamPage = lazy(() => import('./pages/TeamPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
 const RegisterPage = lazy(() => import('./pages/RegisterPage'))
-const TemplatesPage = lazy(() => import('./pages/TemplatesPage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const PublicAppointmentPage = lazy(() => import('./pages/PublicAppointmentPage'))
 const LandingPage = lazy(() => import('./pages/LandingPage'))
@@ -139,11 +134,6 @@ export default function App() {
               <Route path="/leads" element={<LeadsPage />} />
               <Route path="/leads/:id" element={<LeadDetailPage />} />
               <Route path="/properties" element={<PropertiesPage />} />
-              <Route path="/automations" element={<AutomationsPage />} />
-              <Route path="/automations/templates" element={<TemplatesPage />} />
-              <Route path="/agents" element={<AgentsIAPage />} />
-              <Route path="/analytics" element={<AnalyticsPage />} />
-              <Route path="/control" element={<ControlPage />} />
               <Route path="/team" element={<TeamPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/admin" element={<AdminPage />} />

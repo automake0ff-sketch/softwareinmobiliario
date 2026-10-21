@@ -2,7 +2,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { all, get, run } from '../db/db.js';
 import { callClaude } from './claude.js';
 import { EmailService } from './email.js';
-import { WhatsAppService } from './whatsapp.js';
 
 export async function logCommunication({ agencyId, leadId, appointmentId, channel, direction, subject, body, status, providerMessageId, error }) {
   await run(

@@ -2,7 +2,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { all, get, run } from '../db/db.js';
 import { callClaude } from './claude.js';
 import { EmailService } from './email.js';
-import { WhatsAppService } from './whatsapp.js';
 import { logActivity, logCommunication, logLeadAutomation, getBestPropertyForLead } from './lead-automation.service.js';
 import { safeJsonParse } from '../lib/safe-json.js';
 
@@ -19,7 +18,7 @@ export async function getLeadPreferences(leadId) {
   if (!prefs) {
     await run(
       `INSERT INTO lead_preferences (lead_id, preferred_channel, consent_email, consent_whatsapp, consent_calls)
-       VALUES (@lid, 'whatsapp', 1, 1, 0)`,
+       VALUES (@lid, 'email', 1, 0, 0)`,
       { lid: leadId }
     );
     prefs = await get('SELECT * FROM lead_preferences WHERE lead_id = @lid', { lid: leadId });
@@ -136,22 +135,6 @@ export async function createAppointment({ lead, agency, type, starts_at, ends_at
     });
   }
 
-  let whatsappSent = false;
-  if (lead.phone) {
-    const whatsappService = new WhatsAppService({
-      whatsappToken: agency.whatsapp_token, whatsappPhoneId: agency.whatsapp_phone_id, whatsappNumber: agency.whatsapp_number,
-    });
-    const waResult = await whatsappService.sendAppointmentConfirmation(lead, appointment, agency, modifyUrl);
-    whatsappSent = Boolean(waResult.success || waResult.mock);
-    logCommunication({
-      agencyId: agency.id, leadId: lead.id, appointmentId,
-      channel: 'whatsapp', direction: 'outbound',
-      subject: null, body: `Confirmación de cita`,
-      status: whatsappSent ? 'sent' : 'failed',
-      providerMessageId: waResult.messageId, error: waResult.error,
-    });
-  }
-
   await run(`UPDATE leads SET last_activity = NOW(), last_channel = 'appointment' WHERE id = @id`, { id: lead.id });
 
   logLeadAutomation({
@@ -161,5 +144,5 @@ export async function createAppointment({ lead, agency, type, starts_at, ends_at
     result: { appointment_id: appointmentId, client_token: clientToken },
   });
 
-  return { appointment, client_token: clientToken, modify_url: modifyUrl, email_sent: emailSent, whatsapp_sent: whatsappSent };
+  return { appointment, client_token: clientToken, modify_url: modifyUrl, email_sent: emailSent };
 }

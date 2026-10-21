@@ -1,12 +1,10 @@
 import { run, get, all } from '../db/db.js';
 import { v4 as uuidv4 } from 'uuid';
-import { WhatsAppSender } from './whatsapp-sender.js';
 import { EmailSender } from './email-sender.js';
 import { TelegramSender } from './telegram-sender.js';
 import { SlackSender } from './slack-sender.js';
 import { CalendarManager } from './calendar-manager.js';
 import { realtime } from './realtime.js';
-import { allowProactiveWhatsApp } from './ai-budget.js';
 import {
   outboundDecision, queueForApproval, withConsentFooter, markConsentNotice,
   LEAD_FACING_AGENTS, PROACTIVE_AGENTS,
@@ -36,7 +34,7 @@ export class ActionExecutor {
     }
 
     if (leadFacing && policy.decision !== 'send') {
-      // No hablamos con el lead: sin WhatsApp ni email; el resto de acciones
+      // No hablamos con el lead: sin email; el resto de acciones
       // internas (tareas, avisos al equipo, actualización del lead) sigue.
       ctx = { ...ctx, email: null };
       if (policy.decision === 'hold') {
@@ -61,27 +59,6 @@ export class ActionExecutor {
       if (finalMessage && finalMessage.length > 5) {
         await this.saveMessageToConversation(leadId, agentType, finalMessage);
         actions.push('Mensaje guardado en conversación');
-      }
-
-      // ── ENVIAR POR WHATSAPP si está configurado ────────────────────
-      const shouldSendWA = leadFacing && finalMessage && ctx.phone && ctx.wa_token && ctx.wa_phone_id;
-
-      // Agentes que escriben por iniciativa propia: tope mensual por plan
-      // para no disparar el coste de Meta.
-      const proactiveBlocked = shouldSendWA && proactive &&
-        !(await allowProactiveWhatsApp(this.agencyId));
-
-      if (proactiveBlocked) {
-        actions.push('WhatsApp proactivo no enviado: tope mensual del plan alcanzado');
-      } else if (shouldSendWA) {
-        const wa = new WhatsAppSender(String(ctx.wa_token), String(ctx.wa_phone_id));
-        const sent = await wa.sendText(String(ctx.phone), finalMessage);
-        if (sent) {
-          actions.push('WhatsApp enviado ✓');
-          if (policy.lead && !policy.lead.consent_notice_sent) await markConsentNotice(leadId);
-        } else {
-          actions.push('WhatsApp: no enviado (verificar credenciales)');
-        }
       }
     }
 

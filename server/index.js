@@ -10,8 +10,6 @@ import { dirname, join } from 'path';
 import { existsSync, mkdirSync, readFileSync } from 'fs';
 import crypto from 'crypto';
 import { getAIUsageSummary } from './services/ai-budget.js';
-import { outboundDecision, queueForApproval, withConsentFooter, markConsentNotice } from './services/message-policy.js';
-import { WhatsAppSender } from './services/whatsapp-sender.js';
 import { initDB, all, get, run, saveDB } from './db/db.js';
 import { defaultQueue, JobQueue } from './services/queue.js';
 import { initRealtime, RealtimeService } from './services/realtime.js';
@@ -231,24 +229,18 @@ async function start() {
   const propertiesRouter = (await import('./routes/properties.js')).default;
   const agentsRouter = (await import('./routes/agents.js')).default;
   const agencyRouter = (await import('./routes/agency.js')).default;
-  const conversationsRouter = (await import('./routes/conversations.js')).default;
   const appointmentsRouter = (await import('./routes/appointments.js')).default;
   const agentByTypeRouter = (await import('./routes/agent-by-type.js')).default;
   const aiAgentsRouter = (await import('./routes/ai-agents.js')).default;
-  const { default: metaWebhook } = await import('./webhooks/meta.js');
-  const { default: whatsappWebhook, waClient, MESSAGE_TEMPLATES } = await import('./webhooks/whatsapp.js');
 
   app.use('/api/leads', leadsRouter);
   app.use('/api/properties', propertiesRouter);
   app.use('/api/agents', agentsRouter);
   app.use('/api/agency', agencyRouter);
-  app.use('/api/conversations', conversationsRouter);
   app.use('/api/control', (await import('./routes/control.js')).default);
   app.use('/api/marketing', (await import('./routes/marketing.js')).default);
   app.use('/api/webhooks/portal-leads', webhookLimiter, (await import('./webhooks/portal-leads.js')).default);
   app.use('/api', appointmentsRouter);
-  app.use("/webhooks/meta", webhookLimiter, express.raw({ type: "application/json" }), metaWebhook);
-  app.use("/webhooks/whatsapp", webhookLimiter, express.raw({ type: "application/json" }), whatsappWebhook);
   app.use('/api/rag', (await import('./routes/rag.js')).default);
   app.use('/api/automations', (await import('./routes/automations.js')).default);
   app.use('/api/automations', (await import('./routes/automations-execute-realtime.js')).default);
@@ -273,62 +265,6 @@ async function start() {
     res.status(500).json({ error: 'Error interno del servidor.' });
   });
 
-  defaultQueue.on('process_message', async (job) => {
-    try {
-      const { leadId, messageBody, messageType, phoneNumber, conversationId, agencyId } = job.data;
-      const lead = await get('SELECT * FROM leads WHERE id = @id', { id: leadId });
-      if (!lead) throw new Error('Lead not found');
-
-      const status = lead.status || 'nuevo';
-
-      let agentType = 'captador';
-      if (status === 'contactado' || status === 'interesado') agentType = 'vendedor';
-      else if (status === 'visita_agendada') agentType = 'agendador';
-      else if (status === 'negociacion') agentType = 'vendedor';
-      else if (status === 'reserva') agentType = 'documentador';
-      else if (status === 'cerrado') agentType = 'notificador';
-
-      const { AgentOrchestrator } = await import('./services/agent-orchestrator.js');
-      const orchestrator = new AgentOrchestrator(agencyId);
-      
-      // Ejecución nativa del orquestador completo
-      const results = await orchestrator.runForLead(leadId, 'message_received', {
-        last_message: messageBody,
-      });
-
-      const agentResult = results[0] || {};
-      const agentResponse = agentResult.message || '';
-      // NOTA: el envío real por WhatsApp y el guardado en la tabla messages ya lo
-      // hace ActionExecutor.executeFromAgentData (invocado dentro de runForLead)
-      // en cuanto agentResult.message tiene contenido real. No lo repetimos aquí
-      // para no duplicar el mensaje que recibe el lead.
-
-      if (lead.status === 'nuevo') {
-        await run("UPDATE leads SET status = 'contactado', updated_at = NOW() WHERE id = @id", { id: leadId });
-      }
-      await run("UPDATE leads SET last_activity = NOW(), updated_at = NOW() WHERE id = @id", { id: leadId });
-
-      logActivity(
-        agencyId, leadId, null, 'ia_response',
-        `[${agentType}] Respuesta automática enviada: "${agentResponse.substring(0, 80)}..."`,
-        { agentType, messageId: job.data.messageId }
-      );
-
-      if (realtime) {
-        realtime.broadcastAgentAction(agentType, {
-          leadId, leadName: lead.name, response: agentResponse.substring(0, 100),
-        });
-        realtime.broadcastActivity({
-          type: 'ia_response', leadId, leadName: lead.name, agentType,
-          description: `Respuesta generada por ${agentType}`,
-        });
-      }
-    } catch (e) {
-      console.error('[QUEUE] process_message error:', e.message);
-      throw e;
-    }
-  });
-
   defaultQueue.on('process_new_lead', async (job) => {
     try {
       const { leadId, agencyId, source, utm } = job.data;
@@ -350,40 +286,13 @@ async function start() {
           `Lead asignado automáticamente a ${comercial.name}`, { comercialId: comercial.id, source });
       }
 
-      // Bienvenida: usa las credenciales de la PROPIA agencia (antes salía por un
-      // cliente global de WhatsApp), respeta baja/traspaso/aprobación y añade el
-      // aviso de baja del primer mensaje.
-      const agencyRow = await get('SELECT name, whatsapp_token, whatsapp_phone_id FROM agencies WHERE id = @id', { id: agencyId });
-      const agencyName = agencyRow?.name || 'la agencia';
-      const welcomeBase = `¡Hola ${lead.name}! 👋 Soy el asistente virtual de ${agencyName}. Hemos recibido tu información y estamos buscando las mejores propiedades para ti. ¿En qué puedo ayudarte?`;
-
-      const policy = await outboundDecision(agencyId, leadId);
-      let welcomeText = null;
-      let welcomeState = 'not_sent';
-      if (policy.decision === 'hold') {
-        await queueForApproval({ agencyId, leadId, agentType: 'captador', phone: lead.phone, content: welcomeBase, reason: policy.reason });
-        welcomeState = 'pending_approval';
-      } else if (policy.decision === 'send' && lead.phone && agencyRow?.whatsapp_token && agencyRow?.whatsapp_phone_id) {
-        const text = withConsentFooter(welcomeBase, policy.lead, false);
-        try {
-          const sender = new WhatsAppSender(String(agencyRow.whatsapp_token), String(agencyRow.whatsapp_phone_id));
-          if (await sender.sendText(String(lead.phone), text)) {
-            welcomeText = text;
-            welcomeState = 'sent';
-            await markConsentNotice(leadId);
-          }
-        } catch (e) {
-          console.error('[QUEUE] Welcome send error:', e.message);
-        }
-      }
-
       const convId = uuidv4();
       await run(
         `INSERT INTO conversations (id, lead_id, agency_id, channel, created_at, updated_at)
          VALUES (@id, @lead_id, @agency_id, @channel, NOW(), NOW())`,
         {
           id: convId, lead_id: leadId, agency_id: agencyId,
-          channel: source === 'meta_ads' ? 'web' : 'whatsapp',
+          channel: 'web',
         }
       );
       if (job.data.initialMessage) {
@@ -393,16 +302,7 @@ async function start() {
           { id: uuidv4(), conversation_id: convId, content: String(job.data.initialMessage).slice(0, 1000) }
         );
       }
-      if (welcomeText) {
-        await run(
-          `INSERT INTO messages (id, conversation_id, author, content, message_type, is_read, created_at)
-           VALUES (@id, @conversation_id, 'agent', @content, 'text', true, NOW())`,
-          { id: uuidv4(), conversation_id: convId, content: welcomeText }
-        );
-      }
-
-      logActivity(agencyId, leadId, null, 'ia_welcome',
-        `Bienvenida a ${lead.name}: ${welcomeState === 'sent' ? 'enviada' : welcomeState === 'pending_approval' ? 'pendiente de aprobación' : 'no enviada'}`, { source, utm, welcomeState });
+      logActivity(agencyId, leadId, null, 'lead_received', `Nuevo lead ${lead.name} (origen: ${source})`, { source, utm });
 
       if (realtime) {
         realtime.broadcastActivity({
@@ -657,7 +557,7 @@ async function start() {
     }
   })
 
-  // Consumo de IA y WhatsApp proactivo del mes (para el panel y para vigilar costes)
+  // Consumo de IA del mes (para el panel y para vigilar costes)
   app.get('/api/billing/ai-usage', auth, async (req, res) => {
     try {
       res.json(await getAIUsageSummary(req.user.agency_id));

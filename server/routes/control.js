@@ -3,9 +3,8 @@ import crypto from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
 import { all, get, run } from '../db/db.js'
 import { auth, requireRole } from '../middleware/auth.js'
-import { WhatsAppSender } from '../services/whatsapp-sender.js'
 import { ActionExecutor } from '../services/action-executor.js'
-import { withConsentFooter, markConsentNotice, setAiPaused } from '../services/message-policy.js'
+import { setAiPaused } from '../services/message-policy.js'
 import { getAIUsageSummary } from '../services/ai-budget.js'
 
 const router = Router()
@@ -78,63 +77,9 @@ router.get('/approvals', async (req, res) => {
 })
 
 router.post('/approvals/:id/approve', async (req, res) => {
-  try {
-    const aid = req.user.agency_id
-    const row = await get(
-      `SELECT * FROM pending_messages WHERE id = @id AND agency_id = @aid AND status = 'pending'`,
-      { id: req.params.id, aid }
-    )
-    if (!row) return res.status(404).json({ error: 'Borrador no encontrado o ya gestionado.' })
-
-    const lead = await get(
-      'SELECT id, phone, whatsapp_opt_out, consent_notice_sent FROM leads WHERE id = @id AND agency_id = @aid',
-      { id: row.lead_id, aid }
-    )
-    if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' })
-    if (lead.whatsapp_opt_out) {
-      await run(
-        `UPDATE pending_messages SET status = 'rejected', reason = 'opt_out', decided_by = @u, decided_at = NOW() WHERE id = @id`,
-        { u: req.user.id, id: row.id }
-      )
-      return res.status(409).json({ error: 'El lead se ha dado de baja; el mensaje no se envía.' })
-    }
-
-    const agency = await get('SELECT whatsapp_token, whatsapp_phone_id FROM agencies WHERE id = @id', { id: aid })
-    if (!agency?.whatsapp_token || !agency?.whatsapp_phone_id) {
-      return res.status(400).json({ error: 'WhatsApp no está configurado en esta agencia.' })
-    }
-    const phone = row.phone || lead.phone
-    if (!phone) return res.status(400).json({ error: 'El lead no tiene teléfono.' })
-
-    const edited = typeof req.body?.content === 'string' ? req.body.content.trim() : ''
-    const content = edited || row.content
-    const text = withConsentFooter(content, lead, false)
-
-    const sender = new WhatsAppSender(String(agency.whatsapp_token), String(agency.whatsapp_phone_id))
-    const ok = await sender.sendText(String(phone), text)
-    if (!ok) {
-      return res.status(502).json({ error: 'WhatsApp no aceptó el mensaje (¿fuera de la ventana de 24 h o credenciales incorrectas?). El borrador sigue pendiente.' })
-    }
-
-    await new ActionExecutor(aid).saveMessageToConversation(row.lead_id, 'ia_agent', text)
-    if (!lead.consent_notice_sent) await markConsentNotice(row.lead_id)
-    await run(
-      `UPDATE pending_messages SET status = 'sent', content = @c, decided_by = @u, decided_at = NOW(), sent_at = NOW() WHERE id = @id`,
-      { c: content, u: req.user.id, id: row.id }
-    )
-    await run(
-      `INSERT INTO activities (id, agency_id, lead_id, type, description, metadata, created_at)
-       VALUES (@id, @aid, @lid, 'ia_message_approved', @d, @m, NOW())`,
-      {
-        id: uuidv4(), aid, lid: row.lead_id,
-        d: `Mensaje de ${row.agent_type || 'IA'} aprobado y enviado${edited ? ' (editado)' : ''}`,
-        m: JSON.stringify({ approved_by: req.user.id, pending_id: row.id, edited: Boolean(edited) }),
-      }
-    )
-    res.json({ ok: true })
-  } catch (e) {
-    res.status(500).json({ error: e.message })
-  }
+  // El envío por WhatsApp se ha eliminado del producto: ya no hay canal por el
+  // que mandar los borradores aprobados. El borrador se puede rechazar o copiar.
+  res.status(410).json({ error: 'El envío automático de mensajes ya no está disponible.' })
 })
 
 router.post('/approvals/:id/reject', async (req, res) => {

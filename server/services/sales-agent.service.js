@@ -10,7 +10,7 @@ Basado en su estado, score, historial y propiedades disponibles, determina qué 
 
 Devuelve JSON con:
 - action: "send_property" | "ask_availability" | "propose_appointment" | "resolve_objection" | "reactivate" | "follow_up" | "send_to_qualifier"
-- channel_recommended: "whatsapp" | "email" | "call"
+- channel_recommended: "email" | "call"
 - message: string con el mensaje a enviar (adaptado al canal)
 - property_id: id de propiedad recomendada o null
 - reason: breve explicación de la decisión
@@ -78,7 +78,7 @@ Responde solo JSON válido sin markdown. Si hay propiedades disponibles y el lea
 
   let result = {
     action: 'follow_up',
-    channel_recommended: lead.last_channel === 'whatsapp' ? 'whatsapp' : 'email',
+    channel_recommended: 'email',
     message: getDefaultMessage(lead, agency),
     property_id: availableProperties[0]?.id || null,
     reason: 'Seguimiento estándar del lead',
@@ -141,17 +141,6 @@ export async function executeSalesAction({ lead, agency, action, channel, messag
     } catch (e) {
       result.error = e.message;
     }
-  }
-
-  if (channel === 'whatsapp' && lead.phone) {
-    const { WhatsAppService } = await import('./whatsapp.js');
-    const waService = new WhatsAppService({
-      whatsappToken: agency.whatsapp_token,
-      whatsappPhoneId: agency.whatsapp_phone_id,
-      whatsappNumber: agency.whatsapp_number,
-    });
-    const waResult = await waService.sendWhatsAppMessage(lead.phone, message, agency);
-    result.sent = waResult.success || waResult.mock;
   }
 
   const updatedLead = await get('SELECT * FROM leads WHERE id = @id', { id: lead.id });

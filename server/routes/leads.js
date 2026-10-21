@@ -7,7 +7,6 @@ import { checkLimit } from '../services/plan-checker.js';
 import { triggerAutomations } from '../services/automation-engine.js';
 import { leadSchema, validateBody } from '../middleware/validators.js';
 import { EmailService } from '../services/email.js';
-import { WhatsAppService } from '../services/whatsapp.js';
 
 const router = Router();
 router.use(auth);
@@ -640,17 +639,11 @@ router.post('/:id/appointments', async (req, res) => {
       fromEmail: agency.sendgrid_from_email,
       agencyName: agency.name
     });
-    const whatsappService = new WhatsAppService({
-      whatsappToken: agency.whatsapp_token,
-      whatsappPhoneId: agency.whatsapp_phone_id,
-      whatsappNumber: agency.whatsapp_number
-    });
 
     const origin = req.headers.origin || 'http://localhost:5173';
     const modifyUrl = `${origin}/appointment/${clientToken}`;
 
     let emailResult = { success: false };
-    let waResult = { success: false };
 
     if (lead.email) {
       emailResult = await emailService.sendAppointmentConfirmation(lead, appointment, agency, modifyUrl);
@@ -674,29 +667,7 @@ router.post('/:id/appointments', async (req, res) => {
       );
     }
 
-    if (lead.phone) {
-      waResult = await whatsappService.sendAppointmentConfirmation(lead, appointment, agency, modifyUrl);
-      await run(
-        `INSERT INTO appointment_messages (id, appointment_id, channel, type, status, error, sent_at)
-         VALUES (@id, @appt_id, 'whatsapp', 'confirmation', @status, @error, NOW())`,
-        {
-          id: uuidv4(),
-          appt_id: appointmentId,
-          status: waResult.success || waResult.mock ? 'sent' : 'failed',
-          error: waResult.error || null,
-        }
-      );
-      logActivity(
-        agencyId,
-        id,
-        null,
-        'whatsapp_sent',
-        `Confirmación de cita enviada por WhatsApp a ${lead.phone}.`,
-        { appointment_id: appointmentId }
-      );
-    }
-
-    res.status(201).json({ appointment, email_sent: emailResult.success || emailResult.mock, whatsapp_sent: waResult.success || waResult.mock });
+    res.status(201).json({ appointment, email_sent: emailResult.success || emailResult.mock });
   } catch (error) {
     console.error('Error scheduling lead appointment:', error);
     res.status(500).json({ error: 'Error al programar la cita.' });

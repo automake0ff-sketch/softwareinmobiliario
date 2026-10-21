@@ -1,4 +1,4 @@
-import { setAgencyContext, allowProactiveWhatsApp } from './ai-budget.js'
+import { setAgencyContext } from './ai-budget.js'
 import { outboundDecision, queueForApproval, withConsentFooter, markConsentNotice } from './message-policy.js'
 import { v4 as uuidv4 } from 'uuid'
 import { all, get, run } from '../db/db.js'
@@ -27,64 +27,9 @@ export function evaluateConditions(conditions, leadData) {
   })
 }
 
-async function sendWhatsApp(phone, message, agencyId, ctx = {}) {
-  if (!phone || !message) return false
-  try {
-    const clean = phone.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '')
-    const fullPhone = clean.startsWith('34') ? clean : `34${clean}`
-
-    // Try context credentials first (from full-context-builder), then DB
-    const waToken = ctx?.wa_token || null
-    const waPhoneId = ctx?.wa_phone_id || null
-    const agencyToken = waToken || (await get('SELECT whatsapp_token FROM agencies WHERE id = @id', { id: agencyId }))?.whatsapp_token
-    const agencyPhoneId = waPhoneId || (await get('SELECT whatsapp_phone_id FROM agencies WHERE id = @id', { id: agencyId }))?.whatsapp_phone_id
-
-    if (agencyToken && agencyPhoneId) {
-      const res = await fetch(`https://graph.facebook.com/v18.0/${agencyPhoneId}/messages`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${agencyToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: fullPhone,
-          type: 'text',
-          text: { preview_url: false, body: message },
-        }),
-      })
-      if (res.ok) {
-        console.log(`[WhatsApp] ✓ Enviado a ${fullPhone}`)
-        return true
-      }
-      const err = await res.text()
-      console.error(`[WhatsApp] Error ${res.status}: ${err}`)
-      return false
-    }
-
-    try {
-      const { default: TwilioService } = await import('./twilio.js')
-      const twilio = new TwilioService({
-        accountSid: process.env.TWILIO_ACCOUNT_SID,
-        authToken: process.env.TWILIO_AUTH_TOKEN,
-        phoneNumber: process.env.TWILIO_PHONE_NUMBER,
-      })
-      const result = await twilio.sendSMS(`+${fullPhone}`, message)
-      if (!result?.error) return true
-    } catch { /* twilio not configured */ }
-
-    console.log(`[WhatsApp Mock → ${fullPhone}]: ${message.substring(0, 80)}...`)
-    return false
-  } catch (e) {
-    console.error('[WhatsApp] Error:', e.message)
-    return false
-  }
-}
-
 // Punto único de entrega de mensajes de automatizaciones al lead: respeta la baja
 // (RGPD), el traspaso a humano y el modo "aprobar antes de enviar", añade el
-// aviso de baja y aplica el tope mensual de WhatsApp proactivo del plan.
+// aviso de baja. Ya no hay canal de envío automático: solo se guarda el borrador.
 async function deliverToLead({ phone, message, agencyId, leadId, ctx = {}, agentType = 'automation', save = true, send = true }) {
   const out = { sent: false, saved: false, held: false, blocked: false }
   if (!message || !leadId || !agencyId) return out
@@ -100,14 +45,6 @@ async function deliverToLead({ phone, message, agencyId, leadId, ctx = {}, agent
     saveMessageToConversation(leadId, agencyId, text, 'ia_agent', agentType)
     out.saved = true
   }
-  if (send && phone) {
-    if (!(await allowProactiveWhatsApp(agencyId))) {
-      console.warn(`[AUTOMATION] tope de WhatsApp proactivo alcanzado para agencia ${agencyId}`)
-      return out
-    }
-    out.sent = await sendWhatsApp(phone, text, agencyId, ctx)
-    if (out.sent && !policy.lead?.consent_notice_sent) await markConsentNotice(leadId)
-  }
   return out
 }
 
@@ -119,7 +56,7 @@ async function saveMessageToConversation(leadId, agencyId, content, senderType, 
     await run(
       `INSERT INTO conversations (id, agency_id, lead_id, channel, created_at, updated_at)
        VALUES (@id, @agency_id, @lead_id, @channel, NOW(), NOW())`,
-      { id: convId, agency_id: agencyId, lead_id: leadId, channel: 'whatsapp' }
+      { id: convId, agency_id: agencyId, lead_id: leadId, channel: 'web' }
     )
     conv = { id: convId }
   } else {
@@ -297,11 +234,11 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
           finalMessage = parsed.message
           agentData = parsed.data
         }
-        let whatsappSent = false
+        let delivered = false
         let savedToDb = false
 
         if (!testMode && leadId && agencyId) {
-          const autoSend = config.auto_send_whatsapp !== false
+          const autoSend = false
           const saveConv = config.save_to_conversation !== false
 
           if (finalMessage) {
@@ -309,7 +246,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
               phone: leadContext.phone, message: finalMessage, agencyId, leadId,
               ctx: leadContext, agentType, save: saveConv, send: autoSend,
             })
-            whatsappSent = delivery.sent
+            delivered = delivery.sent
             savedToDb = delivery.saved
           }
 
@@ -321,7 +258,7 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
           logActivity(agencyId, leadId, 'ia_action',
             `🤖 ${agentType} ejecutado`,
             finalMessage ? finalMessage.substring(0, 300) : rawResponse.substring(0, 300),
-            { agent_type: agentType, auto_send: autoSend, whatsapp_sent: whatsappSent, saved: savedToDb },
+            { agent_type: agentType, auto_send: autoSend, sent: delivered, saved: savedToDb },
             agentType
           )
 
@@ -373,27 +310,12 @@ ${leadContext.zone ? `Zona: ${leadContext.zone}` : ''}`
 
         return {
           success: true,
-          result: `${agentType} ejecutado. ${savedToDb ? 'Mensaje guardado en conversación ✓' : ''} ${whatsappSent ? 'WhatsApp enviado ✓' : leadContext.phone && !testMode ? 'WhatsApp no disponible' : ''}`,
+          result: `${agentType} ejecutado. ${savedToDb ? 'Mensaje guardado en conversación ✓' : ''} `,
           message: finalMessage,
           aiUsed: true,
           savedToDb,
-          whatsappSent,
+          delivered,
         }
-      }
-
-      case 'send_whatsapp': {
-        const msg = fill(config.message || config.message_template || 'Hola {{lead_name}}!')
-        let sent = false
-        if (!testMode && leadId && agencyId && leadContext.phone) {
-          const delivery = await deliverToLead({
-            phone: leadContext.phone, message: msg, agencyId, leadId, agentType: 'automation',
-          })
-          sent = delivery.sent
-          logActivity(agencyId, leadId, 'message_sent', '💬 WhatsApp enviado',
-            msg.substring(0, 300),
-            { phone: leadContext.phone, sent }, null)
-        }
-        return { success: true, result: sent ? `WhatsApp enviado a ${leadContext.phone}` : `Mensaje preparado: "${msg.substring(0, 60)}..."`, message: msg, aiUsed: false, whatsappSent: sent }
       }
 
       case 'send_email': {

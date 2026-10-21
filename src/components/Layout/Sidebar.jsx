@@ -4,7 +4,6 @@ import {
   Users,
   Columns3,
   Building2,
-  MessageCircle,
   Zap,
   Bot,
   BarChart3,
@@ -29,7 +28,6 @@ const navigation = [
   { to: '/pipeline', label: 'Pipeline', icon: Columns3, minPlan: null },
   { to: '/leads', label: 'Leads', icon: Users, minPlan: null },
   { to: '/properties', label: 'Propiedades', icon: Building2, minPlan: null },
-  { to: '/conversations', label: 'Conversaciones', icon: MessageCircle, minPlan: null },
   { to: '/automations', label: 'Automatizaciones', icon: Zap, minPlan: null },
   { to: '/automations/templates', label: 'Plantillas', icon: Puzzle, minPlan: null },
   { to: '/agents', label: 'Agentes IA', icon: Bot, minPlan: null },
@@ -56,7 +54,6 @@ export default function Sidebar() {
     if (to === '/dashboard') return pathname === '/dashboard'
     if (to === '/leads') return pathname.startsWith('/leads')
     if (to === '/properties') return pathname.startsWith('/properties')
-    if (to === '/conversations') return pathname.startsWith('/conversations')
     if (to === '/pipeline') return pathname.startsWith('/pipeline')
     return pathname.startsWith(to)
   }

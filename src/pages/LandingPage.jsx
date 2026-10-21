@@ -46,7 +46,7 @@ function LeadMagnetSection() {
           Guía gratuita
         </span>
         <h2 className="mt-4 text-2xl sm:text-3xl font-bold text-white font-syne">
-          7 señales de que tu inmobiliaria está perdiendo leads de WhatsApp
+          7 señales de que tu inmobiliaria está perdiendo leads
         </h2>
         <p className="mt-3 text-[#94A3B8] text-sm sm:text-base">
           Checklist corto y sin humo: cómo saber si estás dejando dinero sobre la mesa antes de plantearte automatizar nada.
@@ -106,7 +106,6 @@ export default function LandingPage() {
         '500 leads nuevos al mes',
         '3 Agentes IA activos',
         '10 automatizaciones activas',
-        'Canal de WhatsApp Business',
         'Entrada de leads por email (Idealista, Fotocasa...)',
         'CRM + Pipeline Kanban',
         'Soporte estándar'
@@ -126,7 +125,6 @@ export default function LandingPage() {
         '2.000 leads nuevos al mes',
         '8 Agentes IA activos',
         'Automatizaciones ilimitadas',
-        'WhatsApp + Meta Ads',
         'Entrada de leads por email (Idealista, Fotocasa...)',
         'Analytics avanzado',
         'Soporte prioritario'
@@ -146,7 +144,7 @@ export default function LandingPage() {
         'Leads ilimitados',
         '12 Agentes IA activos',
         'Automatizaciones ilimitadas',
-        'WhatsApp + Meta Ads + entrada de leads por email de portales',
+        'Entrada de leads por email de portales',
         'White-label completo',
         'Soporte dedicado 24/7'
       ],
@@ -171,10 +169,6 @@ export default function LandingPage() {
     {
       q: '¿Puedo cancelar cuando quiera?',
       a: 'Sí, sin permanencia ni penalización. Si decides cancelar, tu suscripción continuará activa hasta el final del período de facturación actual.'
-    },
-    {
-      q: '¿El WhatsApp es el mío?',
-      a: 'Sí, conectas tu propio número de WhatsApp Business a través de nuestra integración oficial con la API de Meta.'
     },
     {
       q: '¿En cuánto tiempo está funcionando?',
@@ -353,7 +347,7 @@ export default function LandingPage() {
                       <div className="flex flex-col gap-2 overflow-y-auto pr-1">
                         <div className="bg-indigo-500/5 border border-indigo-500/10 p-2 rounded-lg flex flex-col gap-1">
                           <div className="flex justify-between text-[10px]">
-                            <span className="font-semibold text-indigo-300">WhatsApp (Captador IA)</span>
+                            <span className="font-semibold text-indigo-300">Email (Captador IA)</span>
                             <span className="text-gray-500">Hace 1 min</span>
                           </div>
                           <p className="text-[10px] text-gray-400 truncate">"Hola Carlos, veo que buscas piso con ascensor..."</p>

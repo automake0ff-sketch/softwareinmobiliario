@@ -12,7 +12,6 @@ const PipelinePage = lazy(() => import('./pages/PipelinePage'))
 const LeadsPage = lazy(() => import('./pages/LeadsPage'))
 const LeadDetailPage = lazy(() => import('./pages/LeadDetailPage'))
 const PropertiesPage = lazy(() => import('./pages/PropertiesPage'))
-const ConversationsPage = lazy(() => import('./pages/ConversationsPage'))
 const AutomationsPage = lazy(() => import('./pages/AutomationsPage'))
 const AgentsIAPage = lazy(() => import('./pages/AgentsIAPage'))
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
@@ -140,7 +139,6 @@ export default function App() {
               <Route path="/leads" element={<LeadsPage />} />
               <Route path="/leads/:id" element={<LeadDetailPage />} />
               <Route path="/properties" element={<PropertiesPage />} />
-              <Route path="/conversations" element={<ConversationsPage />} />
               <Route path="/automations" element={<AutomationsPage />} />
               <Route path="/automations/templates" element={<TemplatesPage />} />
               <Route path="/agents" element={<AgentsIAPage />} />

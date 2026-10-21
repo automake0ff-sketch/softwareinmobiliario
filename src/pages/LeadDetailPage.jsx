@@ -25,7 +25,7 @@ const activityIcons = {
   ia_response: Bot, ia_welcome: Bot, ia_insight: Sparkles,
   conversation: MessageSquare, visit: Calendar, task: CheckCircle,
   automation: Zap, automation_triggered: Zap,
-  email_sent: Mail, whatsapp_sent: MessageCircle,
+  email_sent: Mail,
   appointment_scheduled: Calendar, appointment_confirmed: CheckCircle,
   appointment_cancelled: X, appointment_rescheduled: Clock,
   appointment_updated: Edit3,
@@ -125,7 +125,7 @@ export default function LeadDetailPage() {
   const [insights, setInsights] = useState([])
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('conversacion')
+  const [activeTab, setActiveTab] = useState('timeline')
 
   // Email modal states
   const [showEmailModal, setShowEmailModal] = useState(false)
@@ -182,7 +182,6 @@ export default function LeadDetailPage() {
   // Auto appointment states
   const [autoApptLoading, setAutoApptLoading] = useState(false)
   const [autoApptSuggestion, setAutoApptSuggestion] = useState(null)
-  const [autoWaOnAppointment, setAutoWaOnAppointment] = useState(true)
   const [showClientPreview, setShowClientPreview] = useState(false)
 
   // Qualifier result
@@ -198,8 +197,6 @@ export default function LeadDetailPage() {
   const [showWaModal, setShowWaModal] = useState(false)
   const [waMessage, setWaMessage] = useState('')
   const [agencyConfig, setAgencyConfig] = useState(null)
-  const [waPanelMessage, setWaPanelMessage] = useState('')
-  const [sendingWaFromPanel, setSendingWaFromPanel] = useState(false)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -300,10 +297,8 @@ export default function LeadDetailPage() {
         notes: apptNotes.trim(),
         attendant_name: apptAttendant.trim()
       })
-      if (apptRes.email_sent === false && apptRes.whatsapp_sent === false) {
-        toast.error('Cita programada, pero no se pudo enviar la confirmación por email ni WhatsApp. Avisa al cliente manualmente.')
-      } else if (apptRes.email_sent === false || apptRes.whatsapp_sent === false) {
-        toast.success('Cita programada. Ojo: uno de los canales de confirmación (email o WhatsApp) no se pudo enviar.')
+      if (apptRes.email_sent === false) {
+        toast.error('Cita programada, pero no se pudo enviar la confirmación por email. Avisa al cliente manualmente.')
       } else {
         toast.success('Cita programada con éxito. Mensajes de confirmación enviados.')
       }
@@ -346,19 +341,6 @@ export default function LeadDetailPage() {
       setLoading(false)
     })
   }
-
-  // Build pre-configured WhatsApp message when lead loads
-  useEffect(() => {
-    if (lead) {
-      const name = lead.name || 'cliente'
-      const interest = lead.property_interest ? ` para ${lead.property_interest}` : ''
-      const zone = lead.zone ? ` en ${lead.zone}` : ''
-      const budget = lead.budget ? ` con un presupuesto de ${formatCurrency(lead.budget)}` : ''
-      const agName = agencyConfig?.name || 'nuestra inmobiliaria'
-      const msg = `Hola ${name} 👋, soy del equipo de ${agName}. Me pongo en contacto contigo porque vimos tu interés${interest}${zone}${budget}. ¿Tienes unos minutos para comentarnos qué estás buscando exactamente? Estaremos encantados de ayudarte 🏠`
-      setWaPanelMessage(msg)
-    }
-  }, [lead, agencyConfig])
 
   useEffect(() => {
     setLoading(true)
@@ -411,107 +393,6 @@ export default function LeadDetailPage() {
     } catch (e) {
       setLead(prev => ({ ...prev, pipeline_stage: prevStage, status: prevStage }))
       toast.error('Error al actualizar la etapa')
-    }
-  }
-
-  // Active chat: Send message
-  const handleSendMessage = async (e) => {
-    e.preventDefault()
-    if (!chatMessage.trim() || !activeConv) return
-    setSendingMsg(true)
-    const msgContent = chatMessage.trim()
-    setChatMessage('')
-
-    try {
-      const sent = await api.post(`/conversations/${activeConv.id}/messages`, { content: msgContent })
-      // Append optimistically
-      setConvMessages(prev => [...prev, sent])
-      loadLeadDetails() // refresh last contact
-    } catch (err) {
-      toast.error('Error al enviar el mensaje')
-    } finally {
-      setSendingMsg(false)
-    }
-  }
-
-  // Open WhatsApp with custom message from panel
-  const handleOpenWhatsApp = async (customMsg) => {
-    if (!lead) return
-    const phone = String(lead.phone || '').replace(/[\s\-\(\)\+]/g, '')
-    if (!phone) { toast.error('Este lead no tiene número de teléfono registrado'); return }
-    const fullPhone = phone.startsWith('34') ? phone : `34${phone}`
-    const msg = customMsg || waPanelMessage
-    if (!msg.trim()) { toast.error('El mensaje no puede estar vacío'); return }
-
-    setSendingWaFromPanel(true)
-    // Open WhatsApp directly
-    window.open(`https://wa.me/${fullPhone}?text=${encodeURIComponent(msg)}`, '_blank')
-
-    // Register conversation in CRM
-    try {
-      const conv = await api.post('/conversations', { lead_id: lead.id, channel: 'whatsapp', content: msg })
-      setActiveConv(conv)
-      setConvMessages(conv.messages || [])
-      setConversations([conv])
-      toast.success('✅ WhatsApp abierto y conversación registrada en el CRM')
-      loadLeadDetails()
-    } catch (e) { /* already exists or error, just continue */ }
-    finally { setSendingWaFromPanel(false) }
-  }
-
-  // Legacy alias for backward compatibility
-  const handleOpenWaModal = handleOpenWhatsApp
-
-  // Quick WA templates
-  const waTemplates = [
-    {
-      id: 'primer_contacto',
-      label: '👋 Primer contacto',
-      build: (lead, agency) => `Hola ${lead.name || ''} 👋, soy del equipo de ${agency}. Me pongo en contacto contigo porque vimos tu interés en nuestra oferta inmobiliaria. ¿Tienes unos minutos para contarnos qué estás buscando? 🏠`
-    },
-    {
-      id: 'seguimiento',
-      label: '🔄 Seguimiento',
-      build: (lead, agency) => `Hola ${lead.name || ''}, te contacto desde ${agency} para hacerte un seguimiento de tu búsqueda de vivienda. ¿Has encontrado algo que te interese o quieres que te enviemos nuevas opciones?`
-    },
-    {
-      id: 'propiedades',
-      label: '🏡 Enviar propiedades',
-      build: (lead, agency) => `Hola ${lead.name || ''} 😊, desde ${agency} hemos seleccionado varias propiedades que encajan perfectamente con tus criterios${lead.zone ? ` en ${lead.zone}` : ''}${lead.budget ? ` y tu presupuesto de ${formatCurrency(lead.budget)}` : ''}. ¿Te gustaría que te las enviásemos?`
-    },
-    {
-      id: 'agendar_visita',
-      label: '📅 Agendar visita',
-      build: (lead, agency) => `Hola ${lead.name || ''}, te escribo desde ${agency}. Tenemos una propiedad que creemos que te va a encantar. ¿Te vendría bien esta semana para hacer una visita? ¡Sólo nos llevaría 30 minutos! 🔑`
-    },
-    {
-      id: 'confirmacion_cita',
-      label: '✅ Confirmar cita',
-      build: (lead, agency) => `Hola ${lead.name || ''} 👋 Te confirmo la cita que tenemos programada. Ante cualquier cambio o duda, estoy a tu disposición. ¡Hasta pronto! — Equipo ${agency}`
-    }
-  ]
-
-  const applyWaTemplate = (templateId) => {
-    const tpl = waTemplates.find(t => t.id === templateId)
-    if (!tpl || !lead) return
-    const agency = agencyConfig?.name || 'nuestra inmobiliaria'
-    setWaPanelMessage(tpl.build(lead, agency))
-  }
-
-  // Toggle conversation IA handling
-  const handleToggleIA = async () => {
-    if (!activeConv) return
-    setTogglingIA(true)
-    const nextState = !activeConv.ia_handling;
-
-    try {
-      await api.patch(`/conversations/${activeConv.id}`, { ia_handling: nextState })
-      setActiveConv(prev => ({ ...prev, ia_handling: nextState }))
-      toast.success(`IA ${nextState ? 'activada' : 'desactivada'} para esta conversación`)
-    } catch (e) {
-      toast.error('Error al actualizar el estado de la IA')
-    } finally {
-      setTogglingIA(false)
     }
   }
 
@@ -641,14 +522,11 @@ export default function LeadDetailPage() {
         location: apptType === 'physical' ? apptLocation : null,
         online_url: apptType === 'online' ? apptOnlineUrl : null,
         notes: apptNotes.trim(), attendant_name: apptAttendant.trim(),
-        send_whatsapp: autoWaOnAppointment,
       })
-      if (result.email_sent === false && result.whatsapp_sent === false) {
-        toast.error('Cita programada, pero no se pudo enviar la confirmación por email ni WhatsApp. Avisa al cliente manualmente.')
-      } else if (result.email_sent === false || result.whatsapp_sent === false) {
-        toast.success('Cita programada. Ojo: uno de los canales de confirmación (email o WhatsApp) no se pudo enviar.')
+      if (result.email_sent === false) {
+        toast.error('Cita programada, pero no se pudo enviar la confirmación por email. Avisa al cliente manualmente.')
       } else {
-        toast.success('Cita programada con éxito. Mensajes enviados.')
+        toast.success('Cita programada con éxito. Confirmación enviada por email.')
       }
       setShowAppointmentModal(false)
       setAutoApptSuggestion(null)
@@ -1071,17 +949,6 @@ export default function LeadDetailPage() {
             <div className="bg-white/[0.02] border border-white/5 rounded-2xl overflow-hidden shadow-2xl">
               <div className="flex border-b border-white/5 bg-white/[0.02]">
                 <button
-                  onClick={() => setActiveTab('conversacion')}
-                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-xs font-bold transition-all border-b-2 uppercase tracking-wide ${
-                    activeTab === 'conversacion'
-                      ? 'text-indigo-400 border-indigo-500 bg-white/[0.02]'
-                      : 'text-white/40 border-transparent hover:text-white/80'
-                  }`}
-                >
-                  <MessageCircle size={14} />
-                  Conversación
-                </button>
-                <button
                   onClick={() => setActiveTab('timeline')}
                   className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-xs font-bold transition-all border-b-2 uppercase tracking-wide ${
                     activeTab === 'timeline'
@@ -1118,163 +985,6 @@ export default function LeadDetailPage() {
 
               <div className="p-5">
                 <AnimatePresence mode="wait">
-                  {/* Tab 1: Conversación — WhatsApp Panel */}
-                  {activeTab === 'conversacion' && (
-                    <motion.div
-                      key="conversacion"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      className="space-y-4"
-                    >
-                      {/* WhatsApp Header Banner */}
-                      <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-gradient-to-r from-green-500/10 to-emerald-500/5 border border-green-500/20">
-                        <div className="w-9 h-9 rounded-xl bg-green-500/20 border border-green-500/30 flex items-center justify-center shrink-0">
-                          <MessageCircle size={18} className="text-green-400" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-bold text-green-300">Canal WhatsApp</p>
-                          <p className="text-[10px] text-white/40 truncate">
-                            {lead.phone
-                              ? `+${String(lead.phone).replace(/[\s\-\(\)\+]/g, '').startsWith('34') ? '' : '34'}${String(lead.phone).replace(/[\s\-\(\)\+]/g, '')}`
-                              : 'Sin teléfono registrado'}
-                          </p>
-                        </div>
-                        {activeConv && (
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className="text-[10px] text-white/40 font-medium">IA</span>
-                            <button
-                              onClick={handleToggleIA}
-                              disabled={togglingIA}
-                              className={`relative w-9 h-4.5 rounded-full transition-colors duration-300 ${
-                                activeConv.ia_handling ? 'bg-indigo-500' : 'bg-white/10'
-                              }`}
-                              style={{ width: 36, height: 18 }}
-                            >
-                              <motion.div
-                                className="absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white shadow-sm"
-                                animate={{ left: activeConv.ia_handling ? 18 : 2 }}
-                                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                              />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Chat history scroll area (if there's an active conversation) */}
-                      {activeConv && (
-                        <div className="h-[200px] overflow-y-auto space-y-2.5 pr-1 scrollbar-thin">
-                          {convMessages.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center h-full gap-2 opacity-50">
-                              <MessageCircle size={24} className="text-green-400/40" />
-                              <p className="text-[10px] text-white/30 italic">Sin mensajes registrados aún</p>
-                            </div>
-                          ) : (
-                            convMessages.map((msg, index) => {
-                              const isLead = msg.role === 'lead' || msg.sender_type === 'lead';
-                              const isIA = msg.role === 'ia_agent' || msg.sender_type === 'ia' || msg.author === 'ia_agent' || (msg.role === 'agent' && msg.sender_type === 'ia');
-                              return (
-                                <div key={msg.id || index} className={`flex ${isLead ? 'justify-start' : 'justify-end'}`}>
-                                  <div className={`max-w-[80%] rounded-2xl px-3.5 py-2 border relative ${
-                                    isLead
-                                      ? 'bg-neutral-800/80 text-white/90 border-white/5 rounded-bl-sm'
-                                      : isIA
-                                      ? 'bg-indigo-500/20 text-indigo-200 border-indigo-500/20 rounded-br-sm'
-                                      : 'bg-green-600/20 text-white/90 border-green-500/20 rounded-br-sm'
-                                  }`}>
-                                    {isIA && (
-                                      <span className="absolute -top-2 right-2 bg-indigo-500 text-white text-[8px] px-1 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-0.5">
-                                        <Bot size={8} /> IA
-                                      </span>
-                                    )}
-                                    <p className="text-xs leading-relaxed whitespace-pre-wrap">{msg.content || msg.text}</p>
-                                    <p className="text-[9px] text-white/30 mt-1 text-right">{formatDate(msg.timestamp || msg.created_at)}</p>
-                                  </div>
-                                </div>
-                              )
-                            })
-                          )}
-                          <div ref={messagesEndRef} />
-                        </div>
-                      )}
-
-                      {/* Divider */}
-                      <div className="border-t border-white/5" />
-
-                      {/* Pre-configured Message Panel */}
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <p className="text-[10px] font-bold text-white/40 uppercase tracking-wider">Mensaje preconfigurado</p>
-                          <span className="text-[9px] text-white/30">{waPanelMessage.length} caracteres</span>
-                        </div>
-
-                        {/* Quick templates row */}
-                        <div className="flex gap-1.5 flex-wrap">
-                          {waTemplates.map(tpl => (
-                            <button
-                              key={tpl.id}
-                              onClick={() => applyWaTemplate(tpl.id)}
-                              className="text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-white/60 hover:text-white transition-all"
-                            >
-                              {tpl.label}
-                            </button>
-                          ))}
-                        </div>
-
-                        {/* Message textarea */}
-                        <div className="relative">
-                          <textarea
-                            value={waPanelMessage}
-                            onChange={e => setWaPanelMessage(e.target.value)}
-                            rows={4}
-                            className="w-full bg-black/40 border border-green-500/20 focus:border-green-500/50 rounded-xl px-4 py-3 text-xs text-white placeholder-white/30 resize-none focus:outline-none focus:ring-2 focus:ring-green-500/10 transition-all outline-none leading-relaxed"
-                            placeholder="Escribe o edita el mensaje para enviar por WhatsApp..."
-                          />
-                        </div>
-
-                        {/* Send WhatsApp button */}
-                        <button
-                          onClick={() => handleOpenWhatsApp(waPanelMessage)}
-                          disabled={!lead.phone || !waPanelMessage.trim() || sendingWaFromPanel}
-                          className="w-full inline-flex items-center justify-center gap-2.5 px-4 py-3 bg-green-600 hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-green-600/20 active:scale-[0.98]"
-                        >
-                          <MessageCircle size={16} />
-                          {sendingWaFromPanel ? 'Abriendo WhatsApp...' : `Abrir WhatsApp con ${lead.name?.split(' ')[0] || 'el lead'}`}
-                          <span className="ml-auto text-[10px] font-normal opacity-60">↗ Se abre en WhatsApp</span>
-                        </button>
-
-                        {!lead.phone && (
-                          <p className="text-[10px] text-amber-400/80 text-center">
-                            ⚠️ Este lead no tiene número de teléfono. Añádelo en sus datos para poder contactar por WhatsApp.
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Internal CRM message input (if active conversation) */}
-                      {activeConv && (
-                        <div className="pt-2 border-t border-white/5">
-                          <p className="text-[10px] text-white/30 mb-2 uppercase tracking-wider font-bold">Registrar mensaje interno en CRM</p>
-                          <form onSubmit={handleSendMessage} className="flex gap-2">
-                            <input
-                              type="text"
-                              value={chatMessage}
-                              onChange={e => setChatMessage(e.target.value)}
-                              placeholder={`Nota manual para ${lead.name}...`}
-                              className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder-white/30 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none"
-                            />
-                            <button
-                              type="submit"
-                              disabled={sendingMsg || !chatMessage.trim()}
-                              className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white transition-all shadow-md shadow-indigo-600/10 shrink-0"
-                            >
-                              <Send size={15} />
-                            </button>
-                          </form>
-                        </div>
-                      )}
-                    </motion.div>
-                  )}
-
                   {/* Tab 2: Timeline */}
                   {activeTab === 'timeline' && (
                     <motion.div
@@ -1973,28 +1683,6 @@ export default function LeadDetailPage() {
                   </div>
                 )}
 
-                {/* Auto WhatsApp toggle */}
-                <div className="flex items-center justify-between p-3 bg-black/40 rounded-xl border border-white/5">
-                  <div className="flex items-center gap-2">
-                    <MessageCircle size={14} className="text-green-400" />
-                    <div>
-                      <p className="text-xs text-white font-medium">Enviar WhatsApp al cliente</p>
-                      <p className="text-[10px] text-white/40">Notificar también por WhatsApp si tiene teléfono</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setAutoWaOnAppointment(!autoWaOnAppointment)}
-                    className={`relative w-10 h-5 rounded-full transition-colors duration-300 ${autoWaOnAppointment ? 'bg-indigo-500' : 'bg-white/10'}`}
-                  >
-                    <motion.div
-                      className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm"
-                      animate={{ left: autoWaOnAppointment ? 20 : 2 }}
-                      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                    />
-                  </button>
-                </div>
-
                 {/* Client Message Preview */}
                 <div className="border border-white/5 rounded-xl overflow-hidden">
                   <button
@@ -2007,12 +1695,6 @@ export default function LeadDetailPage() {
                   </button>
                   {showClientPreview && (
                     <div className="p-3 border-t border-white/5 bg-black/20 space-y-2">
-                      <div className="p-3 bg-green-500/5 border border-green-500/10 rounded-xl">
-                        <p className="text-[10px] text-green-400 font-semibold mb-1">📱 WhatsApp que recibirá:</p>
-                        <p className="text-xs text-white/80 whitespace-pre-wrap leading-relaxed">
-                          {`¡Hola ${lead?.name || 'cliente'}! 🌟\n\nTu cita ha sido programada con éxito.\n\n📅 Fecha: ${apptStartsAt ? new Date(apptStartsAt).toLocaleString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Pendiente'}\n📌 Tipo: ${apptType === 'online' ? 'Videollamada' : 'Visita presencial'}\n📍 ${apptType === 'online' ? (apptOnlineUrl || 'Enlace por confirmar') : (apptLocation || 'Oficina')}\n👤 Te atenderá: ${apptAttendant || 'Comercial asignado'}\n\n¡Gracias por confiar en nosotros! 🏠`}
-                        </p>
-                      </div>
                       <div className="p-3 bg-purple-500/5 border border-purple-500/10 rounded-xl">
                         <p className="text-[10px] text-purple-400 font-semibold mb-1">📧 Email que recibirá:</p>
                         <p className="text-xs text-white/60 leading-relaxed">

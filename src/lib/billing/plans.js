@@ -69,7 +69,6 @@ export const PLANS = {
     max_automations: 10,
     available_agents: ['captador', 'vendedor', 'coordinador'],
     features: {
-      whatsapp_business: true,
       meta_ads: false,
       idealista_integration: false,
       crm_pipeline_kanban: true,
@@ -101,7 +100,6 @@ export const PLANS = {
     max_automations: -1,
     available_agents: ['captador', 'vendedor', 'coordinador', 'copywriter', 'tasador', 'analista', 'agendador', 'nurturing'],
     features: {
-      whatsapp_business: true,
       meta_ads: true,
       idealista_integration: false,
       crm_pipeline_kanban: true,
@@ -133,7 +131,6 @@ export const PLANS = {
     max_automations: -1,
     available_agents: ['captador', 'vendedor', 'coordinador', 'copywriter', 'tasador', 'analista', 'agendador', 'nurturing', 'documentador', 'seo', 'financiero', 'notificador'],
     features: {
-      whatsapp_business: true,
       meta_ads: true,
       idealista_integration: true,
       crm_pipeline_kanban: true,

@@ -28,7 +28,6 @@ export const SECTION_PLAN_REQUIREMENTS = {
   '/pipeline': { minPlan: 'starter', message: '' },
   '/leads': { minPlan: 'starter', message: '' },
   '/properties': { minPlan: 'starter', message: '' },
-  '/conversations': { minPlan: 'starter', message: '' },
   '/agents': { minPlan: 'starter', message: '' },
   '/automations': { minPlan: 'starter', message: '' },
   '/analytics': { minPlan: 'profesional', message: 'Analytics avanzado disponible desde plan Profesional' },
@@ -37,7 +36,6 @@ export const SECTION_PLAN_REQUIREMENTS = {
 }
 
 export const FEATURE_PLAN_MAP = {
-  whatsapp: 'starter',
   leads: 'starter',
   users: 'starter',
   agents: 'starter',
@@ -64,7 +62,6 @@ const PLAN_CONFIG = {
       apiAccess: false,
       advancedAutomation: false,
       fullAnalytics: false,
-      whatsappApi: true,
       metaAds: false,
       prioritySupport: false,
       customIntegrations: false,
@@ -83,7 +80,6 @@ const PLAN_CONFIG = {
       apiAccess: true,
       advancedAutomation: true,
       fullAnalytics: true,
-      whatsappApi: true,
       metaAds: true,
       prioritySupport: true,
       customIntegrations: false,
@@ -102,7 +98,6 @@ const PLAN_CONFIG = {
       apiAccess: true,
       advancedAutomation: true,
       fullAnalytics: true,
-      whatsappApi: true,
       metaAds: true,
       prioritySupport: true,
       customIntegrations: true,
@@ -117,7 +112,6 @@ const initialState = {
   leads: [],
   properties: [],
   propertiesPagination: null,
-  conversations: [],
   activities: [],
   agents: {},
   pipelineLeads: {},
@@ -128,7 +122,6 @@ const initialState = {
   loading: {
     leads: false,
     properties: false,
-    conversations: false,
     activities: false,
     stats: false,
     limits: false,
@@ -200,18 +193,6 @@ export const useStore = create(
         }
       },
 
-      fetchConversations: async (params) => {
-        set((s) => ({ loading: { ...s.loading, conversations: true } }))
-        try {
-          const data = await api.get('/conversations', params)
-          const raw = data?.conversations ?? data
-          set({ conversations: Array.isArray(raw) ? raw : [] })
-        } catch {
-          // handled
-        } finally {
-          set((s) => ({ loading: { ...s.loading, conversations: false } }))
-        }
-      },
 
       fetchActivities: async (params) => {
         set((s) => ({ loading: { ...s.loading, activities: true } }))

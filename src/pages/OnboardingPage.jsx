@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  MessageCircle, Mail, Home, Users2, Rocket,
+  Mail, Home, Users2, Rocket,
   Check, Upload, ArrowLeft, ArrowRight,
   Phone, Bot, Star, Sparkles, Shield, Zap, MailCheck,
   SkipForward
@@ -13,7 +13,7 @@ import { useStore } from '../lib/store'
 import { supabase } from '../lib/supabaseClient'
 
 const steps = [
-  { id: 1, label: 'WhatsApp', icon: MessageCircle },
+  { id: 1, label: 'Agencia', icon: Home },
   { id: 2, label: 'Email', icon: Mail },
   { id: 3, label: 'Propiedades', icon: Home },
   { id: 4, label: 'Agentes IA', icon: Users2 },
@@ -43,7 +43,6 @@ export default function OnboardingPage() {
 
   const [nombreEmpresa, setNombreEmpresa] = useState('')
   const [ciudad, setCiudad] = useState('')
-  const [whatsapp, setWhatsapp] = useState({ phone: '', wa_token: '', wa_phone_id: '', connected: false })
   const [email, setEmail] = useState({ provider: 'sendgrid', api_key: '', from_email: '', from_name: '', connected: false })
   const [properties, setProperties] = useState([{ ...propertyTemplate }])
   const [agents, setAgents] = useState(
@@ -80,7 +79,7 @@ export default function OnboardingPage() {
   const canSkip = currentStep !== 3
   const canProceed = () => {
     switch (currentStep) {
-      case 1: return nombreEmpresa.trim() !== '' && ciudad.trim() !== '' && (whatsapp.connected || whatsapp.phone.length >= 9)
+      case 1: return nombreEmpresa.trim() !== '' && ciudad.trim() !== ''
       case 2: return email.connected || email.api_key.length > 0 || true
       case 3: return properties.some(p => p.title.trim())
       case 4: return agents.some(a => a.active)
@@ -170,23 +169,6 @@ export default function OnboardingPage() {
   const toggleAgent = (type) =>
     setAgents(prev => prev.map(a => a.type === type ? { ...a, active: !a.active } : a))
 
-  const testWhatsApp = async () => {
-    try {
-      const res = await api.post('/agency/test-integration', {
-        integration: 'whatsapp',
-        config: { whatsapp_token: whatsapp.wa_token, whatsapp_phone_id: whatsapp.wa_phone_id },
-      })
-      if (res.ok) {
-        setWhatsapp(prev => ({ ...prev, connected: true }))
-        toast.success(res.msg)
-      } else {
-        toast.error(res.msg)
-      }
-    } catch (err) {
-      toast.error('Error al probar conexión')
-    }
-  }
-
   const testEmail = async () => {
     try {
       const res = await api.post('/agency/test-integration', {
@@ -246,7 +228,7 @@ export default function OnboardingPage() {
                 <Sparkles size={28} />
               </div>
               <h2 className="text-xl font-bold text-[#F1F5F9]">Configuración de tu Agencia</h2>
-              <p className="text-sm text-[#94A3B8] mt-1">Completa los datos de tu inmobiliaria y conecta WhatsApp</p>
+              <p className="text-sm text-[#94A3B8] mt-1">Completa los datos de tu inmobiliaria</p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -263,48 +245,6 @@ export default function OnboardingPage() {
                   className="w-full px-4 py-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-indigo-500/50" />
               </div>
             </div>
-
-            <div className="border-t border-[#1E1E2E] my-4 pt-4">
-              <h3 className="text-sm font-semibold text-[#F1F5F9] mb-3">Conectar WhatsApp Business API</h3>
-            </div>
-
-            <div>
-              <label className="block text-sm text-[#94A3B8] mb-1.5">Número de teléfono</label>
-              <input value={whatsapp.phone} onChange={e => setWhatsapp(prev => ({ ...prev, phone: e.target.value }))}
-                placeholder="+34 612 345 678"
-                className="w-full px-4 py-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-green-500/50" />
-            </div>
-            <div>
-              <label className="block text-sm text-[#94A3B8] mb-1.5">WhatsApp Token (Meta)</label>
-              <input value={whatsapp.wa_token} onChange={e => setWhatsapp(prev => ({ ...prev, wa_token: e.target.value }))}
-                placeholder="EAAx..."
-                className="w-full px-4 py-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-green-500/50" />
-            </div>
-            <div>
-              <label className="block text-sm text-[#94A3B8] mb-1.5">Phone Number ID</label>
-              <input value={whatsapp.wa_phone_id} onChange={e => setWhatsapp(prev => ({ ...prev, wa_phone_id: e.target.value }))}
-                placeholder="123456789"
-                className="w-full px-4 py-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl text-[#F1F5F9] placeholder-[#4A4A5E] focus:outline-none focus:border-green-500/50" />
-            </div>
-
-            {(whatsapp.wa_token || whatsapp.phone) && (
-              <button onClick={testWhatsApp}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-green-600 hover:bg-green-500 text-white rounded-xl transition-all text-sm font-medium">
-                <Phone size={16} /> Probar conexión
-              </button>
-            )}
-
-            {whatsapp.connected && (
-              <div className="flex items-center gap-2 text-sm text-green-400 bg-green-500/5 border border-green-500/20 rounded-xl px-4 py-3">
-                <Check size={16} /> WhatsApp conectado correctamente
-              </div>
-            )}
-
-            <p className="text-xs text-[#4A4A5E] text-center">
-              ¿No tienes WhatsApp Business API?{' '}
-              <a href="https://developers.facebook.com/docs/whatsapp/overview" target="_blank" rel="noopener noreferrer"
-                className="text-indigo-400 hover:text-indigo-300">Guía de Meta</a>
-            </p>
           </div>
         )
 
@@ -494,11 +434,6 @@ export default function OnboardingPage() {
             </p>
           </div>
           <div className="flex items-center justify-center gap-6 py-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-green-400">{whatsapp.connected ? '✓' : '-'}</div>
-              <div className="text-xs text-[#94A3B8]">WhatsApp</div>
-            </div>
-            <div className="w-px h-10 bg-[#1E1E2E]" />
             <div className="text-center">
               <div className="text-2xl font-bold text-blue-400">{email.connected ? '✓' : '-'}</div>
               <div className="text-xs text-[#94A3B8]">Email</div>

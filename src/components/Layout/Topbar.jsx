@@ -19,7 +19,6 @@ const pageTitles = {
   '/pipeline': 'Pipeline',
   '/leads': 'Leads',
   '/properties': 'Propiedades',
-  '/conversations': 'Conversaciones',
   '/automations': 'Automatizaciones',
   '/agents': 'Agentes IA',
   '/analytics': 'Analytics',

@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import { useState, useEffect, useRef } from 'react'
 import {
-  Bot, Users, MessageSquare, Zap,
+  Users, MessageSquare,
   TrendingUp, Target, Clock, Home,
   UserPlus, Phone, Calendar, CheckCircle2,
   ArrowUpRight, ArrowDownRight,
@@ -28,7 +28,7 @@ const pulseDot = `
 `
 
 const ICONS = {
-  Bot: Bot, Users: Users, MessageSquare: MessageSquare, Zap: Zap
+  Users: Users, Calendar: Calendar, Home: Home
 }
 
 export default function DashboardPage() {
@@ -136,10 +136,10 @@ export default function DashboardPage() {
   }, [dashboardData])
 
   const liveStats = dashboardData?.liveStats || [
-    { id: 1, label: 'Agentes IA activos', value: 0, icon: 'Bot', change: '', trend: 'up' },
+    { id: 1, label: 'Leads sin contactar', value: 0, icon: 'Users', change: '', trend: 'up' },
     { id: 2, label: 'Leads hoy', value: 0, icon: 'Users', change: '0%', trend: 'down' },
-    { id: 3, label: 'Mensajes enviados hoy', value: 0, icon: 'MessageSquare', change: '0', trend: 'down' },
-    { id: 4, label: 'Automatizaciones ejecutadas', value: 0, icon: 'Zap', change: '', trend: 'up' },
+    { id: 3, label: 'Visitas próximas', value: 0, icon: 'Calendar', change: '', trend: 'up' },
+    { id: 4, label: 'Propiedades disponibles', value: 0, icon: 'Home', change: '', trend: 'up' },
   ]
 
   const pipelineStages = dashboardData?.pipelineStages || []
@@ -194,7 +194,7 @@ export default function DashboardPage() {
         <div className="relative flex items-center gap-4">
           <div className="relative">
             <div className="w-12 h-12 rounded-xl bg-indigo-500/20 flex items-center justify-center">
-              <Bot size={24} className="text-indigo-300" />
+              <Home size={24} className="text-indigo-300" />
             </div>
             <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-400 rounded-full border-2 border-[#13131A]"
               style={{ animation: 'pulse-dot 2s ease-in-out infinite' }}
@@ -202,17 +202,12 @@ export default function DashboardPage() {
           </div>
           <div className="flex-1">
             <h1 className="text-xl lg:text-2xl font-bold text-[#F1F5F9] font-syne flex items-center gap-3">
-              Tu equipo IA está trabajando ahora mismo
-              <span className="flex gap-1">
-                <span className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </span>
+              Resumen de tu agencia
             </h1>
             <p className="text-indigo-200/70 text-sm mt-1">
               {currentTime.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
               {' · '}
-              Analizando mercado, calificando leads y optimizando conversiones
+              Leads, visitas y propiedades de un vistazo
             </p>
           </div>
           <motion.button
@@ -446,7 +441,7 @@ export default function DashboardPage() {
                 { label: 'Total leads', value: String(dashboardData?.totalLeads || 0), icon: Users, color: 'text-indigo-400' },
                 { label: 'Propiedades', value: String(dashboardData?.totalProperties || 0), icon: Home, color: 'text-emerald-400' },
                 { label: 'Pipeline', value: String(pipelineTotal), icon: Layers, color: 'text-amber-400' },
-                { label: 'Agentes IA', value: String(liveStats[0]?.value || 0), icon: Bot, color: 'text-purple-400' },
+                { label: 'Visitas próximas', value: String(liveStats[2]?.value || 0), icon: Calendar, color: 'text-purple-400' },
               ].map((q, i) => (
                 <div key={i} className="p-3 rounded-lg bg-[#0A0A0F]">
                   <div className="flex items-center gap-2 mb-1.5">

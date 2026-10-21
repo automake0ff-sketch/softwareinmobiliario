@@ -3,7 +3,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { all, get, run } from '../db/db.js';
 import { auth } from '../middleware/auth.js';
 import { EmailService } from '../services/email.js';
-import { WhatsAppService } from '../services/whatsapp.js';
 
 const router = Router();
 
@@ -120,17 +119,9 @@ router.post('/public/appointment/:token/cancel', async (req, res) => {
       fromEmail: agency.sendgrid_from_email,
       agencyName: agency.name
     });
-    const whatsappService = new WhatsAppService({
-      whatsappToken: agency.whatsapp_token,
-      whatsappPhoneId: agency.whatsapp_phone_id,
-      whatsappNumber: agency.whatsapp_number
-    });
 
     if (lead.email) {
       await emailService.sendAppointmentCancellation(lead, appointment, agency).catch(console.error);
-    }
-    if (lead.phone) {
-      await whatsappService.sendAppointmentCancellation(lead, appointment, agency).catch(console.error);
     }
 
     res.json({ success: true, status: 'cancelled' });
@@ -193,20 +184,12 @@ router.post('/public/appointment/:token/reschedule', async (req, res) => {
       fromEmail: agency.sendgrid_from_email,
       agencyName: agency.name
     });
-    const whatsappService = new WhatsAppService({
-      whatsappToken: agency.whatsapp_token,
-      whatsappPhoneId: agency.whatsapp_phone_id,
-      whatsappNumber: agency.whatsapp_number
-    });
 
     const origin = req.headers.origin || 'http://localhost:5173';
     const modifyUrl = `${origin}/appointment/${token}`;
 
     if (lead.email) {
       await emailService.sendAppointmentUpdate(lead, updatedAppt, agency, modifyUrl).catch(console.error);
-    }
-    if (lead.phone) {
-      await whatsappService.sendAppointmentUpdate(lead, updatedAppt, agency, modifyUrl).catch(console.error);
     }
 
     res.json({ success: true, status: 'reschedule_requested', appointment: updatedAppt });
@@ -268,20 +251,12 @@ router.patch('/appointments/:id', auth, async (req, res) => {
         fromEmail: agency.sendgrid_from_email,
         agencyName: agency.name
       });
-      const whatsappService = new WhatsAppService({
-        whatsappToken: agency.whatsapp_token,
-        whatsappPhoneId: agency.whatsapp_phone_id,
-        whatsappNumber: agency.whatsapp_number
-      });
 
       const origin = req.headers.origin || 'http://localhost:5173';
       const modifyUrl = `${origin}/appointment/${appointment.client_token}`;
 
       if (lead.email) {
         await emailService.sendAppointmentUpdate(lead, updatedAppt, agency, modifyUrl).catch(console.error);
-      }
-      if (lead.phone) {
-        await whatsappService.sendAppointmentUpdate(lead, updatedAppt, agency, modifyUrl).catch(console.error);
       }
     }
 
@@ -321,17 +296,9 @@ router.post('/appointments/:id/cancel', auth, async (req, res) => {
       fromEmail: agency.sendgrid_from_email,
       agencyName: agency.name
     });
-    const whatsappService = new WhatsAppService({
-      whatsappToken: agency.whatsapp_token,
-      whatsappPhoneId: agency.whatsapp_phone_id,
-      whatsappNumber: agency.whatsapp_number
-    });
 
     if (lead.email) {
       await emailService.sendAppointmentCancellation(lead, appointment, agency).catch(console.error);
-    }
-    if (lead.phone) {
-      await whatsappService.sendAppointmentCancellation(lead, appointment, agency).catch(console.error);
     }
 
     res.json({ success: true, status: 'cancelled' });

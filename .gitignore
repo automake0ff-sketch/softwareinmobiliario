@@ -19,3 +19,5 @@ vite-stdout.log
 .env.development
 .env.staging
 server/.env
+
+*.err

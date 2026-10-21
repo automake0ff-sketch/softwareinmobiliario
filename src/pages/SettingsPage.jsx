@@ -74,8 +74,6 @@ export default function SettingsPage() {
   })
 
   const [integrations, setIntegrations] = useState({
-    whatsappNumber: '+34 612 345 678',
-    whatsappApiKey: '',
     metaWebhookUrl: 'https://webhook.example.com/meta-ads',
     smtpHost: 'smtp.gmail.com',
     smtpPort: '587',
@@ -462,7 +460,7 @@ export default function SettingsPage() {
     }, [])
 
     const calcCompleteness = (cfg) => {
-      const required = ['name','city','email','whatsapp_token','whatsapp_phone_id','sendgrid_api_key','sendgrid_from_email']
+      const required = ['name','city','email','sendgrid_api_key','sendgrid_from_email']
       const filled = required.filter(k => cfg[k])
       setCompleteness(Math.round((filled.length / required.length) * 100))
     }
@@ -546,18 +544,8 @@ export default function SettingsPage() {
         ],
       },
       {
-        id: 'whatsapp', title: 'WhatsApp Business', icon: '💬',
-        description: 'Conecta tu número para enviar mensajes reales a los leads',
-        testable: true,
-        fields: [
-          { key: 'whatsapp_number', label: 'Número WhatsApp visible', type: 'tel', placeholder: '+34 600 000 000', required: true },
-          { key: 'whatsapp_token', label: 'Token de acceso permanente', type: 'password', required: true },
-          { key: 'whatsapp_phone_id', label: 'Phone Number ID', type: 'text', required: true },
-        ],
-      },
-      {
         id: 'email', title: 'Email', icon: '📧',
-        description: 'Para enviar emails desde las automatizaciones',
+        description: 'Para enviar confirmaciones y recordatorios de citas por email',
         testable: true,
         tabs: [
           {
@@ -657,7 +645,7 @@ export default function SettingsPage() {
             </div>
             {completeness < 100 && (
               <p className="text-white/30 text-xs mt-2">
-                {completeness < 50 ? '⚠️ Configura WhatsApp y email para que las automatizaciones funcionen' :
+                {completeness < 50 ? '⚠️ Configura el email para poder enviar confirmaciones y recordatorios' :
                  completeness < 80 ? '💡 Añade más integraciones para activar más automatizaciones' :
                  '✓ Configuración básica completa'}
               </p>
@@ -799,7 +787,7 @@ export default function SettingsPage() {
           <div className="border border-border-secondary rounded-xl p-5 space-y-4 bg-[#0B0B1A]">
             <p className="text-sm font-medium text-[#F1F5F9]">Nuevo destino</p>
             <input value={destName} onChange={e => setDestName(e.target.value)}
-              placeholder="Nombre (ej: WhatsApp Oficina Sevilla)"
+              placeholder="Nombre (ej: Oficina Sevilla)"
               className="w-full bg-[#0a0a1a] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500" />
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {types.map(t => (
@@ -840,7 +828,7 @@ export default function SettingsPage() {
           <div className="text-center py-16 text-white/30">
             <Send size={32} className="mx-auto mb-3 opacity-40" />
             <p className="text-sm">Sin destinos configurados</p>
-            <p className="text-xs mt-1">Añade WhatsApp, Email, Webhooks o integraciones</p>
+            <p className="text-xs mt-1">Añade Email, Webhooks o integraciones</p>
           </div>
         )}
 

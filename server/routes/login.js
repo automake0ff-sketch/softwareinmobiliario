@@ -5,7 +5,12 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'crm-inmobiliario-secret-dev-key-2026';
+
+router.use((req, res, next) => {
+  if (!JWT_SECRET) return res.status(503).json({ error: 'Login legado desactivado.' });
+  next();
+});
+const JWT_SECRET = process.env.JWT_SECRET; // sin valor por defecto: si falta, el login legado se desactiva
 
 function verifyPassword(password, stored) {
   if (stored.startsWith('$2a$') || stored.startsWith('$2b$')) {

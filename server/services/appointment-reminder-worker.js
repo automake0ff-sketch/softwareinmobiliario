@@ -1,6 +1,5 @@
 import { all, get, run } from '../db/db.js';
 import { EmailService } from './email.js';
-import { WhatsAppService } from './whatsapp.js';
 import { logActivity, logCommunication } from './lead-automation.service.js';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -49,9 +48,6 @@ async function send48hReminders(now, nowISO, appUrl) {
     const emailService = new EmailService({
       sendgridKey: agency.sendgrid_api_key, fromEmail: agency.sendgrid_from_email, agencyName: agency.name,
     });
-    const whatsappService = new WhatsAppService({
-      whatsappToken: agency.whatsapp_token, whatsappPhoneId: agency.whatsapp_phone_id, whatsappNumber: agency.whatsapp_number,
-    });
 
     const modifyUrl = `${appUrl}/appointment/${appt.client_token}`;
     const formattedDate = new Date(appt.starts_at).toLocaleString('es-ES', {
@@ -75,24 +71,6 @@ async function send48hReminders(now, nowISO, appUrl) {
           providerMessageId: emailResult.messageId, error: emailResult.error,
         });
       } catch (e) { console.error(`[Reminder Worker] Email error for appt ${appt.id}:`, e.message); }
-    }
-
-    if (lead.phone) {
-      try {
-        const waResult = await whatsappService.sendAppointmentReminder(lead, appt, agency, modifyUrl);
-        await run(
-          `INSERT INTO appointment_messages (id, appointment_id, channel, type, status, sent_at)
-           VALUES (@id, @appt_id, 'whatsapp', 'reminder', @status, NOW())`,
-          { id: uuidv4(), appt_id: appt.id, status: waResult.success || waResult.mock ? 'sent' : 'failed' }
-        );
-        logCommunication({
-          agencyId: agency.id, leadId: lead.id, appointmentId: appt.id,
-          channel: 'whatsapp', direction: 'outbound',
-          subject: null, body: `Recordatorio 48h: cita ${formattedDate}`,
-          status: waResult.success || waResult.mock ? 'sent' : 'failed',
-          providerMessageId: waResult.messageId, error: waResult.error,
-        });
-      } catch (e) { console.error(`[Reminder Worker] WhatsApp error for appt ${appt.id}:`, e.message); }
     }
 
     logActivity(agency.id, lead.id, null, 'automation_triggered',
@@ -144,23 +122,6 @@ async function send2hReminders(now, nowISO, appUrl) {
     const formattedDate = new Date(appt.starts_at).toLocaleString('es-ES', {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit',
     });
-
-    if (lead.phone) {
-      try {
-        const whatsappService = new WhatsAppService({
-          whatsappToken: agency.whatsapp_token, whatsappPhoneId: agency.whatsapp_phone_id, whatsappNumber: agency.whatsapp_number,
-        });
-        const text = `⏰ Hola ${lead.name}, te recordamos que tu cita es en 2 horas:\n\n📅 ${formattedDate}\n📍 ${locationStr}\n👤 Te atenderá: ${attendant}\n\n¡Te esperamos!`;
-        const waResult = await whatsappService.sendWhatsAppMessage(lead.phone, text, agency);
-        logCommunication({
-          agencyId: agency.id, leadId: lead.id, appointmentId: appt.id,
-          channel: 'whatsapp', direction: 'outbound',
-          subject: null, body: `Recordatorio 2h: cita ${formattedDate}`,
-          status: waResult.success || waResult.mock ? 'sent' : 'failed',
-          providerMessageId: waResult.messageId, error: waResult.error,
-        });
-      } catch (e) { console.error(`[Reminder Worker] 2h WhatsApp error for appt ${appt.id}:`, e.message); }
-    }
 
     if (lead.email) {
       try {

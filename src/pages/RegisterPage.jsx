@@ -46,7 +46,7 @@ export default function RegisterPage() {
   const [form, setForm] = useState({
     name: '', email: '', password: '', phone: '',
     agencyName: '', agencyCity: '', agencyPhone: '', agencyEmail: '',
-    plan: import.meta.env.VITE_STRIPE_PRICE_STARTER || 'starter', apiWhatsapp: '', apiCorreo: ''
+    plan: import.meta.env.VITE_STRIPE_PRICE_STARTER || 'starter', apiCorreo: ''
   })
   const [loading, setLoading] = useState(false)
   const [paying, setPaying] = useState(false)
@@ -212,7 +212,6 @@ export default function RegisterPage() {
 
           {step === 3 && (
             <motion.div key="step3" className="space-y-4">
-              <input value={form.apiWhatsapp} onChange={e => updateField('apiWhatsapp', e.target.value)} className="w-full p-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl" placeholder="Token WhatsApp (opcional)" />
               <input value={form.apiCorreo} onChange={e => updateField('apiCorreo', e.target.value)} className="w-full p-3 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl" placeholder="Token API Email (opcional)" />
               <div className="grid grid-cols-3 gap-2 p-2 bg-[#0A0A0F] rounded-xl">
                 {PLANS.map(p => (

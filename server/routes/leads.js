@@ -4,10 +4,8 @@ import { all, get, run } from '../db/db.js';
 import { auth } from '../middleware/auth.js';
 import { generateLeadSummary } from '../services/claude.js';
 import { checkLimit } from '../services/plan-checker.js';
-import { triggerAutomations } from '../services/automation-engine.js';
 import { leadSchema, validateBody } from '../middleware/validators.js';
 import { EmailService } from '../services/email.js';
-import { WhatsAppService } from '../services/whatsapp.js';
 
 const router = Router();
 router.use(auth);
@@ -194,41 +192,6 @@ router.post('/', checkLimit('leads'), validateBody(leadSchema), async (req, res)
 
     const lead = await get('SELECT * FROM leads WHERE id = @id', { id });
     res.status(201).json(lead);
-
-    // Run background qualifications and automation triggers
-    const port = process.env.PORT || 3002;
-    const localUrl = `http://localhost:${port}`;
-    const token = req.headers['x-auth-token'] || 'demo-token-dev';
-    const userId = req.headers['x-auth-user'] || req.user?.id;
-
-    globalThis.fetch(`${localUrl}/api/agents/captador`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-auth-token': token,
-        'x-auth-user': userId,
-      },
-      body: JSON.stringify({ lead_id: id, agency_id: activeAgencyId })
-    }).then(r => r.json())
-      .then(d => {
-        console.log('[Background Captador] Calificación completada:', d);
-        triggerAutomations({
-          trigger_type: 'lead_created',
-          lead_id: id,
-          agency_id: activeAgencyId,
-          trigger_payload: d.result || lead
-        }).then(ad => console.log('[Background Trigger] Automatizaciones ejecutadas:', ad))
-          .catch(ae => console.error('[Background Trigger] Error:', ae));
-      })
-      .catch(err => {
-        console.error('[Background Captador] Error:', err);
-        triggerAutomations({
-          trigger_type: 'lead_created',
-          lead_id: id,
-          agency_id: activeAgencyId,
-          trigger_payload: lead
-        }).catch(ae => console.error('[Background Trigger Fallback] Error:', ae));
-      });
   } catch (error) {
     console.error('Error creating lead:', error);
     res.status(500).json({ error: 'Error al crear lead.' });
@@ -257,13 +220,6 @@ router.patch('/:id/status', async (req, res) => {
     if (status !== existing.pipeline_stage) {
       logActivity(req.user.agency_id, req.params.id, req.user.id, 'stage_changed', `Etapa cambiada de ${existing.pipeline_stage || existing.status} a ${status}.`, { from: existing.pipeline_stage || existing.status, to: status });
 
-      // Trigger stage_changed automation
-      triggerAutomations({
-        trigger_type: 'stage_changed',
-        lead_id: req.params.id,
-        agency_id: req.user.agency_id,
-        trigger_payload: { to_stage: status, from_stage: existing.pipeline_stage || existing.status }
-      }).catch(ae => console.error('[Background Trigger PATCH status] Error:', ae));
     }
 
     const lead = await get('SELECT * FROM leads WHERE id = @id', { id: req.params.id });
@@ -314,13 +270,6 @@ router.patch('/:id', validateBody(leadSchema.partial()), async (req, res) => {
     if (newStage && newStage !== oldStage) {
       logActivity(req.user.agency_id, req.params.id, req.user.id, 'stage_changed', `Etapa cambiada a ${newStage}`, { from: oldStage, to: newStage });
 
-      // Trigger stage_changed automation
-      triggerAutomations({
-        trigger_type: 'stage_changed',
-        lead_id: req.params.id,
-        agency_id: req.user.agency_id,
-        trigger_payload: { to_stage: newStage, from_stage: oldStage }
-      }).catch(ae => console.error('[Background Trigger PATCH] Error:', ae));
     }
 
     logActivity(req.user.agency_id, req.params.id, req.user.id, 'lead_updated', 'Lead actualizado.');
@@ -640,17 +589,11 @@ router.post('/:id/appointments', async (req, res) => {
       fromEmail: agency.sendgrid_from_email,
       agencyName: agency.name
     });
-    const whatsappService = new WhatsAppService({
-      whatsappToken: agency.whatsapp_token,
-      whatsappPhoneId: agency.whatsapp_phone_id,
-      whatsappNumber: agency.whatsapp_number
-    });
 
     const origin = req.headers.origin || 'http://localhost:5173';
     const modifyUrl = `${origin}/appointment/${clientToken}`;
 
     let emailResult = { success: false };
-    let waResult = { success: false };
 
     if (lead.email) {
       emailResult = await emailService.sendAppointmentConfirmation(lead, appointment, agency, modifyUrl);
@@ -674,29 +617,7 @@ router.post('/:id/appointments', async (req, res) => {
       );
     }
 
-    if (lead.phone) {
-      waResult = await whatsappService.sendAppointmentConfirmation(lead, appointment, agency, modifyUrl);
-      await run(
-        `INSERT INTO appointment_messages (id, appointment_id, channel, type, status, error, sent_at)
-         VALUES (@id, @appt_id, 'whatsapp', 'confirmation', @status, @error, NOW())`,
-        {
-          id: uuidv4(),
-          appt_id: appointmentId,
-          status: waResult.success || waResult.mock ? 'sent' : 'failed',
-          error: waResult.error || null,
-        }
-      );
-      logActivity(
-        agencyId,
-        id,
-        null,
-        'whatsapp_sent',
-        `Confirmación de cita enviada por WhatsApp a ${lead.phone}.`,
-        { appointment_id: appointmentId }
-      );
-    }
-
-    res.status(201).json({ appointment, email_sent: emailResult.success || emailResult.mock, whatsapp_sent: waResult.success || waResult.mock });
+    res.status(201).json({ appointment, email_sent: emailResult.success || emailResult.mock });
   } catch (error) {
     console.error('Error scheduling lead appointment:', error);
     res.status(500).json({ error: 'Error al programar la cita.' });
@@ -844,38 +765,6 @@ router.post('/:id/qualify', async (req, res) => {
   } catch (error) {
     console.error('Error qualifying lead:', error);
     res.status(500).json({ error: 'Error al cualificar lead.' });
-  }
-});
-
-// ─── SALES AGENT ──────────────────────────────────────────────────────────
-router.post('/:id/sales-agent', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const agencyId = req.user.agency_id;
-
-    const lead = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id, agency_id: agencyId });
-    if (!lead) return res.status(404).json({ error: 'Lead no encontrado.' });
-
-    const agency = await get('SELECT * FROM agencies WHERE id = @agency_id', { agency_id: agencyId });
-
-    if (!req.body.execute) {
-      const { suggestSalesAction } = await import('../services/sales-agent.service.js');
-      const suggestion = await suggestSalesAction(lead, agency, req.user.id);
-      return res.json(suggestion);
-    }
-
-    const { executeSalesAction } = await import('../services/sales-agent.service.js');
-    const { action, channel, message, property_id } = req.body;
-    const origin = req.headers.origin || 'http://localhost:5173';
-
-    const result = await executeSalesAction({
-      lead, agency, action, channel, message, propertyId: property_id, userId: req.user.id, origin,
-    });
-
-    res.json(result);
-  } catch (error) {
-    console.error('Error in sales agent:', error);
-    res.status(500).json({ error: 'Error al ejecutar acción del Vendedor IA.' });
   }
 });
 

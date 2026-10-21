@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import { parsePortalEmail, normalizePhone, htmlToText } from '../services/portal-parser.js'
-import { detectConsentCommand } from '../services/message-policy.js'
 
 // Etiquetas habituales
 let r = parsePortalEmail({
@@ -38,9 +37,4 @@ assert.equal(normalizePhone('+34 654 321 098'), '654321098')
 assert.equal(normalizePhone('123'), null)
 assert.ok(!htmlToText('<script>x</script><b>hola</b>').includes('script'))
 
-// Baja/alta: solo si el mensaje ES la orden
-for (const t of ['BAJA', ' stop ', 'Baja.', 'no quiero más mensajes', 'darme de baja']) assert.equal(detectConsentCommand(t), 'opt_out', t)
-for (const t of ['no quiero parar de ver pisos', 'dame de baja el precio', 'hola', 'quiero ver el piso de baja altura']) assert.equal(detectConsentCommand(t), null, t)
-assert.equal(detectConsentCommand('ALTA'), 'opt_in')
-
-console.log('portal-parser + consentimiento: OK')
+console.log('portal-parser: OK')

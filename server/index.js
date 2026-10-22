@@ -273,21 +273,10 @@ async function start() {
           `Lead asignado automáticamente a ${comercial.name}`, { comercialId: comercial.id, source });
       }
 
-      const convId = uuidv4();
-      await run(
-        `INSERT INTO conversations (id, lead_id, agency_id, channel, created_at, updated_at)
-         VALUES (@id, @lead_id, @agency_id, @channel, NOW(), NOW())`,
-        {
-          id: convId, lead_id: leadId, agency_id: agencyId,
-          channel: 'web',
-        }
-      );
+      // El mensaje inicial del lead (formulario o email de portal) queda en su historial.
       if (job.data.initialMessage) {
-        await run(
-          `INSERT INTO messages (id, conversation_id, author, content, message_type, is_read, created_at)
-           VALUES (@id, @conversation_id, 'lead', @content, 'text', false, NOW())`,
-          { id: uuidv4(), conversation_id: convId, content: String(job.data.initialMessage).slice(0, 1000) }
-        );
+        logActivity(agencyId, leadId, null, 'lead_message',
+          `Mensaje del lead: ${String(job.data.initialMessage).slice(0, 1000)}`, { source });
       }
       logActivity(agencyId, leadId, null, 'lead_received', `Nuevo lead ${lead.name} (origen: ${source})`, { source, utm });
 
@@ -326,9 +315,9 @@ async function start() {
       const { type, agencyId } = job.data;
       if (type === 'daily_briefing') {
         const managers = await all('SELECT * FROM users WHERE agency_id = @agency_id AND role = \'manager\'', { agency_id: agencyId });
-        const leads = await all('SELECT * FROM leads WHERE agency_id = @agency_id');
-        const tasks = await all('SELECT * FROM tasks WHERE completed = false');
-        const visits = await all(`SELECT * FROM activities WHERE type = 'visita' AND created_at >= NOW() - INTERVAL '1 day'`);
+        const leads = await all('SELECT * FROM leads WHERE agency_id = @agency_id', { agency_id: agencyId });
+        const tasks = await all('SELECT t.* FROM tasks t JOIN leads l ON l.id = t.lead_id WHERE l.agency_id = @agency_id AND t.completed = false', { agency_id: agencyId });
+        const visits = await all(`SELECT * FROM activities WHERE agency_id = @agency_id AND type = 'visita' AND created_at >= NOW() - INTERVAL '1 day'`, { agency_id: agencyId });
         const properties = await all('SELECT * FROM properties WHERE agency_id = @agency_id AND status = \'disponible\'', { agency_id: agencyId });
 
         const newLeads = leads.filter(l => {

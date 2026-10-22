@@ -19,6 +19,7 @@ const pageTitles = {
   '/pipeline': 'Pipeline',
   '/leads': 'Leads',
   '/properties': 'Propiedades',
+  '/comision': 'Protege tu comisión',
   '/team': 'Equipo',
   '/settings': 'Configuración',
 }

@@ -20,6 +20,9 @@ const LoginPage = lazy(() => import('./pages/LoginPage'))
 const RegisterPage = lazy(() => import('./pages/RegisterPage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const PublicAppointmentPage = lazy(() => import('./pages/PublicAppointmentPage'))
+const VisitSignPage = lazy(() => import('./pages/VisitSignPage'))
+const OwnerReportPage = lazy(() => import('./pages/OwnerReportPage'))
+const ComisionPage = lazy(() => import('./pages/ComisionPage'))
 const LandingPage = lazy(() => import('./pages/LandingPage'))
 const PrivacyPolicyPage = lazy(() => import('./pages/PrivacyPolicyPage'))
 const TermsOfServicePage = lazy(() => import('./pages/TermsOfServicePage'))
@@ -119,6 +122,8 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/onboarding" element={<OnboardingPage />} />
           <Route path="/appointment/:token" element={<PublicAppointmentPage />} />
+          <Route path="/visita/:token" element={<VisitSignPage />} />
+          <Route path="/informe/:token" element={<OwnerReportPage />} />
           {/* Públicas: deben ser visibles sin sesión (visitantes, prospectos,
               revisión legal). Antes vivían dentro de ProtectedRoute y por eso
               cualquier visitante sin cuenta acababa redirigido a /login. */}
@@ -132,6 +137,7 @@ export default function App() {
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/pipeline" element={<PipelinePage />} />
               <Route path="/leads" element={<LeadsPage />} />
+              <Route path="/comision" element={<ComisionPage />} />
               <Route path="/leads/:id" element={<LeadDetailPage />} />
               <Route path="/properties" element={<PropertiesPage />} />
               <Route path="/team" element={<TeamPage />} />

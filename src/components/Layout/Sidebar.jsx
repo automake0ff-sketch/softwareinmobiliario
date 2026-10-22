@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Lock,
   Shield,
+  ShieldCheck,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useStore, SECTION_PLAN_REQUIREMENTS, PLAN_ORDER } from '../../lib/store'
@@ -23,6 +24,7 @@ const navigation = [
   { to: '/pipeline', label: 'Pipeline', icon: Columns3, minPlan: null },
   { to: '/leads', label: 'Leads', icon: Users, minPlan: null },
   { to: '/properties', label: 'Propiedades', icon: Building2, minPlan: null },
+  { to: '/comision', label: 'Protege tu comisión', icon: ShieldCheck, minPlan: null },
   { to: '/team', label: 'Equipo', icon: Users2, minPlan: 'profesional' },
   { to: '/settings', label: 'Configuración', icon: Settings, minPlan: null },
   { to: '/pricing', label: 'Planes', icon: CreditCard, minPlan: null },

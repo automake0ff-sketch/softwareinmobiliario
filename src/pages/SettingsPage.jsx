@@ -508,13 +508,23 @@ export default function SettingsPage() {
           {field.required && <span className="text-red-400 text-xs">*</span>}
           {config[field.key] && <span className="text-emerald-400 text-xs">✓</span>}
         </label>
-        <input
-          type={field.type || 'text'}
-          value={config[field.key] || ''}
-          onChange={e => update(field.key, e.target.value)}
-          placeholder={field.placeholder || ''}
-          className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500 transition-colors"
-        />
+        {field.type === 'textarea' ? (
+          <textarea
+            rows={8}
+            value={config[field.key] || ''}
+            onChange={e => update(field.key, e.target.value)}
+            placeholder={field.placeholder || ''}
+            className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500 transition-colors"
+          />
+        ) : (
+          <input
+            type={field.type || 'text'}
+            value={config[field.key] || ''}
+            onChange={e => update(field.key, e.target.value)}
+            placeholder={field.placeholder || ''}
+            className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500 transition-colors"
+          />
+        )}
       </div>
     )
 
@@ -541,6 +551,13 @@ export default function SettingsPage() {
           { key: 'working_hours', label: 'Horario laboral (JSON)', type: 'text', placeholder: '{"start":"09:00","end":"20:00","days":[1,2,3,4,5]}' },
           { key: 'online_meeting_url', label: 'Enlace base videollamadas', type: 'url', placeholder: 'https://meet.google.com/...' },
           { key: 'appointment_attendant_name', label: 'Encargado de visitas por defecto', type: 'text', placeholder: 'Equipo Comercial' },
+        ],
+      },
+      {
+        id: 'visits', title: 'Parte de visita', icon: '✍️',
+        description: 'Texto que firma el visitante. Déjalo vacío para usar el texto estándar. Puedes usar {agencia}, {inmueble}, {ciudad}, {referencia} y {fecha}.',
+        fields: [
+          { key: 'visit_terms', label: 'Texto del parte de visita', type: 'textarea', placeholder: 'Declaro que el día {fecha} la agencia {agencia} me ha mostrado el inmueble «{inmueble}»…' },
         ],
       },
       {

@@ -4,7 +4,7 @@ import {
   Activity, Bath, Bed, Bot, Building2, CalendarClock, CheckCircle2,
   ChevronLeft, ChevronRight, Copy, Download, ExternalLink, Eye, Filter, Home, Image as ImageIcon,
   Mail, MapPin, Maximize, MessageCircle, Pencil, Plus, Search, Share2,
-  Sparkles, Star, Target, Trash2, Upload, Wand2, X,
+  Sparkles, Star, Target, Trash2, Upload, Wand2, X, ShieldCheck, AlertTriangle,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../lib/api'
@@ -35,6 +35,7 @@ const tabs = [
 
 const detailTabs = [
   { id: 'summary', label: 'Resumen', icon: Eye },
+  { id: 'compliance', label: 'Cumplimiento', icon: ShieldCheck },
   { id: 'images', label: 'Imagenes', icon: ImageIcon },
   { id: 'interested', label: 'Interesados', icon: Star },
   { id: 'compatible', label: 'Compatibles', icon: Target },
@@ -299,7 +300,7 @@ export default function PropertiesPage() {
   async function loadAi() {
     if (!selected) return
     const res = await api.post(`/properties/${selected.id}/improve-ai`, {})
-    setAiResult({ ...res.improved, ai_generated: res.ai_generated })
+    setAiResult({ ...res.improved, ai_generated: res.ai_generated, compliance: res.compliance })
   }
 
   async function loadMatches() {
@@ -484,6 +485,11 @@ export default function PropertiesPage() {
 
                 <div className="flex flex-wrap gap-2">
                   <span className="rounded-full bg-indigo-500/10 px-3 py-1 text-xs text-indigo-200">{getPropertyTypeLabel(property.type)}</span>
+                  {property.compliance && property.compliance.status !== 'ok' && (
+                    <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${property.compliance.status === 'error' ? 'bg-rose-500/15 text-rose-200' : 'bg-amber-500/15 text-amber-200'}`}>
+                      <AlertTriangle size={12} /> {property.compliance.status === 'error' ? 'Anuncio incompleto' : 'Revisar anuncio'}
+                    </span>
+                  )}
                   {property.has_elevator ? <span className="rounded-full bg-white/5 px-3 py-1 text-xs text-slate-300">Ascensor</span> : null}
                   {property.has_terrace ? <span className="rounded-full bg-white/5 px-3 py-1 text-xs text-slate-300">Terraza</span> : null}
                   {property.has_garage ? <span className="rounded-full bg-white/5 px-3 py-1 text-xs text-slate-300">Garaje</span> : null}
@@ -739,6 +745,7 @@ function DetailDrawer({ property, activeTab, setActiveTab, onClose, onDelete, ma
           ) : (
             <>
               {activeTab === 'summary' && <SummaryTab property={property} />}
+              {activeTab === 'compliance' && <CompliancePanel key={`${property.id}-${property.updated_at}`} property={property} onEdit={() => setEditMode(true)} />}
               {activeTab === 'images' && <ImagesTab images={images} />}
               {activeTab === 'interested' && <InterestedTab interests={interests} loading={interestsLoading} addInterest={addInterest} leads={leads} />}
               {activeTab === 'compatible' && <CompatibleTab matches={matches} />}
@@ -865,6 +872,12 @@ function EditPropertyForm({ property, onSave, onCancel }) {
     year_built: property.year_built || '',
     energy_certificate: property.energy_certificate || '',
     reference: property.reference || '',
+    fees_info: property.fees_info || '',
+    cedula_habitabilidad: property.cedula_habitabilidad || '',
+    tensioned_zone: !!property.tensioned_zone,
+    reference_price: property.reference_price || '',
+    last_rent_price: property.last_rent_price || '',
+    large_holder: property.large_holder === true ? 'true' : property.large_holder === false ? 'false' : '',
     images: Array.isArray(property.images) ? property.images.join('\n') : (property.images || ''),
   })
   const [saving, setSaving] = useState(false)
@@ -896,6 +909,9 @@ function EditPropertyForm({ property, onSave, onCancel }) {
         surface: form.surface === '' ? 0 : Number(form.surface),
         useful_surface: form.useful_surface === '' ? null : Number(form.useful_surface),
         year_built: form.year_built === '' ? null : Number(form.year_built),
+        reference_price: form.reference_price === '' ? null : Number(form.reference_price),
+        last_rent_price: form.last_rent_price === '' ? null : Number(form.last_rent_price),
+        large_holder: form.large_holder === '' ? null : form.large_holder === 'true',
       }
       await onSave(payload)
       toast.success('Propiedad actualizada')
@@ -980,6 +996,44 @@ function EditPropertyForm({ property, onSave, onCancel }) {
         </div>
       </Panel>
 
+      <Panel title="Datos legales del anuncio">
+        <p className="mb-4 text-xs text-[#9fb3d9]">
+          Lo que debe aparecer en el anuncio para no arriesgar una sanción. Se añade al texto cuando uses "Mejora IA".
+        </p>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="col-span-2">
+            <Field label="Honorarios, impuestos y gastos para el consumidor">
+              <textarea rows={3} className={inputCls} value={form.fees_info} onChange={set('fees_info')}
+                placeholder="Ej.: Honorarios de la agencia 3 % + IVA a cargo del vendedor. Impuestos y gastos de la compraventa no incluidos, aprox. 10 % del precio." />
+            </Field>
+          </div>
+          <Field label="Cédula de habitabilidad (obligatoria en alquileres en Cataluña)">
+            <input className={inputCls} value={form.cedula_habitabilidad} onChange={set('cedula_habitabilidad')} placeholder="Nº de cédula" />
+          </Field>
+          <label className="flex items-center gap-2 self-end pb-2.5 text-sm text-[#d7e2f7]">
+            <input type="checkbox" checked={form.tensioned_zone} onChange={set('tensioned_zone')} />
+            Zona de mercado residencial tensionado
+          </label>
+          {form.tensioned_zone && form.operation_type === 'rent' && (
+            <>
+              <Field label="Precio máximo de referencia (€/mes)">
+                <input type="number" className={inputCls} value={form.reference_price} onChange={set('reference_price')} />
+              </Field>
+              <Field label="Última renta del contrato anterior (€/mes)">
+                <input type="number" className={inputCls} value={form.last_rent_price} onChange={set('last_rent_price')} />
+              </Field>
+              <Field label="¿El propietario es gran tenedor?">
+                <select className={inputCls} value={form.large_holder} onChange={set('large_holder')}>
+                  <option value="">Sin indicar</option>
+                  <option value="false">No</option>
+                  <option value="true">Sí</option>
+                </select>
+              </Field>
+            </>
+          )}
+        </div>
+      </Panel>
+
       <Panel title="Características">
         <div className="grid grid-cols-3 gap-4">
           <Field label="Habitaciones"><input type="number" className={inputCls} value={form.bedrooms} onChange={set('bedrooms')} /></Field>
@@ -992,6 +1046,8 @@ function EditPropertyForm({ property, onSave, onCancel }) {
             <select className={inputCls} value={form.energy_certificate} onChange={set('energy_certificate')}>
               <option value="">Sin especificar</option>
               {['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((l) => <option key={l} value={l}>{l}</option>)}
+              <option value="Exento">Exento</option>
+              <option value="En trámite">En trámite</option>
             </select>
           </Field>
           <Field label="Estado del inmueble"><input className={inputCls} value={form.condition} onChange={set('condition')} placeholder="Buen estado, a reformar..." /></Field>
@@ -1236,6 +1292,11 @@ function AiTab({ aiResult, loadAi }) {
               Generado con plantilla estándar (la IA no estaba disponible en este momento). Puedes reintentarlo.
             </p>
           )}
+          {aiResult.compliance && aiResult.compliance.status !== 'ok' && (
+            <p className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-xs text-rose-200">
+              Antes de publicar: faltan {aiResult.compliance.errors} datos obligatorios y {aiResult.compliance.warnings} avisos. Míralos en la pestaña Cumplimiento.
+            </p>
+          )}
           <p><strong className="text-white">Titulo:</strong> {aiResult.title}</p>
           <p><strong className="text-white">Descripcion:</strong> {aiResult.description}</p>
           <div><strong className="text-white">Fortalezas:</strong><ul className="mt-2 list-disc pl-5">{aiResult.strengths?.map((x) => <li key={x}>{x}</li>)}</ul></div>
@@ -1244,6 +1305,54 @@ function AiTab({ aiResult, loadAi }) {
           )}
         </div>
       ) : <p className="text-[#9fb3d9]">Genera titulo, descripcion, fortalezas y acciones para dejar el anuncio listo para publicar.</p>}
+    </Panel>
+  )
+}
+
+function CompliancePanel({ property, onEdit }) {
+  const [data, setData] = useState(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let alive = true
+    api.get(`/properties/${property.id}/compliance`)
+      .then((res) => { if (alive) setData(res) })
+      .catch((e) => { if (alive) setError(e.message || 'No se pudo comprobar el anuncio') })
+    return () => { alive = false }
+  }, [property.id])
+
+  if (error) return <Panel title="Cumplimiento del anuncio"><p className="text-rose-300">{error}</p></Panel>
+  if (!data) return <Panel title="Cumplimiento del anuncio"><p className="text-[#9fb3d9]">Comprobando…</p></Panel>
+
+  const banner = data.status === 'ok'
+    ? { cls: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100', text: 'Listo para publicar: no falta ningún dato obligatorio.' }
+    : data.status === 'warn'
+      ? { cls: 'border-amber-400/30 bg-amber-400/10 text-amber-100', text: `Casi listo: ${data.warnings} aviso${data.warnings === 1 ? '' : 's'} por revisar.` }
+      : { cls: 'border-rose-400/30 bg-rose-400/10 text-rose-100', text: `No lo publiques todavía: faltan ${data.errors} dato${data.errors === 1 ? '' : 's'} obligatorio${data.errors === 1 ? '' : 's'}.` }
+
+  return (
+    <Panel title="Cumplimiento del anuncio">
+      <div className={`mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold ${banner.cls}`}>
+        <span className="flex items-center gap-2">{data.status === 'ok' ? <ShieldCheck size={18} /> : <AlertTriangle size={18} />}{banner.text}</span>
+        {data.status !== 'ok' && (
+          <button onClick={onEdit} className="rounded-xl bg-white/15 px-3 py-1.5 text-xs font-bold text-white hover:bg-white/25">Completar datos</button>
+        )}
+      </div>
+      {data.region === 'cataluna' && <p className="mb-3 text-xs text-[#9fb3d9]">Se han aplicado también las reglas específicas de Cataluña.</p>}
+      <ul className="space-y-3">
+        {data.checks.map((c) => (
+          <li key={c.id} className="flex gap-3 rounded-2xl bg-white/5 p-4">
+            <span className={`mt-0.5 shrink-0 ${c.ok ? 'text-emerald-300' : c.severity === 'error' ? 'text-rose-300' : 'text-amber-300'}`}>
+              {c.ok ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-white">{c.label}</p>
+              {!c.ok && <p className="mt-1 text-xs leading-relaxed text-[#c7d4ef]">{c.help}</p>}
+            </div>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-5 text-xs leading-relaxed text-[#7f91b3]">{data.disclaimer}</p>
     </Panel>
   )
 }

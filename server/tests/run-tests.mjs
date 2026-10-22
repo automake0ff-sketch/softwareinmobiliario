@@ -91,15 +91,29 @@ if (!ready) {
 
 console.log(`[Test Runner] Servidor listo en :${port} — ejecutando tests...\n`);
 
-// Ejecutar tests
-const tests = spawn('node', ['tests/api.test.js'], {
-  cwd: serverDir,
-  env: { ...serverEnv, BASE_URL: `http://localhost:${port}` },
-  stdio: 'inherit',
-});
-
-tests.on('exit', (code) => {
-  srv.kill('SIGTERM');
-  try { unlinkSync(envTestPath); } catch {}
-  process.exit(code ?? 0);
-});
+// Ejecutar tests: primero los unitarios (sin servidor) y luego los de API, uno tras otro.
+const SUITES = [
+  'tests/portal-parser.test.mjs',
+  'tests/finance-calc.test.mjs',
+  'tests/compliance.test.mjs',
+  'tests/api.test.js',
+  'tests/simple-flow.test.js',
+  'tests/visits-agreements.test.js',
+];
+let failed = 0;
+for (const file of SUITES) {
+  console.log(`\n[Test Runner] ▶ ${file}`);
+  const code = await new Promise((resolve) => {
+    const t = spawn('node', [file], {
+      cwd: serverDir,
+      env: { ...serverEnv, BASE_URL: `http://localhost:${port}` },
+      stdio: 'inherit',
+    });
+    t.on('exit', (c) => resolve(c ?? 1));
+  });
+  if (code !== 0) { failed++; console.error(`[Test Runner] ✖ ${file} falló (código ${code})`); }
+}
+srv.kill('SIGTERM');
+try { unlinkSync(envTestPath); } catch {}
+console.log(failed ? `\n[Test Runner] ${failed} suite(s) con fallos` : '\n[Test Runner] Todas las suites pasan');
+process.exit(failed ? 1 : 0);

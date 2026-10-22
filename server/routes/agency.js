@@ -121,7 +121,6 @@ router.get('/ranking', async (req, res) => {
 // ── Campos permitidos para configuración de agencia ──
 const CONFIG_FIELDS = [
   'name','slug','city','email','phone','address','website','instagram','facebook','linkedin','tiktok',
-  'whatsapp_number','whatsapp_token','whatsapp_phone_id',
   'sendgrid_api_key','sendgrid_from_email','sendgrid_from_name',
   'smtp_host','smtp_port','smtp_user','smtp_password',
   'telegram_bot_token','telegram_chat_id',
@@ -133,8 +132,8 @@ const CONFIG_FIELDS = [
   'onboarding_completed','onboarding_step',
   'online_meeting_url','appointment_attendant_name','working_hours','timezone',
   'idealista_api_key','idealista_api_secret','idealista_import_mode','idealista_office_id',
-  'email_signature','auto_send_email','auto_send_whatsapp','require_email_confirmation',
-  'require_whatsapp_confirmation','default_channel','reminder_2h_enabled',
+  'email_signature','auto_send_email','require_email_confirmation',
+  'default_channel','reminder_2h_enabled','visit_terms',
   'app_Url',
 ]
 
@@ -197,23 +196,6 @@ router.post('/test-integration', async (req, res) => {
     const creds = config || {}
 
     switch (integration) {
-      case 'whatsapp': {
-        if (!creds.whatsapp_token || !creds.whatsapp_phone_id) {
-          return res.json({ ok: false, msg: 'Faltan token o Phone Number ID' })
-        }
-        const r = await fetch(
-          `https://graph.facebook.com/v18.0/${creds.whatsapp_phone_id}`,
-          { headers: { Authorization: `Bearer ${creds.whatsapp_token}` } }
-        )
-        const d = await r.json()
-        return res.json({
-          ok: r.ok,
-          msg: r.ok
-            ? `✓ WhatsApp conectado: ${d.display_phone_number || creds.whatsapp_phone_id}`
-            : `Error: ${d.error?.message || r.status}`
-        })
-      }
-
       case 'email': {
         if (creds.sendgrid_api_key) {
           const r = await fetch('https://api.sendgrid.com/v3/user/profile', {

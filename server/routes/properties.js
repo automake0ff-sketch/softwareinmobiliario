@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { all, get, run } from '../db/db.js';
 import { auth } from '../middleware/auth.js';
 import { generatePropertyMatch, generatePropertyImprovement } from '../services/claude.js';
+import { checkListing, appendComplianceFooter } from '../services/listing-compliance.js';
 
 const router = Router();
 router.use(auth);
@@ -46,6 +47,12 @@ const FIELD_MAP = {
   external_url: 'external_url',
   assigned_to: 'assigned_to',
   quality_score: 'quality_score',
+  fees_info: 'fees_info',
+  cedula_habitabilidad: 'cedula_habitabilidad',
+  tensioned_zone: 'tensioned_zone',
+  reference_price: 'reference_price',
+  last_rent_price: 'last_rent_price',
+  large_holder: 'large_holder',
 };
 
 function normalizeStatus(status) {
@@ -136,6 +143,14 @@ async function normalizeProperty(body, req, defaults = {}) {
   data.year_built = data.year_built ? Number(data.year_built) : null;
   data.latitude = data.latitude ? Number(data.latitude) : null;
   data.longitude = data.longitude ? Number(data.longitude) : null;
+  // Campos de cumplimiento del anuncio
+  data.fees_info = data.fees_info ? String(data.fees_info).slice(0, 1000) : null;
+  data.cedula_habitabilidad = data.cedula_habitabilidad ? String(data.cedula_habitabilidad).slice(0, 80) : null;
+  data.tensioned_zone = data.tensioned_zone === true || data.tensioned_zone === 1 || data.tensioned_zone === 'true';
+  data.reference_price = data.reference_price ? Number(data.reference_price) : null;
+  data.last_rent_price = data.last_rent_price ? Number(data.last_rent_price) : null;
+  data.large_holder = (data.large_holder === null || data.large_holder === undefined || data.large_holder === '')
+    ? null : (data.large_holder === true || data.large_holder === 1 || data.large_holder === 'true');
   data.quality_score = await qualityScore(data);
   return data;
 }
@@ -150,7 +165,8 @@ async function insertProperty(data) {
       has_storage, has_pool, has_garden, condition, year_built, energy_certificate,
       reference, latitude, longitude, features, images,
       status, source, external_source, external_id, external_url, imported_at,
-      assigned_to, quality_score, created_at, updated_at
+      assigned_to, quality_score, fees_info, cedula_habitabilidad, tensioned_zone,
+      reference_price, last_rent_price, large_holder, created_at, updated_at
     ) VALUES (
       @id, @agency_id, @office_id, @title, @description, @price, @type, @operation_type,
       @city, @zone, @address, @province, @postal_code, @bedrooms, @bathrooms, @surface,
@@ -158,7 +174,8 @@ async function insertProperty(data) {
       @has_storage, @has_pool, @has_garden, @condition, @year_built, @energy_certificate,
       @reference, @latitude, @longitude, @features, @images,
       @status, @source, @external_source, @external_id, @external_url, @imported_at,
-      @assigned_to, @quality_score, NOW(), NOW()
+      @assigned_to, @quality_score, @fees_info, @cedula_habitabilidad, @tensioned_zone,
+      @reference_price, @last_rent_price, @large_holder, NOW(), NOW()
     )`,
     { id, ...data }
   );
@@ -717,7 +734,11 @@ router.get('/', async (req, res) => {
     const { count: total } = await get(countSql, params);
 
     sql += ' ORDER BY updated_at DESC, created_at DESC LIMIT @limit OFFSET @offset';
-    const properties = await all(sql, { ...params, limit: pageSize, offset: (pageNum - 1) * pageSize });
+    const rows = await all(sql, { ...params, limit: pageSize, offset: (pageNum - 1) * pageSize });
+    const properties = rows.map((row) => {
+      const { status, errors, warnings } = checkListing(row);
+      return { ...row, compliance: { status, errors, warnings } };
+    });
 
     res.json({
       properties,
@@ -883,8 +904,14 @@ router.post('/:id/improve-ai', async (req, res) => {
       };
     }
 
+    // El texto final siempre lleva honorarios/gastos, etiqueta energética y datos de zona tensionada si constan.
+    if (improved && typeof improved === 'object') {
+      improved.description = appendComplianceFooter(improved.description, property);
+    }
+    const compliance = checkListing({ ...property, description: improved?.description, title: improved?.title || property.title });
+
     await logActivity(req, property, 'property_ai_improved', `Mejora IA generada para ${property.title}`, { ai_generated: aiGenerated });
-    res.json({ property_id: property.id, improved, ai_generated: aiGenerated });
+    res.json({ property_id: property.id, improved, ai_generated: aiGenerated, compliance });
   } catch (error) {
     res.status(500).json({ error: 'Error al generar mejora IA.' });
   }
@@ -927,6 +954,17 @@ router.post('/import/csv', async (req, res) => {
   } catch (error) {
     console.error('Error importing properties by CSV:', error);
     res.status(500).json({ error: 'Error al importar propiedades por CSV.' });
+  }
+});
+
+router.get('/:id/compliance', async (req, res) => {
+  try {
+    const property = await get('SELECT * FROM properties WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
+    if (!property) return res.status(404).json({ error: 'Propiedad no encontrada.' });
+    res.json(checkListing(property));
+  } catch (error) {
+    console.error('Error comprobando anuncio:', error);
+    res.status(500).json({ error: 'Error al comprobar el anuncio.' });
   }
 });
 

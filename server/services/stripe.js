@@ -1,7 +1,7 @@
 const PRICES_CENTS = {
-  starter_monthly: 7900, starter_yearly: 79000,
-  profesional_monthly: 19900, profesional_yearly: 199000,
-  agencia_monthly: 49900, agencia_yearly: 499000,
+  starter_monthly: 1900, starter_yearly: 19000,
+  profesional_monthly: 3900, profesional_yearly: 39000,
+  agencia_monthly: 7900, agencia_yearly: 79000,
 }
 
 export const PLAN_ORDER = { starter: 1, profesional: 2, agencia: 3 }
@@ -27,14 +27,14 @@ export const PLANS = {
   starter: {
     id: 'starter',
     name: 'Starter',
-    price: 79,
-    priceYearly: 790,
+    price: 19,
+    priceYearly: 190,
     priceCentsMonthly: PRICES_CENTS.starter_monthly,
     priceCentsYearly: PRICES_CENTS.starter_yearly,
     leads: 500,
     agents: 3,
     offices: 1,
-    users: 5,
+    users: 2,
     automations: 10,
     availableAgentTypes: ['captador', 'vendedor', 'coordinador'],
     features: {
@@ -52,14 +52,14 @@ export const PLANS = {
   profesional: {
     id: 'profesional',
     name: 'Profesional',
-    price: 199,
-    priceYearly: 1990,
+    price: 39,
+    priceYearly: 390,
     priceCentsMonthly: PRICES_CENTS.profesional_monthly,
     priceCentsYearly: PRICES_CENTS.profesional_yearly,
     leads: 2000,
     agents: 8,
     offices: 3,
-    users: 15,
+    users: 5,
     automations: -1,
     availableAgentTypes: ['captador', 'vendedor', 'coordinador', 'copywriter', 'tasador', 'analista', 'agendador', 'nurturing'],
     features: {
@@ -77,8 +77,8 @@ export const PLANS = {
   agencia: {
     id: 'agencia',
     name: 'Agencia',
-    price: 499,
-    priceYearly: 4990,
+    price: 79,
+    priceYearly: 790,
     priceCentsMonthly: PRICES_CENTS.agencia_monthly,
     priceCentsYearly: PRICES_CENTS.agencia_yearly,
     leads: -1,
@@ -190,7 +190,8 @@ export class BillingService {
     if (promoCode && interval === 'month') {
       const demo = BillingService.DEMO_CODES[String(promoCode).toUpperCase()];
       const demoAmountCents = demo?.[planId];
-      if (demoAmountCents !== undefined) {
+      // Un código de demo solo puede rebajar el precio, nunca subirlo por encima de la tarifa.
+      if (demoAmountCents !== undefined && demoAmountCents < amountCents) {
         amountCents = demoAmountCents;
         demoApplied = true;
       }

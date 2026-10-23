@@ -97,16 +97,18 @@ export default function LandingPage() {
     {
       id: 'starter',
       name: 'Starter',
-      price: billingPeriod === 'monthly' ? '79€' : '790€',
+      price: billingPeriod === 'monthly' ? '19€' : '190€',
       period: billingPeriod === 'monthly' ? '/mes' : '/año',
       desc: 'Para agentes y pequeñas agencias',
       features: [
         '1 oficina activa',
-        'Hasta 5 usuarios humanos',
+        'Hasta 2 usuarios',
         '500 leads nuevos al mes',
-        'Entrada de leads por email (Idealista, Fotocasa...)',
+        'Partes de visita firmados con QR',
+        'Encargos y exclusivas con avisos',
+        'Comprobación de anuncios antes de publicar',
         'Mejora de anuncios con IA',
-        'CRM + Pipeline Kanban',
+        'Entrada de leads por email de portales',
         'Soporte estándar'
       ],
       cta: 'Empezar ahora',
@@ -115,14 +117,14 @@ export default function LandingPage() {
     {
       id: 'profesional',
       name: 'Profesional',
-      price: billingPeriod === 'monthly' ? '199€' : '1990€',
+      price: billingPeriod === 'monthly' ? '39€' : '390€',
       period: billingPeriod === 'monthly' ? '/mes' : '/año',
       desc: 'Para agencias en crecimiento',
       features: [
+        'Todo lo de Starter',
         '3 oficinas activas',
-        'Hasta 15 usuarios humanos',
+        'Hasta 5 usuarios',
         '2.000 leads nuevos al mes',
-        'Entrada de leads por email (Idealista, Fotocasa...)',
         'Soporte prioritario'
       ],
       cta: 'Empezar ahora',
@@ -131,16 +133,16 @@ export default function LandingPage() {
     {
       id: 'agencia',
       name: 'Agencia',
-      price: billingPeriod === 'monthly' ? '499€' : '4990€',
+      price: billingPeriod === 'monthly' ? '79€' : '790€',
       period: billingPeriod === 'monthly' ? '/mes' : '/año',
       desc: 'Para agencias consolidadas',
       features: [
+        'Todo lo de Profesional',
         'Oficinas ilimitadas',
         'Usuarios ilimitados',
         'Leads ilimitados',
-        'Entrada de leads por email de portales',
         'White-label completo',
-        'Soporte dedicado 24/7'
+        'Soporte dedicado'
       ],
       cta: 'Empezar ahora',
       popular: false
@@ -148,6 +150,14 @@ export default function LandingPage() {
   ]
 
   const faqs = [
+    {
+      q: '¿Tiene validez legal el parte de visita firmado?',
+      a: 'Es una prueba documental con fecha, datos del visitante, firma y huella digital de que tu agencia le enseñó el inmueble. Su valor concreto ante un conflicto depende de cada caso y de lo que diga tu contrato de encargo, así que te recomendamos que un abogado revise el texto, que puedes personalizar desde Ajustes.',
+    },
+    {
+      q: '¿Me garantiza que mi anuncio cumple la ley?',
+      a: 'No. Es una lista de comprobación orientativa que te avisa de lo que suele faltar (honorarios y gastos, etiqueta energética, reglas de zonas tensionadas y de Cataluña). Las normas cambian y varían por comunidad autónoma, y no sustituye el consejo de un profesional.',
+    },
     {
       q: '¿Necesito saber programar?',
       a: 'No, todo se configura desde el panel sin código. Hemos diseñado la plataforma para que cualquier profesional inmobiliario pueda configurar sus agentes y flujos en cuestión de minutos.'
@@ -236,14 +246,14 @@ export default function LandingPage() {
           </div>
 
           <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-white mb-6 leading-[1.15]">
-            Tu inmobiliaria,{' '}
+            Que no se te escape ninguna comisión,{' '}
             <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-300 bg-clip-text text-transparent">
-              más simple y ordenada
+              ni te multen por un anuncio
             </span>
           </h1>
 
           <p className="text-base sm:text-lg text-gray-400 max-w-3xl mx-auto mb-10 leading-relaxed">
-            Gestiona tus inmuebles, tus contactos y tus visitas en un solo sitio, y redacta anuncios con IA en segundos.
+            Parte de visita firmado desde el móvil, control de tus exclusivas y comprobación de cada anuncio antes de publicarlo. Todo en un CRM sencillo para inmobiliarias pequeñas.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">
@@ -324,7 +334,7 @@ export default function LandingPage() {
                       <div className="text-[10px] text-indigo-300 mt-0.5">Con aviso por email</div>
                     </div>
                     <div className="bg-[#13131A] border border-[#1E1E2E] p-3 rounded-xl">
-                      <div className="text-[10px] text-gray-400 uppercase tracking-wider">Anuncios con IA</div>
+                      <div className="text-[10px] text-gray-400 uppercase tracking-wider">Partes firmados</div>
                       <div className="text-lg sm:text-2xl font-bold text-purple-400 mt-1">24</div>
                       <div className="text-[10px] text-purple-300 mt-0.5">Este mes</div>
                     </div>
@@ -419,7 +429,7 @@ export default function LandingPage() {
                 ANTES
               </h3>
               <p className="text-gray-400 text-sm sm:text-base leading-relaxed">
-                Contactos repartidos entre portales, hojas de cálculo y notas, seguimientos olvidados y visitas sin confirmar.
+                Visitas sin papeles, exclusivas que se renuevan solas sin que lo sepas y anuncios publicados sin saber si cumplen la ley.
               </p>
             </div>
 
@@ -433,7 +443,7 @@ export default function LandingPage() {
                 DESPUÉS
               </h3>
               <p className="text-gray-400 text-sm sm:text-base leading-relaxed">
-                PropIA reúne los leads de tus portales, te recuerda cada seguimiento y confirma las visitas por email.
+                Cada visita firmada y archivada, avisos antes de que venza cada encargo y una lista de comprobación antes de publicar.
               </p>
             </div>
 
@@ -447,7 +457,7 @@ export default function LandingPage() {
                 RESULTADO
               </h3>
               <p className="text-gray-400 text-sm sm:text-base leading-relaxed">
-                Menos tiempo en administración y ningún lead olvidado.
+                Menos comisiones perdidas, menos sustos con Consumo y propietarios mejor informados.
               </p>
             </div>
           </div>
@@ -459,13 +469,13 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-3xl mx-auto mb-16">
             <span className="text-xs font-bold text-indigo-400 uppercase tracking-widest bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/20">
-              Todo lo esencial
+              Tres herramientas, un objetivo
             </span>
             <h2 className="text-3xl sm:text-4xl font-extrabold text-white mt-4 font-syne">
-              Lo que necesitas, sin complicaciones
+              Protege tu negocio sin complicarte
             </h2>
             <p className="text-gray-400 mt-4 max-w-xl mx-auto">
-              Tres herramientas pensadas para el día a día de una inmobiliaria.
+              Pensadas para inmobiliarias pequeñas: sin formación y sin instalar nada.
             </p>
           </div>
 
@@ -477,10 +487,10 @@ export default function LandingPage() {
                 <Target size={24} />
               </div>
               <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
-                🏠 Inmuebles
+                ✍️ Parte de visita firmado
               </h3>
               <p className="text-gray-400 text-sm sm:text-base leading-relaxed">
-                Tu cartera con fotos y estado. La IA redacta y mejora el anuncio de cada inmueble en segundos.
+                El visitante firma desde su móvil con un QR. Fecha, datos y huella digital quedan guardados como prueba de tu visita.
               </p>
             </div>
 
@@ -491,10 +501,10 @@ export default function LandingPage() {
                 <Briefcase size={24} />
               </div>
               <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
-                👥 Contactos y seguimiento
+                📅 Encargos bajo control
               </h3>
               <p className="text-gray-400 text-sm sm:text-base leading-relaxed">
-                Pipeline claro desde el primer contacto hasta el cierre. Los leads de Idealista y Fotocasa entran solos por email.
+                Fechas de fin, renovación automática y aviso antes del plazo de preaviso. Y un informe de visitas para el propietario.
               </p>
             </div>
 
@@ -505,10 +515,10 @@ export default function LandingPage() {
                 <Brain size={24} />
               </div>
               <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
-                📅 Visitas y recordatorios
+                🛡️ Anuncio sin multas
               </h3>
               <p className="text-gray-400 text-sm sm:text-base leading-relaxed">
-                Agenda visitas y el cliente recibe la confirmación y los recordatorios por email, sin que tú hagas nada.
+                Comprueba honorarios, etiqueta energética y reglas de zonas tensionadas y de Cataluña antes de publicar. La IA redacta el texto con lo obligatorio incluido.
               </p>
             </div>
           </div>

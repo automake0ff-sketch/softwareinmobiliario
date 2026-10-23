@@ -36,46 +36,49 @@ const PAYMENT_METHODS = [
 const PLANS = [
   {
     id: 'starter', icon: Zap, name: 'Starter',
-    price: 79, priceYearly: 790,
+    price: 19, priceYearly: 190,
     desc: 'Para agentes y pequeñas agencias',
     cta: 'Contratar Starter', popular: false,
-    savings: 'Ahorra 158€',
+    savings: 'Ahorra 38€',
     features: [
       '1 oficina',
-      'Hasta 5 usuarios',
+      'Hasta 2 usuarios',
       '500 leads/mes',
-      'Entrada de leads por email (Idealista, Fotocasa...)',
+      'Partes de visita firmados con QR',
+      'Encargos y exclusivas con avisos',
+      'Comprobación de anuncios antes de publicar',
       'Mejora de anuncios con IA',
+      'Entrada de leads por email de portales',
       'CRM + Pipeline Kanban',
       'Soporte por email',
     ],
   },
   {
     id: 'profesional', icon: Building2, name: 'Profesional',
-    price: 199, priceYearly: 1990,
+    price: 39, priceYearly: 390,
     desc: 'Para agencias en crecimiento',
     cta: 'Contratar Profesional', popular: true,
-    savings: 'Ahorra 398€',
+    savings: 'Ahorra 78€',
     features: [
+      'Todo lo de Starter',
       '3 oficinas',
-      'Hasta 15 usuarios',
+      'Hasta 5 usuarios',
       '2.000 leads/mes',
-      'Entrada de leads por email (Idealista, Fotocasa...)',
       'API básica',
       'Soporte prioritario',
     ],
   },
   {
     id: 'agencia', icon: Crown, name: 'Agencia',
-    price: 499, priceYearly: 4990,
+    price: 79, priceYearly: 790,
     desc: 'Para agencias consolidadas',
     cta: 'Contratar Agencia', popular: false,
-    savings: 'Ahorra 998€',
+    savings: 'Ahorra 158€',
     features: [
+      'Todo lo de Profesional',
       'Oficinas ilimitadas',
       'Usuarios ilimitados',
       'Leads ilimitados',
-      'Entrada de leads por email de portales',
       'White-label completo',
       'Dominio personalizado',
       'API completa',
@@ -217,7 +220,7 @@ export default function PricingPage() {
           {PLANS.map((plan, i) => {
             const Icon = plan.icon
             const isPopular = plan.popular
-            const isDemoForThisPlan = activeDemoCode && activeDemoCode[plan.id] !== undefined
+            const isDemoForThisPlan = activeDemoCode && activeDemoCode[plan.id] !== undefined && activeDemoCode[plan.id] < plan.price
             const demoPrice = isDemoForThisPlan ? activeDemoCode[plan.id] : null
             const displayPrice = isDemoForThisPlan ? demoPrice : (annual ? plan.priceYearly : plan.price)
             const displayPeriod = isDemoForThisPlan ? '/mes' : (annual ? '/año' : '/mes')

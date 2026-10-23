@@ -29,9 +29,9 @@ const BotonPago = ({ planId, interval, cargando, onProcesando }) => {
 };
 
 const PLANS = [
-  { id: import.meta.env.VITE_STRIPE_PRICE_STARTER || 'starter', name: 'Starter', price: 79 },
-  { id: import.meta.env.VITE_STRIPE_PRICE_PROFESIONAL || 'profesional', name: 'Profesional', price: 199 },
-  { id: import.meta.env.VITE_STRIPE_PRICE_AGENCIA || 'agencia', name: 'Agencia', price: 499 }
+  { id: import.meta.env.VITE_STRIPE_PRICE_STARTER || 'starter', name: 'Starter', price: 19 },
+  { id: import.meta.env.VITE_STRIPE_PRICE_PROFESIONAL || 'profesional', name: 'Profesional', price: 39 },
+  { id: import.meta.env.VITE_STRIPE_PRICE_AGENCIA || 'agencia', name: 'Agencia', price: 79 }
 ];
 
 function planSlugFromValue(value) {

@@ -241,6 +241,8 @@ async function start() {
   app.use('/api', visitsMod.publicRouter);
   app.use('/api', agreementsMod.publicRouter);
   app.use('/api/visit-reports', visitsMod.default);
+  // Captación de emails de la web de marketing (guía gratuita)
+  app.use('/api/marketing', (await import('./routes/marketing.js')).default);
   app.use('/api/agreements', agreementsMod.default);
   // Auth routes — el router general DEBE montarse antes que las rutas específicas
   // que comparten el mismo prefijo /api/auth, o Express las intercepta

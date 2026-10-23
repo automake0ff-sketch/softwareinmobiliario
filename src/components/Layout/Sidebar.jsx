@@ -25,7 +25,6 @@ const navigation = [
   { to: '/leads', label: 'Leads', icon: Users, minPlan: null },
   { to: '/properties', label: 'Propiedades', icon: Building2, minPlan: null },
   { to: '/comision', label: 'Protege tu comisión', icon: ShieldCheck, minPlan: null },
-  { to: '/team', label: 'Equipo', icon: Users2, minPlan: 'profesional' },
   { to: '/settings', label: 'Configuración', icon: Settings, minPlan: null },
   { to: '/pricing', label: 'Planes', icon: CreditCard, minPlan: null },
 ]

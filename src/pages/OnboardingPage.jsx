@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Mail, Home, Users2, Rocket,
+  Mail, Home, Rocket,
   Check, Upload, ArrowLeft, ArrowRight,
   Phone, Bot, Star, Sparkles, Shield, Zap, MailCheck,
   SkipForward
@@ -16,16 +16,6 @@ const steps = [
   { id: 1, label: 'Agencia', icon: Home },
   { id: 2, label: 'Email', icon: Mail },
   { id: 3, label: 'Propiedades', icon: Home },
-  { id: 4, label: 'Agentes IA', icon: Users2 },
-]
-
-const AGENTS = [
-  { type: 'captador', name: 'Captador IA', desc: 'Capta y cualifica nuevos leads automáticamente', recommended: true },
-  { type: 'vendedor', name: 'Vendedor IA', desc: 'Convierte leads en ventas con seguimiento inteligente', recommended: true },
-  { type: 'coordinador', name: 'Coordinador IA', desc: 'Coordina visitas y gestiona el pipeline', recommended: true },
-  { type: 'nurturing', name: 'Nurturing IA', desc: 'Mantiene calientes los leads fríos', recommended: false },
-  { type: 'copywriter', name: 'Copywriter IA', desc: 'Genera descripciones y contenido SEO', recommended: false },
-  { type: 'analista', name: 'Analista IA', desc: 'Analiza datos y genera informes', recommended: false },
 ]
 
 const stepVariants = {
@@ -45,9 +35,6 @@ export default function OnboardingPage() {
   const [ciudad, setCiudad] = useState('')
   const [email, setEmail] = useState({ provider: 'sendgrid', api_key: '', from_email: '', from_name: '', connected: false })
   const [properties, setProperties] = useState([{ ...propertyTemplate }])
-  const [agents, setAgents] = useState(
-    AGENTS.map(a => ({ ...a, active: a.recommended }))
-  )
   const [launched, setLaunched] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -76,13 +63,12 @@ export default function OnboardingPage() {
   const totalSteps = steps.length
   const progress = (currentStep / totalSteps) * 100
 
-  const canSkip = currentStep !== 3
+  const canSkip = currentStep !== totalSteps
   const canProceed = () => {
     switch (currentStep) {
       case 1: return nombreEmpresa.trim() !== '' && ciudad.trim() !== ''
       case 2: return email.connected || email.api_key.length > 0 || true
-      case 3: return properties.some(p => p.title.trim())
-      case 4: return agents.some(a => a.active)
+      case 3: return true
       default: return false
     }
   }
@@ -107,8 +93,9 @@ export default function OnboardingPage() {
         }),
       })
 
+      let loginData = null
       if (res.ok) {
-        const loginData = await res.json()
+        loginData = await res.json()
         if (loginData?.user?.id) {
           setUser(loginData.user)
           setAgency({ ...loginData.agency, name: nombreEmpresa, city: ciudad })
@@ -133,6 +120,27 @@ export default function OnboardingPage() {
           agency_id: user.id,
         })
         setAgency({ id: user.id, name: nombreEmpresa, city: ciudad })
+      }
+
+      // Guardar de verdad lo que el usuario ha escrito (antes solo se guardaba en el navegador).
+      const tokenForSetup = loginData?.user?.token
+      if (tokenForSetup) {
+        const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenForSetup}` }
+        const config = { name: nombreEmpresa, city: ciudad, onboarding_completed: true }
+        if (email.api_key.trim()) {
+          config.sendgrid_api_key = email.api_key.trim()
+          if (email.from_email.trim()) config.sendgrid_from_email = email.from_email.trim()
+          if (email.from_name.trim()) config.sendgrid_from_name = email.from_name.trim()
+        }
+        const cfgRes = await fetch(`${backendBase}/api/agency/config`, { method: 'PATCH', headers, body: JSON.stringify(config) })
+        if (!cfgRes.ok) toast.error('No se pudieron guardar los datos de la agencia. Puedes completarlos en Ajustes.')
+        const parsePrice = (v) => Number(String(v || '').replace(/\./g, '').replace(',', '.').replace(/[^\d.]/g, '')) || 0
+        for (const p of properties.filter((x) => x.title.trim())) {
+          await fetch(`${backendBase}/api/properties`, {
+            method: 'POST', headers,
+            body: JSON.stringify({ title: p.title.trim(), type: p.type, zone: p.zone.trim(), city: ciudad, price: parsePrice(p.price) }),
+          }).catch(() => {})
+        }
       }
 
       toast.success('¡Configuración guardada! Elige tu plan para empezar...')
@@ -165,9 +173,6 @@ export default function OnboardingPage() {
   const removeProperty = (index) => {
     if (properties.length > 1) setProperties(prev => prev.filter((_, i) => i !== index))
   }
-
-  const toggleAgent = (type) =>
-    setAgents(prev => prev.map(a => a.type === type ? { ...a, active: !a.active } : a))
 
   const testEmail = async () => {
     try {
@@ -313,7 +318,7 @@ export default function OnboardingPage() {
                 <Home size={28} />
               </div>
               <h2 className="text-xl font-bold text-[#F1F5F9]">Añadir primera propiedad</h2>
-              <p className="text-sm text-[#94A3B8] mt-1">Añade al menos 1 propiedad para que los agentes tengan con qué trabajar</p>
+              <p className="text-sm text-[#94A3B8] mt-1">Añade tu primer inmueble. Es opcional: podrás añadir y importar más desde la aplicación</p>
             </div>
 
             <div className="space-y-3">
@@ -358,57 +363,6 @@ export default function OnboardingPage() {
           </div>
         )
 
-      case 4:
-        return (
-          <div className="space-y-5">
-            <div className="text-center mb-4">
-              <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mx-auto mb-3">
-                <Users2 size={28} />
-              </div>
-              <h2 className="text-xl font-bold text-[#F1F5F9]">Activar agentes IA</h2>
-              <p className="text-sm text-[#94A3B8] mt-1">Activa los agentes que quieras en tu equipo</p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {agents.map((agent) => (
-                <div key={agent.type}
-                  onClick={() => toggleAgent(agent.type)}
-                  className={`bg-[#0A0A0F] border rounded-xl p-4 cursor-pointer transition-all ${
-                    agent.active ? 'border-indigo-500/30 bg-indigo-500/5' : 'border-[#1E1E2E] hover:border-[#2A2A3E]'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                        agent.active ? 'bg-indigo-500/10 text-indigo-400' : 'bg-[#1E1E2E] text-[#4A4A5E]'
-                      }`}>
-                        <Bot size={20} />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-semibold text-[#F1F5F9]">{agent.name}</h3>
-                          {agent.recommended && (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-500/10 text-indigo-400">Recomendado</span>
-                          )}
-                        </div>
-                        <p className="text-xs text-[#94A3B8] mt-0.5">{agent.desc}</p>
-                      </div>
-                    </div>
-                    <button onClick={(e) => { e.stopPropagation(); toggleAgent(agent.type) }}
-                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0 mt-1 ${
-                        agent.active ? 'bg-indigo-500' : 'bg-[#2A2A3E]'
-                      }`}>
-                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                        agent.active ? 'translate-x-[18px]' : 'translate-x-[3px]'
-                      }`} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )
-
       default:
         return null
     }
@@ -430,7 +384,7 @@ export default function OnboardingPage() {
             <h2 className="text-2xl font-bold text-[#F1F5F9]">¡Todo listo!</h2>
             <p className="text-[#94A3B8] mt-2">
               Tu agencia está configurada y lista para operar.
-              Hemos activado {agents.filter(a => a.active).length} agentes de IA para tu equipo.
+              Elige tu plan para empezar a usar PropIA.
             </p>
           </div>
           <div className="flex items-center justify-center gap-6 py-4">
@@ -442,11 +396,6 @@ export default function OnboardingPage() {
             <div className="text-center">
               <div className="text-2xl font-bold text-indigo-400">{properties.filter(p => p.title.trim()).length}</div>
               <div className="text-xs text-[#94A3B8]">Propiedades</div>
-            </div>
-            <div className="w-px h-10 bg-[#1E1E2E]" />
-            <div className="text-center">
-              <div className="text-2xl font-bold text-amber-400">{agents.filter(a => a.active).length}</div>
-              <div className="text-xs text-[#94A3B8]">Agentes IA</div>
             </div>
           </div>
           <Link to="/pricing"

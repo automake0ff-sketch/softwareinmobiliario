@@ -28,7 +28,6 @@ export const SECTION_PLAN_REQUIREMENTS = {
   '/pipeline': { minPlan: 'starter', message: '' },
   '/leads': { minPlan: 'starter', message: '' },
   '/properties': { minPlan: 'starter', message: '' },
-  '/team': { minPlan: 'profesional', message: 'Gestión de equipo disponible desde plan Profesional' },
   '/settings': { minPlan: 'starter', message: '' },
 }
 
@@ -48,9 +47,9 @@ const PLAN_CONFIG = {
   starter: {
     id: 'starter',
     name: 'Starter',
-    price: 79,
-    priceYearly: 69,
-    limits: { leads: 500, agents: 3, offices: 1, users: 5, automations: 10 },
+    price: 19,
+    priceYearly: 16,
+    limits: { leads: 500, agents: 3, offices: 1, users: 2, automations: 10 },
     availableAgentTypes: ['captador', 'vendedor', 'coordinador'],
     features: {
       whiteLabel: false,
@@ -66,9 +65,9 @@ const PLAN_CONFIG = {
   profesional: {
     id: 'profesional',
     name: 'Profesional',
-    price: 199,
-    priceYearly: 169,
-    limits: { leads: 2000, agents: 8, offices: 3, users: 15, automations: -1 },
+    price: 39,
+    priceYearly: 33,
+    limits: { leads: 2000, agents: 8, offices: 3, users: 5, automations: -1 },
     availableAgentTypes: ['captador', 'vendedor', 'coordinador', 'copywriter', 'tasador', 'analista', 'agendador', 'nurturing'],
     features: {
       whiteLabel: false,
@@ -84,8 +83,8 @@ const PLAN_CONFIG = {
   agencia: {
     id: 'agencia',
     name: 'Agencia',
-    price: 499,
-    priceYearly: 419,
+    price: 79,
+    priceYearly: 66,
     limits: { leads: -1, agents: 12, offices: -1, users: -1, automations: -1 },
     availableAgentTypes: ['captador', 'vendedor', 'coordinador', 'copywriter', 'tasador', 'analista', 'agendador', 'nurturing', 'documentador', 'seo', 'financiero', 'notificador'],
     features: {

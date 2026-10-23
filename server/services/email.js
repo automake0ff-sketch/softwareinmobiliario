@@ -9,7 +9,8 @@ export class EmailService {
     const fromAddr = from || this.config.fromEmail || 'noreply@inmotech.es';
     const agencyName = this.config.agencyName || 'CRM Inmobiliario';
 
-    if (!this.config.sendgridKey && !this.config.smtpHost) {
+    // Sin SendGrid no se envía nada: se devuelve un resultado simulado que NO cuenta como enviado.
+    if (!this.config.sendgridKey) {
       const log = {
         to, subject, from: fromAddr,
         htmlLength: html ? html.length : 0,
@@ -45,8 +46,6 @@ export class EmailService {
         });
         if (!resp.ok) throw new Error(`SendGrid error: ${resp.status}`);
         messageId = `sg_${Date.now()}`;
-      } else if (this.config.smtpHost) {
-        messageId = `smtp_${Date.now()}`;
       }
       return { success: true, messageId, to, subject };
     } catch (e) {

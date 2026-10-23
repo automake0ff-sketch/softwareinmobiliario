@@ -56,6 +56,8 @@ await test('programar cita: 201 y confirmación solo por email', async () => {
   const r = await request(`/api/leads/${leadId}/appointments`, { method: 'POST', token: A.token, body: { type: 'physical', starts_at: future(48), ends_at: future(49), location: 'Oficina' } });
   assert.equal(r.status, 201, JSON.stringify(r.body));
   assert.ok(!('whatsapp_sent' in r.body), 'la respuesta aún menciona whatsapp_sent');
+  // Sin SendGrid configurado no se envía nada: no se puede decir que se envió.
+  assert.equal(r.body.email_sent, false, 'dice que envió un email sin tener email configurado');
   apptId = r.body.appointment?.id || r.body.id;
   apptToken = r.body.appointment?.client_token;
   assert.ok(apptId, 'sin id de cita');
@@ -127,6 +129,28 @@ await test('aislamiento: B no ve el lead del portal de A', async () => {
   const r = await request('/api/leads', { token: B.token });
   assert.equal(r.status, 200);
   assert.equal((r.body.leads || r.body).length, 0);
+});
+
+await test('captación de emails de la landing: guarda, detecta duplicados y valida', async () => {
+  const email = `lm-${Date.now()}@test.com`;
+  const ok = await request('/api/marketing/lead-magnet', { method: 'POST', body: { email, name: 'Visitante', source: 'test' } });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  assert.equal(ok.body.already_subscribed, false);
+  const dup = await request('/api/marketing/lead-magnet', { method: 'POST', body: { email } });
+  assert.equal(dup.body.already_subscribed, true);
+  assert.equal((await request('/api/marketing/lead-magnet', { method: 'POST', body: { email: 'no-es-un-email' } })).status, 400);
+  assert.ok([401, 403].includes((await request('/api/marketing/leads', { token: A.token })).status), 'un usuario normal no debe ver la lista');
+});
+
+await test('ajustes: solo se guardan campos soportados y no hay pruebas de URLs arbitrarias', async () => {
+  const save = await request('/api/agency/config', { method: 'PATCH', token: A.token, body: { phone: '954000000', slack_webhook_url: 'http://169.254.169.254/', smtp_host: 'smtp.x.com', visit_terms: 'Texto {agencia}' } });
+  assert.equal(save.status, 200, JSON.stringify(save.body));
+  const cfg = await request('/api/agency/config', { token: A.token });
+  assert.equal(cfg.body.phone, '954000000');
+  assert.equal(cfg.body.visit_terms, 'Texto {agencia}');
+  assert.ok(!cfg.body.slack_webhook_url && !cfg.body.smtp_host, 'guardó campos que ya no existen');
+  const t = await request('/api/agency/test-integration', { method: 'POST', token: A.token, body: { integration: 'webhooks', config: { zapier_webhook_url: 'http://169.254.169.254/' } } });
+  assert.match(JSON.stringify(t.body), /desconocida/);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

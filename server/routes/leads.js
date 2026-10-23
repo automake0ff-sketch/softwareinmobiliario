@@ -603,7 +603,7 @@ router.post('/:id/appointments', async (req, res) => {
         {
           id: uuidv4(),
           appt_id: appointmentId,
-          status: emailResult.success || emailResult.mock ? 'sent' : 'failed',
+          status: emailResult.success === true ? 'sent' : 'failed',
           error: emailResult.error || null,
         }
       );
@@ -617,7 +617,7 @@ router.post('/:id/appointments', async (req, res) => {
       );
     }
 
-    res.status(201).json({ appointment, email_sent: emailResult.success || emailResult.mock });
+    res.status(201).json({ appointment, email_sent: emailResult.success === true });
   } catch (error) {
     console.error('Error scheduling lead appointment:', error);
     res.status(500).json({ error: 'Error al programar la cita.' });

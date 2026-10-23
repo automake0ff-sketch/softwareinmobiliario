@@ -20,7 +20,6 @@ const pageTitles = {
   '/leads': 'Leads',
   '/properties': 'Propiedades',
   '/comision': 'Protege tu comisión',
-  '/team': 'Equipo',
   '/settings': 'Configuración',
 }
 

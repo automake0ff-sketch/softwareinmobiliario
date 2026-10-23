@@ -41,11 +41,10 @@ const PLANS = [
     cta: 'Contratar Starter', popular: false,
     savings: 'Ahorra 38€',
     features: [
-      '1 oficina',
-      'Hasta 2 usuarios',
-      '500 leads/mes',
+      '500 leads nuevos al mes',
       'Partes de visita firmados con QR',
       'Encargos y exclusivas con avisos',
+      'Informe de visitas al propietario',
       'Comprobación de anuncios antes de publicar',
       'Mejora de anuncios con IA',
       'Entrada de leads por email de portales',
@@ -60,11 +59,14 @@ const PLANS = [
     cta: 'Contratar Profesional', popular: true,
     savings: 'Ahorra 78€',
     features: [
-      'Todo lo de Starter',
-      '3 oficinas',
-      'Hasta 5 usuarios',
-      '2.000 leads/mes',
-      'API básica',
+      '2.000 leads nuevos al mes',
+      'Partes de visita firmados con QR',
+      'Encargos y exclusivas con avisos',
+      'Informe de visitas al propietario',
+      'Comprobación de anuncios antes de publicar',
+      'Mejora de anuncios con IA',
+      'Entrada de leads por email de portales',
+      'CRM + Pipeline Kanban',
       'Soporte prioritario',
     ],
   },
@@ -75,13 +77,14 @@ const PLANS = [
     cta: 'Contratar Agencia', popular: false,
     savings: 'Ahorra 158€',
     features: [
-      'Todo lo de Profesional',
-      'Oficinas ilimitadas',
-      'Usuarios ilimitados',
       'Leads ilimitados',
-      'White-label completo',
-      'Dominio personalizado',
-      'API completa',
+      'Partes de visita firmados con QR',
+      'Encargos y exclusivas con avisos',
+      'Informe de visitas al propietario',
+      'Comprobación de anuncios antes de publicar',
+      'Mejora de anuncios con IA',
+      'Entrada de leads por email de portales',
+      'CRM + Pipeline Kanban',
       'Soporte dedicado',
     ],
   },
@@ -293,7 +296,7 @@ export default function PricingPage() {
                   ) : (
                     <div className="mt-2 space-y-1">
                       <p className="text-[11px] text-[#64748B]">
-                        {plan.priceYearly}€/año <span className="text-emerald-400 font-medium">(ahorra {plan.savings})</span>
+                        {plan.priceYearly}€/año <span className="text-emerald-400 font-medium">({plan.savings.toLowerCase()})</span>
                       </p>
                       <p className="text-[10px] text-emerald-400/70">2 meses gratis si facturas anualmente</p>
                     </div>

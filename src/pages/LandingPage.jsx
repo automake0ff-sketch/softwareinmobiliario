@@ -22,6 +22,21 @@ import {
   Play
 } from 'lucide-react'
 
+const GUIDE_AD = [
+  ['Precio final', 'Debe incluir impuestos y gastos repercutibles al consumidor cuando se puedan calcular (Ley 10/2025).'],
+  ['Honorarios de la agencia', 'Indica importe o porcentaje y quién los paga. Evita frases como "honorarios aparte" o "gastos no incluidos" sin cifras.'],
+  ['Etiqueta energética', 'La letra (A–G) debe verse en el anuncio, o indicar que el inmueble está exento.'],
+  ['Datos básicos', 'Ubicación, superficie, tipo y estado reales: lo anunciado debe coincidir con el inmueble.'],
+  ['Alquiler en zona tensionada', 'Precio máximo de referencia y/o última renta, e indicar si el propietario es gran tenedor.'],
+  ['Alquiler en Cataluña', 'Número de la cédula de habitabilidad en el anuncio.'],
+  ['Normativa de tu comunidad', 'Cambia con frecuencia y varía por comunidad autónoma: revísala antes de publicar.'],
+]
+const GUIDE_COMMISSION = [
+  ['Parte de visita firmado', 'En cada visita, un documento con fecha, datos del visitante y firma. Es tu prueba de que la visita fue tuya.'],
+  ['Encargo por escrito', 'Con fecha de fin, renovación y días de preaviso anotados en un calendario que alguien mire.'],
+  ['Informe al propietario', 'Visitas e interés cada cierto tiempo: un propietario informado se cambia menos de agencia.'],
+]
+
 function LeadMagnetSection() {
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
@@ -43,19 +58,41 @@ function LeadMagnetSection() {
     <section className="relative z-10 py-16 sm:py-20 bg-[#0b0b14] border-y border-[#1E1E2E]/60">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
         <span className="text-xs font-bold text-indigo-400 uppercase tracking-widest bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/20">
-          Guía gratuita
+          Checklist gratuito
         </span>
         <h2 className="mt-4 text-2xl sm:text-3xl font-bold text-white font-syne">
-          7 señales de que tu inmobiliaria está perdiendo leads
+          Antes de publicar un anuncio: lo que no puede faltar
         </h2>
         <p className="mt-3 text-[#94A3B8] text-sm sm:text-base">
-          Checklist corto y sin humo: cómo saber si estás dejando dinero sobre la mesa antes de plantearte cambiar de herramienta.
+          Una lista corta para revisar tus anuncios y para no perder una comisión por falta de papeles. Es orientativa y no sustituye el consejo de un abogado.
         </p>
 
         {status === 'done' ? (
-          <p className="mt-6 text-emerald-400 text-sm font-medium">
-            Hecho — te la enviaremos a {email} en cuanto la tengamos lista para envío automático.
-          </p>
+          <div className="mt-8 text-left space-y-6">
+            <p className="text-emerald-400 text-sm font-medium text-center">Aquí la tienes. Hemos guardado {email} para avisarte de novedades.</p>
+            <div>
+              <h3 className="text-white font-semibold mb-3">Tu anuncio</h3>
+              <ol className="space-y-3">
+                {GUIDE_AD.map(([t, d], i) => (
+                  <li key={t} className="rounded-xl border border-[#1E1E2E] bg-[#13131A] p-4">
+                    <p className="text-sm font-semibold text-white">{i + 1}. {t}</p>
+                    <p className="mt-1 text-xs text-[#94A3B8] leading-relaxed">{d}</p>
+                  </li>
+                ))}
+              </ol>
+            </div>
+            <div>
+              <h3 className="text-white font-semibold mb-3">Tu comisión</h3>
+              <ol className="space-y-3">
+                {GUIDE_COMMISSION.map(([t, d], i) => (
+                  <li key={t} className="rounded-xl border border-[#1E1E2E] bg-[#13131A] p-4">
+                    <p className="text-sm font-semibold text-white">{i + 1}. {t}</p>
+                    <p className="mt-1 text-xs text-[#94A3B8] leading-relaxed">{d}</p>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </div>
         ) : (
           <form onSubmit={submit} className="mt-6 flex flex-col sm:flex-row gap-2 max-w-lg mx-auto">
             <input
@@ -72,7 +109,7 @@ function LeadMagnetSection() {
               type="submit" disabled={status === 'loading'}
               className="px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors disabled:opacity-50 shrink-0"
             >
-              {status === 'loading' ? 'Enviando…' : 'Quiero la guía'}
+              {status === 'loading' ? 'Un momento…' : 'Ver el checklist'}
             </button>
           </form>
         )}
@@ -101,14 +138,14 @@ export default function LandingPage() {
       period: billingPeriod === 'monthly' ? '/mes' : '/año',
       desc: 'Para agentes y pequeñas agencias',
       features: [
-        '1 oficina activa',
-        'Hasta 2 usuarios',
         '500 leads nuevos al mes',
         'Partes de visita firmados con QR',
         'Encargos y exclusivas con avisos',
+        'Informe de visitas al propietario',
         'Comprobación de anuncios antes de publicar',
         'Mejora de anuncios con IA',
         'Entrada de leads por email de portales',
+        'CRM + Pipeline Kanban',
         'Soporte estándar'
       ],
       cta: 'Empezar ahora',
@@ -121,10 +158,14 @@ export default function LandingPage() {
       period: billingPeriod === 'monthly' ? '/mes' : '/año',
       desc: 'Para agencias en crecimiento',
       features: [
-        'Todo lo de Starter',
-        '3 oficinas activas',
-        'Hasta 5 usuarios',
         '2.000 leads nuevos al mes',
+        'Partes de visita firmados con QR',
+        'Encargos y exclusivas con avisos',
+        'Informe de visitas al propietario',
+        'Comprobación de anuncios antes de publicar',
+        'Mejora de anuncios con IA',
+        'Entrada de leads por email de portales',
+        'CRM + Pipeline Kanban',
         'Soporte prioritario'
       ],
       cta: 'Empezar ahora',
@@ -137,11 +178,14 @@ export default function LandingPage() {
       period: billingPeriod === 'monthly' ? '/mes' : '/año',
       desc: 'Para agencias consolidadas',
       features: [
-        'Todo lo de Profesional',
-        'Oficinas ilimitadas',
-        'Usuarios ilimitados',
         'Leads ilimitados',
-        'White-label completo',
+        'Partes de visita firmados con QR',
+        'Encargos y exclusivas con avisos',
+        'Informe de visitas al propietario',
+        'Comprobación de anuncios antes de publicar',
+        'Mejora de anuncios con IA',
+        'Entrada de leads por email de portales',
+        'CRM + Pipeline Kanban',
         'Soporte dedicado'
       ],
       cta: 'Empezar ahora',

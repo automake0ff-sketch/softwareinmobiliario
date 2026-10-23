@@ -122,16 +122,8 @@ router.get('/ranking', async (req, res) => {
 const CONFIG_FIELDS = [
   'name','slug','city','email','phone','address','website','instagram','facebook','linkedin','tiktok',
   'sendgrid_api_key','sendgrid_from_email','sendgrid_from_name',
-  'smtp_host','smtp_port','smtp_user','smtp_password',
-  'telegram_bot_token','telegram_chat_id',
-  'slack_webhook_url',
-  'notion_api_key','notion_database_id',
-  'airtable_api_key','airtable_base_id','airtable_table',
-  'google_sheets_id',
-  'zapier_webhook_url','make_webhook_url','n8n_webhook_url',
   'onboarding_completed','onboarding_step',
   'online_meeting_url','appointment_attendant_name','working_hours','timezone',
-  'idealista_api_key','idealista_api_secret','idealista_import_mode','idealista_office_id',
   'email_signature','auto_send_email','require_email_confirmation',
   'default_channel','reminder_2h_enabled','visit_terms',
   'app_Url',
@@ -204,44 +196,6 @@ router.post('/test-integration', async (req, res) => {
           return res.json({ ok: r.ok, msg: r.ok ? '✓ SendGrid conectado correctamente' : 'Error: API key inválida' })
         }
         return res.json({ ok: false, msg: 'Sin credenciales de email configuradas' })
-      }
-
-      case 'notifications': {
-        const results = []
-        if (creds.slack_webhook_url) {
-          const r = await fetch(creds.slack_webhook_url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: '✅ PropIA conectado correctamente a Slack' }),
-          })
-          results.push(r.ok ? '✓ Slack OK' : '✗ Slack error')
-        }
-        if (creds.telegram_bot_token && creds.telegram_chat_id) {
-          const r = await fetch(
-            `https://api.telegram.org/bot${creds.telegram_bot_token}/sendMessage`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ chat_id: creds.telegram_chat_id, text: '✅ PropIA conectado correctamente a Telegram' }),
-            }
-          )
-          results.push(r.ok ? '✓ Telegram OK' : '✗ Telegram error')
-        }
-        if (results.length === 0) {
-          return res.json({ ok: false, msg: 'Sin credenciales de notificación configuradas' })
-        }
-        return res.json({ ok: results.every(r => r.startsWith('✓')), msg: results.join(' · ') })
-      }
-
-      case 'webhooks': {
-        const url = creds.zapier_webhook_url || creds.make_webhook_url || creds.n8n_webhook_url
-        if (!url) return res.json({ ok: false, msg: 'Sin webhooks configurados' })
-        const r = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ test: true, source: 'PropIA', timestamp: new Date().toISOString() }),
-        })
-        return res.json({ ok: r.ok, msg: r.ok ? `✓ Webhook respondió con ${r.status}` : `✗ Error ${r.status}` })
       }
 
       default:

@@ -60,14 +60,14 @@ async function send48hReminders(now, nowISO, appUrl) {
         await run(
           `INSERT INTO appointment_messages (id, appointment_id, channel, type, status, sent_at)
            VALUES (@id, @appt_id, 'email', 'reminder', @status, NOW())`,
-          { id: uuidv4(), appt_id: appt.id, status: emailResult.success || emailResult.mock ? 'sent' : 'failed' }
+          { id: uuidv4(), appt_id: appt.id, status: emailResult.success === true ? 'sent' : 'failed' }
         );
         logCommunication({
           agencyId: agency.id, leadId: lead.id, appointmentId: appt.id,
           channel: 'email', direction: 'outbound',
           subject: `Recordatorio: tu cita es en 48h - ${agency.name}`,
           body: `Recordatorio 48h para cita del ${formattedDate}`,
-          status: emailResult.success || emailResult.mock ? 'sent' : 'failed',
+          status: emailResult.success === true ? 'sent' : 'failed',
           providerMessageId: emailResult.messageId, error: emailResult.error,
         });
       } catch (e) { console.error(`[Reminder Worker] Email error for appt ${appt.id}:`, e.message); }
@@ -146,7 +146,7 @@ async function send2hReminders(now, nowISO, appUrl) {
           channel: 'email', direction: 'outbound',
           subject: `Recordatorio: tu cita es en 2 horas`,
           body: `Recordatorio 2h para cita en ${formattedDate}`,
-          status: emailResult.success || emailResult.mock ? 'sent' : 'failed',
+          status: emailResult.success === true ? 'sent' : 'failed',
           providerMessageId: emailResult.messageId, error: emailResult.error,
         });
       } catch (e) { console.error(`[Reminder Worker] 2h Email error for appt ${appt.id}:`, e.message); }

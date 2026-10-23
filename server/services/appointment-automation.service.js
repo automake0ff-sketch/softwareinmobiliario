@@ -124,7 +124,7 @@ export async function createAppointment({ lead, agency, type, starts_at, ends_at
       sendgridKey: agency.sendgrid_api_key, fromEmail: agency.sendgrid_from_email, agencyName: agency.name,
     });
     const emailResult = await emailService.sendAppointmentConfirmation(lead, appointment, agency, modifyUrl);
-    emailSent = Boolean(emailResult.success || emailResult.mock);
+    emailSent = emailResult.success === true;
     logCommunication({
       agencyId: agency.id, leadId: lead.id, appointmentId,
       channel: 'email', direction: 'outbound',

@@ -14,7 +14,6 @@ const LeadDetailPage = lazy(() => import('./pages/LeadDetailPage'))
 const PropertiesPage = lazy(() => import('./pages/PropertiesPage'))
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
 const PricingPage = lazy(() => import('./pages/PricingPage'))
-const TeamPage = lazy(() => import('./pages/TeamPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
 const RegisterPage = lazy(() => import('./pages/RegisterPage'))
@@ -140,7 +139,6 @@ export default function App() {
               <Route path="/comision" element={<ComisionPage />} />
               <Route path="/leads/:id" element={<LeadDetailPage />} />
               <Route path="/properties" element={<PropertiesPage />} />
-              <Route path="/team" element={<TeamPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/admin" element={<AdminPage />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />

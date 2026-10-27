@@ -13,7 +13,7 @@ import { getAIUsageSummary } from './services/ai-budget.js';
 import { initDB, all, get, run, saveDB } from './db/db.js';
 import { defaultQueue, JobQueue } from './services/queue.js';
 import { initRealtime, RealtimeService } from './services/realtime.js';
-import { BillingService, checkPlanLimit, PLANS, PAYMENT_METHODS } from './services/stripe.js';
+import { BillingService, checkPlanLimit, PLANS, PAYMENT_METHODS, verifyStripeSignature } from './services/stripe.js';
 import CalendarService from './services/calendar.js';
 import EmailService from './services/email.js';
 import TwilioService from './services/twilio.js';
@@ -123,21 +123,21 @@ app.post('/webhooks/stripe', webhookLimiter, express.raw({ type: 'application/js
   try {
     let event;
     const sig = req.headers['stripe-signature'];
-    if (process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET && sig) {
-      // Verificacion de firma real. Si constructEvent lanza (firma invalida,
-      // cuerpo manipulado, secreto incorrecto), el catch de fuera debe
-      // rechazar la peticion con 400 -- NUNCA caer a parsear el body sin
-      // verificar, o cualquiera podria forjar un evento 'checkout.session.completed'
-      // y activarse una suscripcion de pago gratis.
-      const { default: Stripe } = await import('stripe');
-      const stripeInstance = new Stripe(process.env.STRIPE_SECRET_KEY);
-      event = stripeInstance.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    const canVerify = !!(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET);
+    if (canVerify) {
+      // Firma obligatoria: sin ella cualquiera podría forjar un evento y activarse un plan gratis.
+      if (!sig) return res.status(400).json({ error: 'Falta la firma de Stripe.' });
+      event = verifyStripeSignature(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    } else if (process.env.NODE_ENV === 'production') {
+      console.error('[STRIPE] Webhook rechazado: faltan STRIPE_SECRET_KEY o STRIPE_WEBHOOK_SECRET en producción.');
+      return res.status(503).json({ error: 'Webhook de pagos no configurado.' });
     } else {
-      console.warn('[STRIPE] Webhook sin verificar firma: falta STRIPE_WEBHOOK_SECRET o cabecera stripe-signature. Solo aceptable en desarrollo local.');
+      console.warn('[STRIPE] Webhook sin verificar firma (solo desarrollo local).');
       event = JSON.parse(req.body.toString());
     }
     const result = await stripe.handleWebhook(event);
-    res.json(result);
+    // Si falló al procesar, 500: Stripe reintenta el evento.
+    res.status(result.received === false ? 500 : 200).json(result);
   } catch (e) {
     console.error('[STRIPE] Webhook error:', e.message);
     res.status(400).json({ error: e.message });
@@ -535,19 +535,29 @@ async function start() {
 
   app.post('/api/billing/create-checkout', auth, async (req, res) => {
     try {
-      const { planId, interval, paymentMethod, priceId, promoCode } = req.body;
+      const { planId, interval } = req.body || {};
       const agency = await get('SELECT * FROM agencies WHERE id = @aid', { aid: req.user.agency_id });
       if (!agency) return res.status(404).json({ error: 'Agencia no encontrada' });
       if (!PLANS[planId]) return res.status(400).json({ error: 'Plan inválido' });
-      const session = await stripe.createCheckoutSession(agency, planId, interval, paymentMethod, priceId, req.get('origin') || req.get('referer'), promoCode);
+      // Con una suscripción viva, otro checkout crearía una segunda y se cobraría dos veces.
+      const live = await get("SELECT status FROM subscriptions WHERE agency_id = @aid AND status IN ('trialing','active','past_due') AND COALESCE(cancel_at_period_end, false) = false", { aid: agency.id });
+      if (live) return res.status(409).json({ error: 'Ya tienes una suscripción en marcha. Cancélala primero o escríbenos para cambiar de plan.', code: 'SUBSCRIPTION_EXISTS' });
+      const session = await stripe.createCheckoutSession(agency, planId, interval, req.get('origin') || req.get('referer'));
       res.json(session);
     } catch (e) {
-      res.status(500).json({ error: e.message });
+      console.error('[BILLING] create-checkout:', e.message);
+      res.status(502).json({ error: e.message });
     }
   });
 
-  app.post('/api/billing/cancel', auth, (req, res) => {
-    stripe.cancelSubscription(req.user.agency_id).then(r => res.json(r));
+  app.post('/api/billing/cancel', auth, async (req, res) => {
+    try {
+      const result = await stripe.cancelSubscription(req.user.agency_id);
+      res.status(result.success ? 200 : 409).json(result);
+    } catch (e) {
+      console.error('[BILLING] cancel:', e.message);
+      res.status(500).json({ error: 'No se pudo cancelar la suscripción.' });
+    }
   });
 
   app.get('/api/billing/invoices', auth, async (req, res) => {

@@ -50,6 +50,74 @@ const SECTIONS = [
   },
 ]
 
+const STATUS_LABELS = {
+  trialing: ['Prueba gratuita', 'bg-indigo-500/15 text-indigo-300'],
+  active: ['Activa', 'bg-emerald-500/15 text-emerald-300'],
+  past_due: ['Pago pendiente', 'bg-amber-500/15 text-amber-300'],
+  canceled: ['Cancelada', 'bg-slate-500/20 text-slate-300'],
+  expired: ['Impagada', 'bg-rose-500/15 text-rose-300'],
+}
+const fmtDay = (d) => (d ? new Date(d).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }) : '—')
+const eur = (n) => new Intl.NumberFormat('es-ES', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 }).format(n)
+
+function SubscriptionCard() {
+  const subscription = useStore((s) => s.subscription)
+  const fetchSubscription = useStore((s) => s.fetchSubscription)
+  const [busy, setBusy] = useState(false)
+  if (!subscription || !subscription.status) return null
+  const { status, planName, price, trialEnd, currentPeriodEnd, cancelAtPeriodEnd, billingCycle, stripeSubscriptionId } = subscription
+  const [label, cls] = STATUS_LABELS[status] || [status, 'bg-slate-500/20 text-slate-300']
+  const live = ['trialing', 'active', 'past_due'].includes(status)
+  const yearly = billingCycle === 'yearly'
+  const list = yearly ? price * 10 : price
+  const discounted = stripeSubscriptionId && trialEnd ? Math.round(list * 90) / 100 : list
+
+  async function cancel() {
+    const msg = status === 'trialing'
+      ? 'Vas a cancelar durante la prueba: perderás el acceso ahora y no se te cobrará nada. ¿Continuar?'
+      : `Tu suscripción seguirá activa hasta el ${fmtDay(currentPeriodEnd)} y después no se renovará. ¿Continuar?`
+    if (!window.confirm(msg)) return
+    setBusy(true)
+    try {
+      const r = await api.post('/billing/cancel', {})
+      toast.success(r.cancelAtPeriodEnd ? 'Suscripción cancelada: seguirás con acceso hasta el final del periodo' : 'Suscripción cancelada')
+      await fetchSubscription()
+      if (!r.cancelAtPeriodEnd) window.location.href = '/pricing'
+    } catch (e) {
+      toast.error(e.message || 'No se pudo cancelar')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-white/10">
+        <span className="text-2xl">💳</span>
+        <div className="flex-1">
+          <p className="text-white font-medium text-sm">Suscripción</p>
+          <p className="text-white/40 text-xs">Plan {planName} · {eur(list)}€/{yearly ? 'año' : 'mes'}</p>
+        </div>
+        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${cls}`}>{label}</span>
+      </div>
+      <div className="p-6 space-y-3 text-sm text-white/70">
+        {status === 'trialing' && (
+          <p>Tu prueba gratuita termina el <strong className="text-white">{fmtDay(trialEnd)}</strong>. Ese día se cobrará <strong className="text-white">{eur(discounted)}€</strong>{discounted < list ? ' (con un 10 % de descuento)' : ''} si no cancelas antes.</p>
+        )}
+        {status === 'active' && !cancelAtPeriodEnd && <p>Próxima renovación: <strong className="text-white">{fmtDay(currentPeriodEnd)}</strong> ({eur(discounted)}€).</p>}
+        {status === 'active' && cancelAtPeriodEnd && <p>Cancelada. Tendrás acceso hasta el <strong className="text-white">{fmtDay(currentPeriodEnd)}</strong>.</p>}
+        {status === 'past_due' && <p>No hemos podido cobrar tu última renovación. Stripe lo reintentará; si el problema persiste, escríbenos para actualizar tu tarjeta.</p>}
+        {!live && <a href="/pricing" className="inline-block rounded-lg bg-indigo-600 px-4 py-2 text-white text-sm font-medium">Ver planes</a>}
+        {live && !(status === 'active' && cancelAtPeriodEnd) && (
+          <button onClick={cancel} disabled={busy} className="rounded-lg border border-white/15 px-4 py-2 text-xs font-medium text-white/70 hover:text-white hover:border-white/30 disabled:opacity-50">
+            {busy ? 'Cancelando…' : 'Cancelar suscripción'}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function Field({ field, value, onChange }) {
   const cls = 'w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500 transition-colors'
   return (
@@ -135,6 +203,8 @@ export default function SettingsPage() {
           <a href="/pricing" className="ml-2 px-3 py-1.5 text-xs font-medium text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 rounded-lg">Ver planes</a>
         </div>
       </div>
+
+      <SubscriptionCard />
 
       <div className="bg-white/5 rounded-xl p-4">
         <div className="flex items-center justify-between mb-2">

@@ -64,7 +64,7 @@ router.post('/', validateBody(registerSchema), async (req, res) => {
         city: agencyCity || '',
         website: '',
         plan: plan || 'starter',
-        plan_status: 'trialing',
+        plan_status: 'inactive',
         now,
       }
     );

@@ -103,9 +103,26 @@ export const PLANS = {
 
 export const PAYMENT_METHODS = {
   stripe: { id: 'stripe', name: 'Tarjeta (Stripe)', icon: 'credit-card' },
-  paypal: { id: 'paypal', name: 'PayPal', icon: 'paypal' },
-  transfer: { id: 'transfer', name: 'Transferencia Bancaria', icon: 'bank' },
 };
+
+import crypto from 'node:crypto'
+
+// Verificación de la firma de los webhooks de Stripe, sin depender del paquete 'stripe'.
+// Formato de la cabecera: "t=1700000000,v1=<hmac>[,v1=<hmac>...]" con HMAC-SHA256 de "t.cuerpo".
+export function verifyStripeSignature(rawBody, header, secret, toleranceSec = 300) {
+  if (!header || !secret) throw new Error('Falta la firma de Stripe.')
+  const parts = String(header).split(',').map((p) => p.trim().split('='))
+  const t = parts.find(([k]) => k === 't')?.[1]
+  const sigs = parts.filter(([k]) => k === 'v1').map(([, v]) => v)
+  if (!t || !sigs.length) throw new Error('Cabecera de firma de Stripe no válida.')
+  const ts = Number(t)
+  if (!Number.isFinite(ts) || Math.abs(Date.now() / 1000 - ts) > toleranceSec) throw new Error('La firma de Stripe ha caducado.')
+  const payload = Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : String(rawBody)
+  const expected = crypto.createHmac('sha256', secret).update(`${t}.${payload}`).digest('hex')
+  const ok = sigs.some((sig) => sig.length === expected.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected)))
+  if (!ok) throw new Error('La firma de Stripe no coincide.')
+  return JSON.parse(payload)
+}
 
 import { v4 as uuidv4 } from 'uuid'
 
@@ -131,12 +148,35 @@ export class BillingService {
   // el resto de la app para limites y features (ver server/middleware/auth.js).
   // La tabla subscriptions solo guarda metadatos de facturación; sin esta
   // actualización, un pago completado con éxito no desbloquea nada para el cliente.
-  async _activateAgencyPlan(agencyId, planSlug) {
+  async _activateAgencyPlan(agencyId, planSlug, status = 'active') {
     const { run: runQuery } = await this._db();
     await runQuery(
-      `UPDATE agencies SET plan = @plan, plan_status = 'active', updated_at = NOW() WHERE id = @id`,
-      { plan: planSlug, id: agencyId }
+      `UPDATE agencies SET plan = @plan, plan_status = @status, updated_at = NOW() WHERE id = @id`,
+      { plan: planSlug, status, id: agencyId }
     );
+  }
+
+  // Solo cambia el estado (sin tocar el plan): lo usan los eventos de Stripe.
+  async _setAgencyStatus(agencyId, status) {
+    const { run: runQuery } = await this._db();
+    await runQuery(
+      `UPDATE agencies SET plan_status = @status, updated_at = NOW() WHERE id = @id`,
+      { status, id: agencyId }
+    );
+  }
+
+  // Estados de Stripe -> estados de la aplicación. Con 'active', 'trialing' y 'past_due'
+  // se puede usar la aplicación (past_due da margen mientras Stripe reintenta el cobro).
+  static mapStripeStatus(stripeStatus) {
+    switch (stripeStatus) {
+      case 'active': return 'active';
+      case 'trialing': return 'trialing';
+      case 'past_due': return 'past_due';
+      case 'unpaid': return 'unpaid';
+      case 'canceled':
+      case 'incomplete_expired': return 'canceled';
+      default: return 'inactive'; // incomplete, paused, etc.
+    }
   }
 
   async createCustomer(agency) {
@@ -149,7 +189,7 @@ export class BillingService {
         email: agency.email || '',
       });
       params.append('metadata[agency_id]', agency.id || '');
-      const resp = await fetch('https://api.stripe.com/v1/customers', {
+      const resp = await fetch(`${this.stripeBase}/v1/customers`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.config.secretKey}`,
@@ -164,45 +204,63 @@ export class BillingService {
     }
   }
 
-  // Código de demo para cerrar ventas: aplica un precio fijo mensual
-  // reducido en el checkout, sin tocar el precio público de /pricing.
-  // No es un descuento de Stripe (coupon) — sustituye directamente el
-  // importe que se envía a Stripe, así que la suscripción queda
-  // recurrente a ese precio mientras no se cancele. Solo válido con
-  // facturación mensual; ignorado en anual.
-  // ⚠️ Los importes de profesional/agencia son una propuesta mía
-  // (proporcional al descuento que ya definiste para Starter) — ajústalos
-  // si quieres otra cifra; cambia también los mismos valores en
-  // src/pages/PricingPage.jsx (DEMO_CODES) para que la web y el cobro
-  // real coincidan.
-  static DEMO_CODES = {
-    DEMO25: { starter: 2500, profesional: 6500, agencia: 15900 },
+  // Prueba gratuita con tarjeta: 3 días y, al terminar, la suscripción se cobra con 10 % de descuento.
+  // Duración del descuento: 'forever' (todas las renovaciones), 'once' (solo el primer cobro).
+  static TRIAL_DAYS = Number(process.env.TRIAL_DAYS || 3);
+  static TRIAL_DISCOUNT_PERCENT = Number(process.env.TRIAL_DISCOUNT_PERCENT || 10);
+  static TRIAL_DISCOUNT_DURATION = process.env.TRIAL_DISCOUNT_DURATION || 'forever';
+
+  get stripeBase() {
+    return process.env.STRIPE_API_BASE || 'https://api.stripe.com';
   }
 
-  async createCheckoutSession(agency, planId, interval, paymentMethod, priceId, requestOrigin, promoCode) {
-    interval = interval || 'month';
-    paymentMethod = paymentMethod || 'stripe';
+  async _stripe(path, { method = 'GET', params } = {}) {
+    const resp = await fetch(`${this.stripeBase}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${this.config.secretKey}`,
+        ...(params ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
+      },
+      body: params,
+    });
+    const data = await resp.json().catch(() => ({}));
+    return { ok: resp.ok, status: resp.status, data };
+  }
+
+  // Crea (una sola vez) el cupón del descuento de la prueba y devuelve su id.
+  async _ensureTrialCoupon() {
+    const pct = BillingService.TRIAL_DISCOUNT_PERCENT;
+    const duration = BillingService.TRIAL_DISCOUNT_DURATION;
+    const id = `propia-trial-${pct}-${duration}`;
+    const found = await this._stripe(`/v1/coupons/${id}`);
+    if (found.ok) return id;
+    const params = new URLSearchParams({ id, percent_off: String(pct), duration, name: `Prueba PropIA -${pct}%` });
+    const created = await this._stripe('/v1/coupons', { method: 'POST', params });
+    if (!created.ok && created.data?.error?.code !== 'resource_already_exists') {
+      throw new Error(created.data?.error?.message || 'No se pudo crear el cupón de descuento');
+    }
+    return id;
+  }
+
+  async _trialEligible(agencyId) {
+    const { get: getRow } = await this._db();
+    const prev = await getRow(
+      'SELECT id FROM subscriptions WHERE agency_id = @aid AND stripe_subscription_id IS NOT NULL LIMIT 1',
+      { aid: agencyId }
+    );
+    return !prev;
+  }
+
+  async createCheckoutSession(agency, planId, interval, requestOrigin) {
+    interval = interval === 'year' ? 'year' : 'month';
     const plan = PLANS[planId];
     if (!plan) throw new Error(`Invalid plan: ${planId}`);
 
-    let amountCents = interval === 'year' ? plan.priceCentsYearly : plan.priceCentsMonthly;
-    let demoApplied = false;
-    if (promoCode && interval === 'month') {
-      const demo = BillingService.DEMO_CODES[String(promoCode).toUpperCase()];
-      const demoAmountCents = demo?.[planId];
-      // Un código de demo solo puede rebajar el precio, nunca subirlo por encima de la tarifa.
-      if (demoAmountCents !== undefined && demoAmountCents < amountCents) {
-        amountCents = demoAmountCents;
-        demoApplied = true;
-      }
-    }
-    const amount = amountCents / 100;
-    const periodDays = interval === 'year' ? 365 : 30;
+    const amountCents = interval === 'year' ? plan.priceCentsYearly : plan.priceCentsMonthly;
+    const trial = await this._trialEligible(agency.id);
+    const discountPct = trial ? BillingService.TRIAL_DISCOUNT_PERCENT : 0;
+    const trialDays = trial ? BillingService.TRIAL_DAYS : 0;
 
-    // El origin real de la petición (cabecera Origin/Referer del navegador que
-    // hizo el checkout) es más fiable que APP_URL: si APP_URL está mal puesto
-    // en Render (p.ej. apuntando por error al puerto local del backend), el
-    // cliente igualmente vuelve a la URL desde la que realmente pagó.
     let baseUrl = this.config.appUrl || 'http://localhost:5173';
     if (requestOrigin) {
       try {
@@ -213,126 +271,82 @@ export class BillingService {
       }
     }
     if (process.env.NODE_ENV === 'production' && baseUrl.includes('localhost')) {
-      console.error(`[STRIPE] ALERTA: redirigiendo checkout a una URL localhost en producción (${baseUrl}). Revisa APP_URL en las variables de entorno de Render.`);
+      console.error(`[STRIPE] ALERTA: redirigiendo checkout a una URL localhost en producción (${baseUrl}). Revisa APP_URL.`);
     }
 
-    if (!this.config.secretKey || paymentMethod !== 'stripe') {
-      const { all, run } = await this._db();
-      const subId = uuidv4();
+    // Sin clave de Stripe: SOLO en desarrollo/test se simula (y se activa la prueba).
+    // En producción nunca se activa un plan sin pasar por Stripe.
+    if (!this.config.secretKey) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('Los pagos no están configurados. Contacta con soporte.');
+      }
+      const { run } = await this._db();
       const now = new Date().toISOString();
-      const end = new Date(Date.now() + periodDays * 86400000).toISOString();
+      const trialEnd = trial ? new Date(Date.now() + trialDays * 86400000).toISOString() : null;
+      const periodEnd = trialEnd || new Date(Date.now() + (interval === 'year' ? 365 : 30) * 86400000).toISOString();
       const planUuid = await this._planUuid(planId);
-
       await run(
         `INSERT INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, current_period_start, current_period_end, trial_end, payment_method, created_at, updated_at)
-         VALUES (@id, @agency_id, @plan_id, @status, @billing_cycle, @period_start, @period_end, @trial_end, @payment_method, @created_at, @updated_at)
-         ON CONFLICT (agency_id) DO UPDATE SET
-           plan_id = EXCLUDED.plan_id,
-           status = EXCLUDED.status,
-           billing_cycle = EXCLUDED.billing_cycle,
-           current_period_start = EXCLUDED.current_period_start,
-           current_period_end = EXCLUDED.current_period_end,
-           trial_end = EXCLUDED.trial_end,
-           payment_method = EXCLUDED.payment_method,
-           updated_at = EXCLUDED.updated_at`,
-        {
-          id: subId,
-          agency_id: agency.id,
-          plan_id: planUuid,
-          status: paymentMethod === 'transfer' ? 'pending' : 'active',
-          billing_cycle: interval === 'year' ? 'yearly' : 'monthly',
-          period_start: now,
-          period_end: end,
-          trial_end: null,
-          payment_method: paymentMethod,
-          created_at: now,
-          updated_at: now,
-        }
-      )
-
-      // Transferencia queda 'pending' hasta confirmar el ingreso -> no activar aun.
-      if (paymentMethod !== 'transfer') {
-        await this._activateAgencyPlan(agency.id, planId);
-      }
-
-      return {
-        mock: true,
-        sessionId: `mock_cs_${Date.now()}`,
-        paymentMethod,
-        url: `${baseUrl}/pricing?success=true`,
-        plan: plan.name,
-        amount,
-        amountCents,
-        interval,
-        demoApplied,
-        message: paymentMethod === 'transfer'
-          ? 'Solicitud recibida. Te enviaremos los datos de transferencia por email.'
-          : undefined,
-      };
-    }
-
-    let existingCustomerId = null;
-    if (this.config.secretKey && paymentMethod === 'stripe') {
-      const { get: getRow } = await this._db();
-      const existingSub = await getRow(
-        'SELECT stripe_customer_id FROM subscriptions WHERE agency_id = @aid AND stripe_customer_id IS NOT NULL',
-        { aid: agency.id }
+         VALUES (@id, @agency_id, @plan_id, @status, @cycle, @start, @end, @trial_end, 'stripe', @now, @now)
+         ON CONFLICT (agency_id) DO UPDATE SET plan_id = EXCLUDED.plan_id, status = EXCLUDED.status, billing_cycle = EXCLUDED.billing_cycle,
+           current_period_start = EXCLUDED.current_period_start, current_period_end = EXCLUDED.current_period_end,
+           trial_end = EXCLUDED.trial_end, updated_at = EXCLUDED.updated_at`,
+        { id: uuidv4(), agency_id: agency.id, plan_id: planUuid, status: trial ? 'trialing' : 'active', cycle: interval === 'year' ? 'yearly' : 'monthly', start: now, end: periodEnd, trial_end: trialEnd, now }
       );
-      existingCustomerId = existingSub?.stripe_customer_id || null;
+      await this._activateAgencyPlan(agency.id, planId, trial ? 'trialing' : 'active');
+      return { mock: true, sessionId: `mock_cs_${Date.now()}`, url: `${baseUrl}/pricing?success=true`, plan: plan.name, interval, trial, trialDays, discountPercent: discountPct };
     }
 
-    try {
-      const params = new URLSearchParams({
-        success_url: `${baseUrl}/pricing?success=true`,
-        cancel_url: `${baseUrl}/pricing?canceled=true`,
-        mode: 'subscription',
-      });
-      if (existingCustomerId) {
-        params.append('customer', existingCustomerId);
-      } else if (agency.email) {
-        params.append('customer_email', agency.email);
-      }
-      params.append('metadata[agency_id]', agency.id || '');
-      params.append('metadata[plan_id]', planId || '');
-      params.append('metadata[interval]', interval || '');
+    const existingSub = await (await this._db()).get(
+      'SELECT stripe_customer_id FROM subscriptions WHERE agency_id = @aid AND stripe_customer_id IS NOT NULL',
+      { aid: agency.id }
+    );
 
-      // priceId debe ser un Price ID real de Stripe (price_xxx). Si llega un
-      // Product ID (prod_xxx) -- error común al copiar desde el dashboard de
-      // Stripe -- Stripe rechazaría la sesión con 'No such price'. En ese
-      // caso, generamos el precio dinámicamente en vez de fallar.
-      const validPriceId = priceId && priceId.startsWith('price_') ? priceId : null;
-      if (!validPriceId && priceId) {
-        console.warn(`[STRIPE] priceId '${priceId}' no es un Price ID válido (¿es un Product ID 'prod_'? hace falta el 'price_' del dashboard de Stripe > Producto > Precios). Generando precio dinámico como fallback.`);
-      }
+    const params = new URLSearchParams({
+      success_url: `${baseUrl}/pricing?success=true`,
+      cancel_url: `${baseUrl}/pricing?canceled=true`,
+      mode: 'subscription',
+      client_reference_id: agency.id || '',
+      payment_method_collection: 'always',
+    });
+    params.append('payment_method_types[0]', 'card');
+    if (existingSub?.stripe_customer_id) params.append('customer', existingSub.stripe_customer_id);
+    else if (agency.email) params.append('customer_email', agency.email);
 
-      if (validPriceId) {
-        params.append('line_items[0][price]', validPriceId);
-        params.append('line_items[0][quantity]', '1');
-      } else {
-        params.append('line_items[0][price_data][currency]', 'eur');
-        params.append('line_items[0][price_data][product_data][name]', `${plan.name} (${interval === 'year' ? 'Anual' : 'Mensual'})`);
-        params.append('line_items[0][price_data][unit_amount]', amountCents.toString());
-        params.append('line_items[0][price_data][recurring][interval]', interval === 'year' ? 'year' : 'month');
-        params.append('line_items[0][quantity]', '1');
-      }
-
-      const resp = await fetch('https://api.stripe.com/v1/checkout/sessions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.config.secretKey}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: params,
-      });
-      const data = await resp.json();
-      return { ...data, paymentMethod, demoApplied };
-    } catch (e) {
-      return { mock: true, sessionId: `mock_cs_${Date.now()}`, paymentMethod, error: e.message };
+    const meta = { agency_id: agency.id || '', plan_id: planId, interval };
+    for (const [k, v] of Object.entries(meta)) {
+      params.append(`metadata[${k}]`, v);
+      params.append(`subscription_data[metadata][${k}]`, v); // para que los eventos de la suscripción sepan de qué agencia son
     }
+    if (trial) {
+      params.append('subscription_data[trial_period_days]', String(trialDays));
+      params.append('subscription_data[trial_settings][end_behavior][missing_payment_method]', 'cancel');
+      const coupon = await this._ensureTrialCoupon();
+      params.append('discounts[0][coupon]', coupon);
+    }
+
+    params.append('line_items[0][price_data][currency]', 'eur');
+    params.append('line_items[0][price_data][product_data][name]', `PropIA ${plan.name} (${interval === 'year' ? 'Anual' : 'Mensual'})`);
+    params.append('line_items[0][price_data][unit_amount]', String(amountCents));
+    params.append('line_items[0][price_data][recurring][interval]', interval);
+    params.append('line_items[0][quantity]', '1');
+
+    const res = await this._stripe('/v1/checkout/sessions', { method: 'POST', params });
+    if (!res.ok || !res.data?.url) {
+      throw new Error(res.data?.error?.message || 'No se pudo iniciar el pago con Stripe.');
+    }
+    return { sessionId: res.data.id, url: res.data.url, plan: plan.name, interval, trial, trialDays, discountPercent: discountPct };
+  }
+
+  async _agencyBySubscription(stripeSubscriptionId) {
+    if (!stripeSubscriptionId) return null;
+    const { all } = await this._db();
+    const rows = await all('SELECT agency_id FROM subscriptions WHERE stripe_subscription_id = @sub_id', { sub_id: stripeSubscriptionId });
+    return rows?.[0]?.agency_id || null;
   }
 
   async handleWebhook(event) {
-    const { run, all } = await this._db();
+    const { run } = await this._db();
     try {
       switch (event.type) {
         case 'checkout.session.completed': {
@@ -340,100 +354,87 @@ export class BillingService {
           const agencyId = session.metadata?.agency_id;
           const planId = session.metadata?.plan_id;
           const interval = session.metadata?.interval || 'month';
-          if (agencyId && planId) {
-            const now = new Date().toISOString();
-            const end = new Date(Date.now() + (interval === 'year' ? 365 : 30) * 86400000).toISOString();
-            const planUuid = await this._planUuid(planId);
-            await run(
-              `INSERT INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, stripe_subscription_id, stripe_customer_id, current_period_start, current_period_end, updated_at)
-               VALUES (@id, @agency_id, @plan_id, 'active', @billing_cycle, @stripe_sub, @stripe_cus, @period_start, @period_end, @updated_at)
-               ON CONFLICT (agency_id) DO UPDATE SET
-                 plan_id = EXCLUDED.plan_id,
-                 status = EXCLUDED.status,
-                 billing_cycle = EXCLUDED.billing_cycle,
-                 stripe_subscription_id = EXCLUDED.stripe_subscription_id,
-                 stripe_customer_id = EXCLUDED.stripe_customer_id,
-                 current_period_start = EXCLUDED.current_period_start,
-                 current_period_end = EXCLUDED.current_period_end,
-                 updated_at = EXCLUDED.updated_at`,
-              {
-                id: uuidv4(),
-                agency_id: agencyId,
-                plan_id: planUuid,
-          billing_cycle: interval === 'year' ? 'yearly' : 'monthly',
-                stripe_sub: session.subscription,
-                stripe_cus: session.customer,
-                period_start: now,
-                period_end: end,
-                updated_at: now,
-              }
-            )
-            await this._activateAgencyPlan(agencyId, planId);
-            console.log(`[STRIPE] Suscripción activada: ${agencyId} -> ${planId}`);
-          }
+          if (!agencyId || !planId || !PLANS[planId]) break;
+          // Con prueba gratuita no hay cobro todavía: 'no_payment_required'.
+          const status = session.payment_status === 'paid' ? 'active' : 'trialing';
+          const now = new Date().toISOString();
+          const planUuid = await this._planUuid(planId);
+          await run(
+            `INSERT INTO subscriptions (id, agency_id, plan_id, status, billing_cycle, stripe_subscription_id, stripe_customer_id, payment_method, current_period_start, current_period_end, updated_at)
+             VALUES (@id, @agency_id, @plan_id, @status, @cycle, @stripe_sub, @stripe_cus, 'stripe', @start, @end, @now)
+             ON CONFLICT (agency_id) DO UPDATE SET plan_id = EXCLUDED.plan_id, status = EXCLUDED.status, billing_cycle = EXCLUDED.billing_cycle,
+               stripe_subscription_id = EXCLUDED.stripe_subscription_id, stripe_customer_id = EXCLUDED.stripe_customer_id,
+               payment_method = 'stripe', updated_at = EXCLUDED.updated_at`,
+            {
+              id: uuidv4(), agency_id: agencyId, plan_id: planUuid, status, cycle: interval === 'year' ? 'yearly' : 'monthly',
+              stripe_sub: session.subscription, stripe_cus: session.customer, start: now,
+              end: new Date(Date.now() + (interval === 'year' ? 365 : 30) * 86400000).toISOString(), now,
+            }
+          );
+          await this._activateAgencyPlan(agencyId, planId, status);
+          console.log(`[STRIPE] Suscripción ${status}: ${agencyId} -> ${planId}`);
+          break;
+        }
+        case 'customer.subscription.created':
+        case 'customer.subscription.updated':
+        case 'customer.subscription.deleted': {
+          const sub = event.data.object;
+          const agencyId = sub.metadata?.agency_id || await this._agencyBySubscription(sub.id);
+          if (!agencyId) break;
+          // 'deleted' siempre es una baja, aunque el objeto aún diga otra cosa.
+          const status = event.type === 'customer.subscription.deleted' ? 'canceled' : BillingService.mapStripeStatus(sub.status);
+          // La tabla subscriptions solo admite trialing/active/past_due/canceled/expired/pending.
+          const subStatus = { unpaid: 'expired', inactive: 'pending' }[status] || status;
+          await run(
+            `UPDATE subscriptions SET status = @status, cancel_at_period_end = @cancel, current_period_end = COALESCE(@period_end, current_period_end),
+               trial_end = COALESCE(@trial_end, trial_end), stripe_subscription_id = COALESCE(stripe_subscription_id, @sub_id),
+               canceled_at = CASE WHEN @status = 'canceled' THEN NOW() ELSE canceled_at END, updated_at = NOW()
+             WHERE agency_id = @agency_id`,
+            {
+              status: subStatus, cancel: sub.cancel_at_period_end ? 1 : 0, sub_id: sub.id, agency_id: agencyId,
+              period_end: sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null,
+              trial_end: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
+            }
+          );
+          await this._setAgencyStatus(agencyId, status);
           break;
         }
         case 'invoice.paid': {
           const invoice = event.data.object;
-          const agencySub = await all('SELECT agency_id FROM subscriptions WHERE stripe_subscription_id = @sub_id', { sub_id: invoice.subscription });
-          const agencyId = agencySub?.[0]?.agency_id;
-          if (agencyId) {
+          const agencyId = await this._agencyBySubscription(invoice.subscription);
+          if (!agencyId) break;
+          if (invoice.amount_paid > 0) {
             await run(
               `INSERT INTO payment_history (id, agency_id, amount, currency, status, payment_method, stripe_invoice_id, stripe_payment_intent_id, invoice_url, invoice_pdf_url, description, period_start, period_end, created_at)
                VALUES (@id, @agency_id, @amount, @currency, 'succeeded', 'card', @inv_id, @pi_id, @inv_url, @pdf_url, @desc, @p_start, @p_end, NOW())`,
               {
-                id: uuidv4(),
-                agency_id: agencyId,
-                amount: invoice.amount_paid,
-                currency: invoice.currency?.toUpperCase() || 'EUR',
-                inv_id: invoice.id,
-                pi_id: invoice.payment_intent,
-                inv_url: invoice.hosted_invoice_url,
-                pdf_url: invoice.invoice_pdf,
-                desc: `Suscripción PropIA`,
+                id: uuidv4(), agency_id: agencyId, amount: invoice.amount_paid, currency: invoice.currency?.toUpperCase() || 'EUR',
+                inv_id: invoice.id, pi_id: invoice.payment_intent, inv_url: invoice.hosted_invoice_url, pdf_url: invoice.invoice_pdf,
+                desc: 'Suscripción PropIA',
                 p_start: invoice.period_start ? new Date(invoice.period_start * 1000).toISOString() : null,
                 p_end: invoice.period_end ? new Date(invoice.period_end * 1000).toISOString() : null,
               }
-            )
-          }
-          break;
-        }
-        case 'customer.subscription.updated':
-        case 'customer.subscription.deleted': {
-          const sub = event.data.object;
-          const meta = sub.metadata || {};
-          const agencyId = meta.agency_id;
-          if (agencyId) {
-            const status = sub.status === 'active' ? 'active' : sub.status === 'past_due' ? 'past_due' : sub.status === 'canceled' ? 'canceled' : sub.status === 'trialing' ? 'trialing' : 'expired';
-            await run(
-              `UPDATE subscriptions SET status = @status, cancel_at_period_end = @cancel, current_period_end = @period_end, updated_at = NOW() WHERE agency_id = @agency_id`,
-              {
-                status,
-                cancel: sub.cancel_at_period_end ? 1 : 0,
-                period_end: sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null,
-                agency_id: agencyId,
-              }
-            )
-            if (sub.status === 'canceled' || sub.status === 'expired') {
-              await run('UPDATE subscriptions SET canceled_at = NOW() WHERE agency_id = @agency_id', { agency_id: agencyId })
-            }
+            );
+            // Un cobro correcto recupera una cuenta en 'past_due' o 'trialing'.
+            await run("UPDATE subscriptions SET status = 'active', updated_at = NOW() WHERE agency_id = @a", { a: agencyId });
+            await this._setAgencyStatus(agencyId, 'active');
           }
           break;
         }
         case 'invoice.payment_failed': {
           const failed = event.data.object;
-          const agencySub = await all('SELECT agency_id FROM subscriptions WHERE stripe_subscription_id = @sub_id', { sub_id: failed.subscription });
-          const failAgencyId = agencySub?.[0]?.agency_id;
-          if (failAgencyId) {
-            await run('UPDATE subscriptions SET status = \'past_due\' WHERE agency_id = @agency_id', { agency_id: failAgencyId })
-          }
+          const agencyId = await this._agencyBySubscription(failed.subscription);
+          if (!agencyId) break;
+          await run("UPDATE subscriptions SET status = 'past_due', updated_at = NOW() WHERE agency_id = @a", { a: agencyId });
+          await this._setAgencyStatus(agencyId, 'past_due');
           break;
         }
       }
       return { received: true };
     } catch (e) {
       console.error('[Stripe webhook error]', e);
-      return { received: true, error: e.message };
+      // 500: Stripe reintentará el evento. Con 200 se perdería para siempre.
+      return { received: false, error: e.message };
     }
   }
 
@@ -582,22 +583,34 @@ export class BillingService {
     )
   }
 
+  // Durante la prueba, cancelar corta el acceso al momento y no se cobra nada.
+  // Con la suscripción ya cobrada, se cancela al final del periodo pagado (el acceso sigue hasta entonces).
   async cancelSubscription(agencyId) {
     const { run, all } = await this._db();
     const subs = await all('SELECT * FROM subscriptions WHERE agency_id = @agency_id ORDER BY created_at DESC LIMIT 1', { agency_id: agencyId });
     const sub = subs?.[0];
+    if (!sub || !['trialing', 'active', 'past_due'].includes(sub.status)) {
+      return { success: false, status: sub?.status || 'inactive', error: 'No tienes una suscripción activa que cancelar.' };
+    }
+    const atPeriodEnd = sub.status === 'active';
 
-    if (sub?.stripe_subscription_id && this.config.secretKey) {
-      try {
-        await fetch(`https://api.stripe.com/v1/subscriptions/${sub.stripe_subscription_id}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${this.config.secretKey}` },
-        });
-      } catch (e) { /* ignore */ }
+    if (sub.stripe_subscription_id && this.config.secretKey) {
+      const call = atPeriodEnd
+        ? await this._stripe(`/v1/subscriptions/${sub.stripe_subscription_id}`, { method: 'POST', params: new URLSearchParams({ cancel_at_period_end: 'true' }) })
+        : await this._stripe(`/v1/subscriptions/${sub.stripe_subscription_id}`, { method: 'DELETE' });
+      if (!call.ok) {
+        // Si Stripe no confirma la baja, NO se da por cancelada: se seguiría cobrando.
+        return { success: false, status: sub.status, error: 'No se pudo cancelar en Stripe. Inténtalo de nuevo o contacta con soporte.' };
+      }
     }
 
+    if (atPeriodEnd) {
+      await run('UPDATE subscriptions SET cancel_at_period_end = true, updated_at = NOW() WHERE agency_id = @agency_id', { agency_id: agencyId });
+      return { success: true, status: 'active', cancelAtPeriodEnd: true, accessUntil: sub.current_period_end };
+    }
     await run('UPDATE subscriptions SET status = \'canceled\', canceled_at = NOW(), updated_at = NOW() WHERE agency_id = @agency_id', { agency_id: agencyId });
-    return { success: true, status: 'canceled' };
+    await this._setAgencyStatus(agencyId, 'canceled');
+    return { success: true, status: 'canceled', cancelAtPeriodEnd: false };
   }
 
   async getInvoices(agencyId) {

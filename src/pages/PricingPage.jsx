@@ -1,44 +1,25 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import {
-  Check, Zap, Building2, Crown, Star,
-  Users, Shield, Infinity, ChevronDown, CreditCard, Banknote, Sparkles
-} from 'lucide-react'
+import { Check, Zap, Building2, Crown, Shield, ChevronDown, Sparkles, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../lib/api'
 import { useStore } from '../lib/store'
-import PaymentModal from '../components/billing/PaymentModal'
 
-// Código de demo comercial: enlace tipo /pricing?demo=DEMO25 para enseñar en
-// una llamada de ventas precios especiales en los tres planes a la vez. No
-// aparece en la web pública — solo se activa si alguien llega con ese
-// parámetro en la URL (el enlace lo comparte Alejandro directamente con el
-// prospecto). El precio real que se cobra lo valida el backend
-// (server/services/stripe.js, BillingService.DEMO_CODES) — esto es solo la
-// parte visual + el envío del código al checkout.
-// ⚠️ Los precios de profesional/agencia son una propuesta mía, proporcional
-// al descuento que ya definiste para Starter (25€ sobre 79€) — ajústalos si
-// quieres otra cifra; solo hay que cambiarlos aquí y en ai-budget/stripe.js.
-const DEMO_CODES = {
-  DEMO25: { starter: 25, profesional: 65, agencia: 159 },
-}
+// Prueba gratuita con tarjeta y descuento sobre la suscripción. Los mismos valores
+// están en el servidor (BillingService.TRIAL_*): si los cambias, cámbialos en los dos sitios.
+const TRIAL_DAYS = 3
+const DISCOUNT_PERCENT = 10
 
-const PAYMENT_METHODS = [
-  { id: 'stripe', name: 'Tarjeta (Stripe)', desc: 'Pago seguro con tarjeta', icon: CreditCard },
-  { id: 'transfer', name: 'Transferencia', desc: 'Recibirás datos para transferir', icon: Banknote },
-  // PayPal deshabilitado temporalmente a petición de Alejandro (12 ago 2026):
-  // solo se usará Stripe por ahora. El código del backend sigue intacto en
-  // server/services/stripe.js / server/index.js (/webhooks/paypal) para
-  // reactivarlo cuando se configure PAYPAL_WEBHOOK_ID y se pruebe.
-]
+const eur = (n) => new Intl.NumberFormat('es-ES', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 }).format(n)
+const withDiscount = (n) => Math.round(n * (100 - DISCOUNT_PERCENT)) / 100
 
 const PLANS = [
   {
     id: 'starter', icon: Zap, name: 'Starter',
     price: 19, priceYearly: 190,
     desc: 'Para agentes y pequeñas agencias',
-    cta: 'Contratar Starter', popular: false,
+    cta: 'Starter', popular: false,
     savings: 'Ahorra 38€',
     features: [
       '500 leads nuevos al mes',
@@ -56,7 +37,7 @@ const PLANS = [
     id: 'profesional', icon: Building2, name: 'Profesional',
     price: 39, priceYearly: 390,
     desc: 'Para agencias en crecimiento',
-    cta: 'Contratar Profesional', popular: true,
+    cta: 'Profesional', popular: true,
     savings: 'Ahorra 78€',
     features: [
       '2.000 leads nuevos al mes',
@@ -74,7 +55,7 @@ const PLANS = [
     id: 'agencia', icon: Crown, name: 'Agencia',
     price: 79, priceYearly: 790,
     desc: 'Para agencias consolidadas',
-    cta: 'Contratar Agencia', popular: false,
+    cta: 'Agencia', popular: false,
     savings: 'Ahorra 158€',
     features: [
       'Leads ilimitados',
@@ -92,391 +73,234 @@ const PLANS = [
 
 const FAQ = [
   {
-    q: '¿Puedo cambiar de plan en cualquier momento?',
-    a: 'Sí, puedes migrar de plan cuando quieras. La diferencia se prorratea y solo pagas la diferencia del periodo restante.',
+    q: '¿Cómo funciona la prueba de 3 días?',
+    a: `Introduces tu tarjeta y usas PropIA ${TRIAL_DAYS} días sin pagar nada. Si no cancelas antes de que terminen, empezamos a cobrar la suscripción con un ${DISCOUNT_PERCENT} % de descuento. Si cancelas durante la prueba, no se te cobra.`,
   },
   {
-    q: '¿Hay permanencia?',
-    a: 'No, ninguno de nuestros planes tiene permanencia. Puedes cancelar cuando quieras desde el panel de configuración.',
+    q: '¿Cuánto pagaré cuando termine la prueba?',
+    a: `El precio del plan con un ${DISCOUNT_PERCENT} % de descuento: Starter ${eur(withDiscount(19))} €/mes, Profesional ${eur(withDiscount(39))} €/mes y Agencia ${eur(withDiscount(79))} €/mes (IVA aparte si corresponde). Con facturación anual, el mismo descuento sobre el precio anual.`,
   },
   {
-    q: '¿Qué incluye el white-label del plan Agencia?',
-    a: 'El plan Agencia te permite usar tu propia marca y dominio. Personalizamos colores, logo, correos y el portal de clientes.',
+    q: '¿Puedo cancelar cuando quiera?',
+    a: 'Sí, desde Ajustes. Durante la prueba se cancela al momento y no pagas nada. Después, la suscripción sigue activa hasta el final del periodo ya pagado. No hay permanencia.',
   },
   {
     q: '¿Qué medios de pago aceptan?',
-    a: 'Aceptamos tarjetas de crédito/débito (Stripe), PayPal y transferencia bancaria.',
+    a: 'Tarjeta de crédito o débito, a través de Stripe. Tus datos de tarjeta los gestiona Stripe; nosotros no los vemos.',
   },
   {
-    q: '¿Puedo pagar por PayPal en cualquier plan?',
-    a: 'Sí, todos los planes aceptan pago con PayPal, tarjeta (Stripe) y transferencia bancaria.',
+    q: '¿Puedo cambiar de plan?',
+    a: 'Escríbenos y lo cambiamos sin coste. Por ahora el cambio de plan lo hacemos nosotros a mano para evitar cobros duplicados.',
   },
 ]
 
-const containerAnim = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.08 } },
-}
-
-const itemAnim = {
-  hidden: { opacity: 0, y: 24 },
-  show: { opacity: 1, y: 0 },
-}
-
 export default function PricingPage() {
+  const navigate = useNavigate()
   const [annual, setAnnual] = useState(false)
-  const [selectedMethods, setSelectedMethods] = useState({})
   const [openFaq, setOpenFaq] = useState(null)
-  const [modalPlan, setModalPlan] = useState(null)
-  const [modalMethod, setModalMethod] = useState(null)
-  const subscription = useStore(s => s.subscription)
-  const fetchSubscription = useStore(s => s.fetchSubscription)
-  const currentUser = useStore(s => s.user)
+  const [busyPlan, setBusyPlan] = useState(null)
+  const [confirming, setConfirming] = useState(false)
+  const subscription = useStore((s) => s.subscription)
+  const fetchSubscription = useStore((s) => s.fetchSubscription)
+  const currentUser = useStore((s) => s.user)
   const userPlan = subscription?.planId || null
   const planStatus = subscription?.status || null
-  const [searchParams] = useSearchParams()
-  const demoCode = (searchParams.get('demo') || '').toUpperCase()
-  const activeDemoCode = DEMO_CODES[demoCode] || null
-  useEffect(() => {
-    if (activeDemoCode) setAnnual(false)
-  }, [demoCode])
-
+  const hasLiveSub = planStatus === 'active' || planStatus === 'trialing' || planStatus === 'past_due'
+  // Solo la primera vez hay prueba y descuento
+  const trialAvailable = !subscription?.stripeSubscriptionId
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    if (params.get('success') === 'true') {
-      toast.success('¡Suscripción activada con éxito!')
-      window.history.replaceState({}, '', '/pricing')
-      fetchSubscription()
-    }
     if (params.get('canceled') === 'true') {
-      toast.error('Pago cancelado')
+      toast.error('Has cancelado el pago. No se ha cobrado nada.')
       window.history.replaceState({}, '', '/pricing')
     }
-  }, [fetchSubscription])
+    if (params.get('success') === 'true') {
+      window.history.replaceState({}, '', '/pricing')
+      setConfirming(true)
+      // El aviso de Stripe puede tardar unos segundos: esperamos a que la cuenta quede activada.
+      let tries = 0
+      const timer = setInterval(async () => {
+        tries += 1
+        await fetchSubscription()
+        const st = useStore.getState().subscription?.status
+        if (st === 'trialing' || st === 'active') {
+          clearInterval(timer)
+          setConfirming(false)
+          toast.success(st === 'trialing' ? `¡Prueba de ${TRIAL_DAYS} días iniciada!` : '¡Suscripción activada!')
+          navigate('/dashboard', { replace: true })
+        } else if (tries >= 20) {
+          clearInterval(timer)
+          setConfirming(false)
+          toast('Estamos confirmando tu pago. Si en un minuto no puedes entrar, escríbenos.', { icon: '⏳', duration: 8000 })
+        }
+      }, 1500)
+      return () => clearInterval(timer)
+    }
+  }, [fetchSubscription, navigate])
 
-  const toggleFaq = (i) => {
-    setOpenFaq(openFaq === i ? null : i)
+  async function choose(plan) {
+    if (!currentUser) {
+      window.location.href = `/register?plan=${plan.id}${annual ? '&interval=year' : ''}`
+      return
+    }
+    setBusyPlan(plan.id)
+    try {
+      const data = await api.post('/billing/create-checkout', { planId: plan.id, interval: annual ? 'year' : 'month' })
+      if (data?.url) { window.location.href = data.url; return }
+      toast.error('No se pudo iniciar el pago. Inténtalo de nuevo.')
+    } catch (err) {
+      toast.error(err.message || 'No se pudo iniciar el pago.')
+    } finally {
+      setBusyPlan(null)
+    }
+  }
+
+  if (confirming) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center">
+        <Loader2 className="animate-spin text-indigo-400" size={36} />
+        <p className="text-[#F1F5F9] font-semibold">Confirmando tu suscripción…</p>
+        <p className="text-sm text-[#94A3B8]">Solo tarda unos segundos.</p>
+      </div>
+    )
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-    >
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <div className="max-w-7xl mx-auto">
-        <motion.div
-          variants={itemAnim}
-          initial="hidden"
-          animate="show"
-          className="text-center mb-10"
-        >
+        <div className="text-center mb-10">
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 mb-4">
             <Sparkles size={12} />
-            Planes y precios
+            {trialAvailable ? `${TRIAL_DAYS} días gratis` : 'Planes y precios'}
           </span>
           <h1 className="text-3xl lg:text-4xl font-bold font-syne text-[#F1F5F9]">
-            Elige el plan ideal para tu{' '}
+            {trialAvailable ? 'Prueba PropIA ' : 'Elige tu plan de '}
             <span className="bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-              agencia inmobiliaria
+              {trialAvailable ? `${TRIAL_DAYS} días gratis` : 'PropIA'}
             </span>
           </h1>
           <p className="text-[#94A3B8] mt-3 max-w-2xl mx-auto">
-            Sin permanencia. Cancela cuando quieras desde el panel de configuración.
+            {trialAvailable
+              ? `Introduce tu tarjeta para empezar. No se cobra nada durante ${TRIAL_DAYS} días; después, la suscripción con un ${DISCOUNT_PERCENT} % de descuento. Cancela antes y no pagas.`
+              : 'Sin permanencia. Cancela cuando quieras desde Ajustes.'}
           </p>
 
           <div className="flex items-center justify-center gap-3 mt-8">
-            <span className={`text-sm font-medium ${!annual ? 'text-[#F1F5F9]' : 'text-[#64748B]'}`}>
-              Mensual
-            </span>
+            <span className={`text-sm font-medium ${!annual ? 'text-[#F1F5F9]' : 'text-[#64748B]'}`}>Mensual</span>
             <button
               onClick={() => setAnnual(!annual)}
-              className={`relative w-14 h-7 rounded-full transition-colors ${
-                annual ? 'bg-indigo-500' : 'bg-[#1E1E2E]'
-              }`}
+              aria-label="Cambiar entre facturación mensual y anual"
+              className={`relative w-14 h-7 rounded-full transition-colors ${annual ? 'bg-indigo-500' : 'bg-[#1E1E2E]'}`}
             >
-              <div
-                className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-md transition-transform ${
-                  annual ? 'translate-x-7.5' : 'translate-x-0.5'
-                }`}
-                style={{
-                  transform: annual ? 'translateX(29px)' : 'translateX(2px)',
-                }}
-              />
+              <div className="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-md transition-transform" style={{ transform: annual ? 'translateX(29px)' : 'translateX(2px)' }} />
             </button>
-            <span className={`text-sm font-medium ${annual ? 'text-[#F1F5F9]' : 'text-[#64748B]'}`}>
-              Anual
-            </span>
-            <span className="ml-1.5 px-3 py-1 bg-emerald-500/15 text-emerald-300 text-[11px] font-bold rounded-full border border-emerald-500/30 animate-pulse-soft tracking-wide">
-              🎁 2 MESES GRATIS
+            <span className={`text-sm font-medium ${annual ? 'text-[#F1F5F9]' : 'text-[#64748B]'}`}>Anual</span>
+            <span className="ml-1.5 px-3 py-1 bg-emerald-500/15 text-emerald-300 text-[11px] font-bold rounded-full border border-emerald-500/30 tracking-wide">
+              2 MESES GRATIS
             </span>
           </div>
-        </motion.div>
+        </div>
 
-        <motion.div
-          variants={containerAnim}
-          initial="hidden"
-          animate="show"
-          className="grid grid-cols-1 md:grid-cols-3 gap-5"
-        >
-          {PLANS.map((plan, i) => {
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {PLANS.map((plan) => {
             const Icon = plan.icon
-            const isPopular = plan.popular
-            const isDemoForThisPlan = activeDemoCode && activeDemoCode[plan.id] !== undefined && activeDemoCode[plan.id] < plan.price
-            const demoPrice = isDemoForThisPlan ? activeDemoCode[plan.id] : null
-            const displayPrice = isDemoForThisPlan ? demoPrice : (annual ? plan.priceYearly : plan.price)
-            const displayPeriod = isDemoForThisPlan ? '/mes' : (annual ? '/año' : '/mes')
+            const isCurrent = hasLiveSub && userPlan === plan.id
+            const list = annual ? plan.priceYearly : plan.price
+            const after = trialAvailable ? withDiscount(list) : list
+            const period = annual ? '/año' : '/mes'
+            const disabled = busyPlan === plan.id || hasLiveSub
             return (
-              <motion.div
-                key={plan.id}
-                variants={itemAnim}
-                className={`relative bg-[#13131A] border rounded-2xl p-6 flex flex-col transition-all ${
-                  isPopular
-                    ? 'border-indigo-500/50 shadow-lg shadow-indigo-500/5'
-                    : 'border-[#1E1E2E] hover:border-[#2A2A3E]'
-                } ${userPlan === plan.id && (planStatus === 'active' || planStatus === 'trialing') ? 'ring-2 ring-emerald-500/50' : ''}`}
-              >
-                {(isPopular && userPlan !== plan.id) && (
-                  <>
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full text-xs font-semibold text-white shadow-lg whitespace-nowrap">
-                      Más popular
-                    </div>
-                    <div className="absolute inset-0 rounded-2xl border border-indigo-500/20 pointer-events-none" />
-                  </>
+              <div key={plan.id} className={`relative bg-[#13131A] border rounded-2xl p-6 flex flex-col ${plan.popular ? 'border-indigo-500/50 shadow-lg shadow-indigo-500/5' : 'border-[#1E1E2E]'} ${isCurrent ? 'ring-2 ring-emerald-500/50' : ''}`}>
+                {plan.popular && !isCurrent && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full text-xs font-semibold text-white">Más popular</div>
                 )}
-                {userPlan === plan.id && (planStatus === 'active' || planStatus === 'trialing') && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 bg-gradient-to-r from-emerald-500 to-green-500 rounded-full text-xs font-semibold text-white shadow-lg whitespace-nowrap">
-                    Plan actual
+                {isCurrent && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 bg-gradient-to-r from-emerald-500 to-green-500 rounded-full text-xs font-semibold text-white">
+                    {planStatus === 'trialing' ? 'En prueba' : 'Plan actual'}
                   </div>
                 )}
-
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${
-                  isPopular
-                    ? 'bg-gradient-to-br from-indigo-500/20 to-purple-500/20 text-indigo-400'
-                    : 'bg-[#1E1E2E] text-[#94A3B8]'
-                }`}>
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${plan.popular ? 'bg-gradient-to-br from-indigo-500/20 to-purple-500/20 text-indigo-400' : 'bg-[#1E1E2E] text-[#94A3B8]'}`}>
                   <Icon size={24} />
                 </div>
-
                 <h3 className="text-lg font-bold text-[#F1F5F9] font-syne">{plan.name}</h3>
                 <p className="text-sm text-[#94A3B8] mt-1 mb-4">{plan.desc}</p>
 
                 <div className="mb-5">
-                  <div className="flex items-baseline gap-2">
-                    {isDemoForThisPlan && (
-                      <span className="text-xl text-[#64748B] line-through decoration-2">{plan.price}€</span>
-                    )}
-                    <span className="text-4xl font-bold text-[#F1F5F9] tracking-tight">
-                      {displayPrice}<span className="text-xl text-[#94A3B8] font-normal">€</span>
-                    </span>
-                    <span className="text-sm text-[#64748B] ml-1">{displayPeriod}</span>
-                  </div>
-                  {isDemoForThisPlan ? (
-                    <div className="mt-2 space-y-1">
-                      <p className="text-xs font-semibold text-amber-400 flex items-center gap-1.5">
-                        <span className="inline-block w-2 h-2 bg-amber-400 rounded-full" />
-                        Precio especial de demo — precio normal {plan.price}€/mes
-                      </p>
-                      <p className="text-[11px] text-[#64748B] leading-snug">
-                        Válido para cuentas nuevas contratadas a través de este enlace. Se factura mes a mes a {demoPrice}€
-                        mientras la suscripción siga activa; sin permanencia, cancela cuando quieras.
-                      </p>
-                    </div>
-                  ) : annual ? (
-                    <div className="mt-2 space-y-1">
-                      <p className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
-                        <span className="inline-block w-2 h-2 bg-emerald-400 rounded-full" />
-                        {(plan.priceYearly / 12).toFixed(2)}€/mes — {plan.savings} al año
-                      </p>
-                      <p className="text-[11px] text-[#64748B]">
-                        {plan.priceYearly}€ facturados al año (2 meses gratis)
-                      </p>
-                    </div>
+                  {trialAvailable ? (
+                    <>
+                      <p className="text-xs font-semibold text-emerald-400">{TRIAL_DAYS} días gratis, después:</p>
+                      <div className="flex items-baseline gap-2 mt-1">
+                        <span className="text-xl text-[#64748B] line-through decoration-2">{eur(list)}€</span>
+                        <span className="text-4xl font-bold text-[#F1F5F9] tracking-tight">{eur(after)}<span className="text-xl text-[#94A3B8] font-normal">€</span></span>
+                        <span className="text-sm text-[#64748B]">{period}</span>
+                      </div>
+                      <p className="text-[11px] text-[#64748B] mt-1">{DISCOUNT_PERCENT} % de descuento en tu suscripción</p>
+                    </>
                   ) : (
-                    <div className="mt-2 space-y-1">
-                      <p className="text-[11px] text-[#64748B]">
-                        {plan.priceYearly}€/año <span className="text-emerald-400 font-medium">({plan.savings.toLowerCase()})</span>
-                      </p>
-                      <p className="text-[10px] text-emerald-400/70">2 meses gratis si facturas anualmente</p>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-4xl font-bold text-[#F1F5F9] tracking-tight">{eur(list)}<span className="text-xl text-[#94A3B8] font-normal">€</span></span>
+                      <span className="text-sm text-[#64748B]">{period}</span>
                     </div>
                   )}
-                </div>
-
-                <div className="flex gap-1.5 mb-4">
-                  {PAYMENT_METHODS.map((pm) => {
-                    const PmIcon = pm.icon
-                    return (
-                        <button
-                          key={pm.id}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setSelectedMethods(prev => ({ ...prev, [plan.id]: pm.id }))
-                            setModalPlan(plan)
-                            setModalMethod(pm.id)
-                          }}
-                          className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-lg text-[10px] font-medium transition-all ${
-                            (selectedMethods[plan.id] || 'stripe') === pm.id
-                              ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/30'
-                              : 'bg-[#1A1A24] text-[#64748B] border border-transparent hover:border-[#2A2A3E]'
-                          }`}
-                        >
-                          <PmIcon size={14} />
-                          <span className="truncate w-full text-center leading-tight">
-                            {pm.name.split(' ')[0]}
-                          </span>
-                        </button>
-                    )
-                  })}
+                  {annual && <p className="text-[11px] text-emerald-400 mt-1">{plan.savings} frente a pagar mes a mes</p>}
                 </div>
 
                 <button
-                  onClick={async () => {
-                    // Antes: un visitante sin cuenta que pulsaba "Contratar"
-                    // disparaba una llamada autenticada que fallaba en
-                    // silencio (toast de error genérico). Ahora lo mandamos
-                    // primero a crear su cuenta con el plan ya preseleccionado.
-                    if (!currentUser) {
-                      window.location.href = `/register?plan=${plan.id}${annual ? '&interval=year' : ''}`
-                      return
-                    }
-                    const method = selectedMethods[plan.id] || 'stripe'
-                    if ((plan.id === 'starter' || plan.id === 'profesional' || plan.id === 'agencia') && method === 'stripe') {
-                      const loadingToast = toast.loading('Redirigiendo a la pasarela de pago...');
-                      try {
-                        let priceId = undefined;
-                        if (plan.id === 'starter') {
-                          priceId = annual ? 'prod_Uctbd3Oi0s2mTC' : 'prod_UctaoRafq1MJZG';
-                        } else if (plan.id === 'profesional') {
-                          priceId = annual ? 'prod_UcteWnLHX8snBU' : 'prod_UctdWhXHbUJLPp';
-                        } else if (plan.id === 'agencia') {
-                          priceId = annual ? 'prod_UctfjVe4ShrZ3i' : 'prod_UcteXdaqDAyJQq';
-                        }
-                        const data = await api.post('/billing/create-checkout', {
-                          planId: plan.id,
-                          interval: annual ? 'year' : 'month',
-                          paymentMethod: 'stripe',
-                          priceId,
-                          promoCode: isDemoForThisPlan ? demoCode : undefined,
-                        });
-                        toast.dismiss(loadingToast);
-                        if (data.url) {
-                          window.location.href = data.url;
-                          return;
-                        } else if (data.mock) {
-                          toast.success('¡Suscripción demo activada con éxito!');
-                          fetchSubscription();
-                          return;
-                        }
-                      } catch (err) {
-                        toast.dismiss(loadingToast);
-                        toast.error(err.message || 'Error al procesar la suscripción.');
-                        return;
-                      }
-                    }
-                    setModalPlan(plan)
-                    setModalMethod(method)
-                  }}
-                  disabled={userPlan === plan.id && (planStatus === 'active' || planStatus === 'trialing')}
-                  className={`w-full py-3 rounded-xl text-sm font-medium transition-all mb-6 flex items-center justify-center gap-2 ${
-                    userPlan === plan.id && (planStatus === 'active' || planStatus === 'trialing')
-                      ? 'bg-emerald-600/20 text-emerald-400 cursor-default'
-                      : isPopular
-                        ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 shadow-lg shadow-indigo-500/20'
-                        : 'bg-[#1E1E2E] text-[#F1F5F9] hover:bg-[#2A2A3E]'
-                  } disabled:opacity-60 disabled:cursor-not-allowed`}
+                  onClick={() => choose(plan)}
+                  disabled={disabled}
+                  className={`w-full py-3 rounded-xl text-sm font-medium transition-all mb-6 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed ${
+                    isCurrent ? 'bg-emerald-600/20 text-emerald-400'
+                      : plan.popular ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 shadow-lg shadow-indigo-500/20'
+                      : 'bg-[#1E1E2E] text-[#F1F5F9] hover:bg-[#2A2A3E]'
+                  }`}
                 >
-                  {userPlan === plan.id && (planStatus === 'active' || planStatus === 'trialing') ? (
-                    'Plan activo ✓'
-                  ) : (
-                    plan.cta
-                  )}
+                  {busyPlan === plan.id && <Loader2 size={16} className="animate-spin" />}
+                  {isCurrent ? 'Plan activo ✓' : hasLiveSub ? 'Ya tienes una suscripción' : trialAvailable ? `Empezar ${TRIAL_DAYS} días gratis` : `Suscribirme a ${plan.cta}`}
                 </button>
 
                 <div className="space-y-2.5 flex-1">
-                  {plan.features.map((f, j) => (
-                    <div key={j} className="flex items-start gap-2.5">
+                  {plan.features.map((f) => (
+                    <div key={f} className="flex items-start gap-2.5">
                       <Check size={14} className="text-indigo-400 mt-0.5 shrink-0" />
                       <span className="text-sm text-[#94A3B8]">{f}</span>
                     </div>
                   ))}
                 </div>
-              </motion.div>
+              </div>
             )
           })}
-        </motion.div>
-
+        </div>
 
         <div className="mt-10 p-6 bg-[#13131A] border border-[#1E1E2E] rounded-2xl flex items-center justify-center flex-wrap gap-6">
           <div className="flex items-center gap-2 text-sm text-[#94A3B8]">
             <Shield size={16} className="text-indigo-400" />
-            <span><strong className="text-[#F1F5F9]">Sin permanencia</strong></span>
+            <span><strong className="text-[#F1F5F9]">Sin permanencia</strong> · cancela cuando quieras</span>
           </div>
           <div className="w-px h-6 bg-[#1E1E2E]" />
-          <div className="flex items-center gap-2 text-sm text-[#94A3B8]">
-            <Infinity size={16} className="text-indigo-400" />
-            <span><strong className="text-[#F1F5F9]">Sin permanencia</strong></span>
-          </div>
-          <div className="w-px h-6 bg-[#1E1E2E]" />
-          <div className="flex items-center gap-2 text-sm text-[#94A3B8]">
-            <CreditCard size={16} className="text-indigo-400" />
-            <span><strong className="text-[#F1F5F9]">Pago seguro</strong> SSL + 3DS</span>
-          </div>
+          <div className="text-sm text-[#94A3B8]"><strong className="text-[#F1F5F9]">Pago seguro</strong> con Stripe</div>
         </div>
 
-        <div className="mt-16">
-          <h2 className="text-2xl font-bold text-[#F1F5F9] font-syne text-center mb-8">
-            Preguntas frecuentes
-          </h2>
-          <div className="max-w-3xl mx-auto space-y-3">
+        <div className="mt-12 max-w-3xl mx-auto">
+          <h2 className="text-xl font-bold font-syne text-[#F1F5F9] mb-4 text-center">Preguntas frecuentes</h2>
+          <div className="space-y-2">
             {FAQ.map((item, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 + i * 0.05 }}
-                className="bg-[#13131A] border border-[#1E1E2E] rounded-xl overflow-hidden"
-              >
-                <button
-                  onClick={() => toggleFaq(i)}
-                  className="w-full flex items-center justify-between px-5 py-4 text-left"
-                >
+              <div key={item.q} className="bg-[#13131A] border border-[#1E1E2E] rounded-xl">
+                <button onClick={() => setOpenFaq(openFaq === i ? null : i)} className="w-full flex items-center justify-between gap-4 px-5 py-4 text-left">
                   <span className="text-sm font-medium text-[#F1F5F9]">{item.q}</span>
-                  <ChevronDown
-                    size={16}
-                    className={`text-[#94A3B8] transition-transform shrink-0 ${
-                      openFaq === i ? 'rotate-180' : ''
-                    }`}
-                  />
+                  <ChevronDown size={16} className={`text-[#64748B] shrink-0 transition-transform ${openFaq === i ? 'rotate-180' : ''}`} />
                 </button>
-                <AnimatePresence>
+                <AnimatePresence initial={false}>
                   {openFaq === i && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="overflow-hidden"
-                    >
-                      <p className="px-5 pb-4 text-sm text-[#94A3B8] leading-relaxed">
-                        {item.a}
-                      </p>
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                      <p className="px-5 pb-4 text-sm text-[#94A3B8] leading-relaxed">{item.a}</p>
                     </motion.div>
                   )}
                 </AnimatePresence>
-              </motion.div>
+              </div>
             ))}
           </div>
         </div>
-
-        <PaymentModal
-          plan={modalPlan}
-          interval={annual ? 'year' : 'month'}
-          open={!!modalPlan}
-          initialMethod={modalMethod || 'stripe'}
-          onClose={() => { setModalPlan(null); setModalMethod(null) }}
-          onSuccess={() => { setModalPlan(null); setModalMethod(null) }}
-        />
       </div>
     </motion.div>
   )

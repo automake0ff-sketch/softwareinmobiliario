@@ -148,7 +148,7 @@ export default function LandingPage() {
         'CRM + Pipeline Kanban',
         'Soporte estándar'
       ],
-      cta: 'Empezar ahora',
+      cta: 'Empezar 3 días gratis',
       popular: false
     },
     {
@@ -168,7 +168,7 @@ export default function LandingPage() {
         'CRM + Pipeline Kanban',
         'Soporte prioritario'
       ],
-      cta: 'Empezar ahora',
+      cta: 'Empezar 3 días gratis',
       popular: true
     },
     {
@@ -188,12 +188,16 @@ export default function LandingPage() {
         'CRM + Pipeline Kanban',
         'Soporte dedicado'
       ],
-      cta: 'Empezar ahora',
+      cta: 'Empezar 3 días gratis',
       popular: false
     }
   ]
 
   const faqs = [
+    {
+      q: '¿Cómo funciona la prueba gratuita?',
+      a: 'Usas PropIA 3 días sin pagar. Para empezar te pedimos una tarjeta; si no cancelas antes de que terminen los 3 días, empezamos a cobrar la suscripción con un 10 % de descuento. Si cancelas durante la prueba, no se te cobra nada. Puedes cancelar en Ajustes cuando quieras.',
+    },
     {
       q: '¿Tiene validez legal el parte de visita firmado?',
       a: 'Es una prueba documental con fecha, datos del visitante, firma y huella digital de que tu agencia le enseñó el inmueble. Su valor concreto ante un conflicto depende de cada caso y de lo que diga tu contrato de encargo, así que te recomendamos que un abogado revise el texto, que puedes personalizar desde Ajustes.',
@@ -272,7 +276,7 @@ export default function LandingPage() {
                   to="/register"
                   className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-4 py-2 sm:px-5 sm:py-2.5 rounded-lg text-sm font-semibold hover:from-indigo-600 hover:to-purple-700 transition-all shadow-md shadow-indigo-500/10 hover:shadow-indigo-500/20"
                 >
-                  Empezar ahora
+                  Probar gratis
                 </Link>
               </>
             )}
@@ -314,7 +318,7 @@ export default function LandingPage() {
                 to="/register"
                 className="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl text-base hover:from-indigo-600 hover:to-purple-700 transition-all shadow-xl shadow-indigo-500/25 flex items-center justify-center gap-2 hover:scale-[1.02]"
               >
-                Empezar con -20% el primer mes →
+                Empezar 3 días gratis →
               </Link>
             )}
             <a
@@ -327,7 +331,7 @@ export default function LandingPage() {
           </div>
 
           <p className="text-xs text-gray-500 mb-16 tracking-wide uppercase">
-            Sin permanencia · Cancela cuando quieras · Setup en 10 minutos
+            3 días gratis (con tarjeta) · Después, 10 % de descuento · Sin permanencia
           </p>
 
           {/* Premium CSS Mockup of Dashboard */}
@@ -662,6 +666,7 @@ export default function LandingPage() {
                   >
                     {plan.cta}
                   </Link>
+                  <p className="mt-2 text-center text-[11px] text-gray-500">3 días gratis · después 10 % de descuento</p>
                 </div>
               );
             })}
@@ -743,7 +748,7 @@ export default function LandingPage() {
               </Link>
             )}
             <p className="text-xs text-gray-500 mt-2">
-              -20% el primer mes · Cancela cuando quieras
+              3 días gratis · 10 % de descuento al suscribirte · Cancela cuando quieras
             </p>
           </div>
         </div>

@@ -80,6 +80,9 @@ class ApiClient {
           localStorage.removeItem('crm-inmobiliario-store')
           window.location.href = '/login'
           return
+        } else if (err.status === 402 && err.body?.code === 'SUBSCRIPTION_REQUIRED') {
+          if (!window.location.pathname.startsWith('/pricing')) window.location.href = '/pricing'
+          throw err
         } else if (err.status === 403) {
           toast.error('No tienes permiso para realizar esta acción.')
         } else {

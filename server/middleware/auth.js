@@ -39,6 +39,15 @@ function buildReqUser(user) {
   };
 }
 
+// Estados con acceso. 'past_due' conserva el acceso mientras Stripe reintenta el cobro.
+const ACCESS_STATUSES = new Set(['active', 'trialing', 'past_due']);
+// Rutas que deben funcionar aunque no haya suscripción: pagar, ver el estado y completar el alta.
+const SUBSCRIPTION_EXEMPT_PREFIXES = ['/api/billing/', '/api/agency/config', '/api/admin'];
+function isSubscriptionExempt(req) {
+  const path = String(req.originalUrl || req.url || '').split('?')[0];
+  return SUBSCRIPTION_EXEMPT_PREFIXES.some((p) => path === p || path.startsWith(p));
+}
+
 export async function auth(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader?.startsWith('Bearer ')
@@ -89,7 +98,7 @@ export async function auth(req, res, next) {
 
       await run(
         `INSERT INTO agencies (id, name, slug, plan, plan_status)
-         VALUES (@id, @name, @slug, 'starter', 'active')
+         VALUES (@id, @name, @slug, 'starter', 'inactive')
          ON CONFLICT (id) DO NOTHING`,
         { id: agencyId, name: 'Mi Inmobiliaria', slug }
       );
@@ -109,6 +118,18 @@ export async function auth(req, res, next) {
     }
 
     req.user = buildReqUser(user);
+
+    // Acceso solo con suscripción en prueba, activa o con un cobro pendiente de reintento.
+    // Se comprueba aquí (servidor) y no solo en la pantalla: si no, bastaría llamar a la API.
+    if (!ACCESS_STATUSES.has(req.user.plan_status) && !isSubscriptionExempt(req)) {
+      return res.status(402).json({
+        error: 'Necesitas una suscripción activa para usar PropIA.',
+        code: 'SUBSCRIPTION_REQUIRED',
+        plan_status: req.user.plan_status,
+        upgrade_url: '/pricing',
+      });
+    }
+
     setAgencyContext(req.user.agency_id); // imputa el gasto de IA a esta agencia
     next();
   } catch (err) {

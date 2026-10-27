@@ -134,13 +134,9 @@ export default function OnboardingPage() {
         }
         const cfgRes = await fetch(`${backendBase}/api/agency/config`, { method: 'PATCH', headers, body: JSON.stringify(config) })
         if (!cfgRes.ok) toast.error('No se pudieron guardar los datos de la agencia. Puedes completarlos en Ajustes.')
-        const parsePrice = (v) => Number(String(v || '').replace(/\./g, '').replace(',', '.').replace(/[^\d.]/g, '')) || 0
-        for (const p of properties.filter((x) => x.title.trim())) {
-          await fetch(`${backendBase}/api/properties`, {
-            method: 'POST', headers,
-            body: JSON.stringify({ title: p.title.trim(), type: p.type, zone: p.zone.trim(), city: ciudad, price: parsePrice(p.price) }),
-          }).catch(() => {})
-        }
+        // El servidor exige suscripción para crear inmuebles: se guardan y se crean al empezar la prueba.
+        const pending = properties.filter((x) => x.title.trim()).map((p) => ({ title: p.title.trim(), type: p.type, zone: p.zone.trim(), city: ciudad, price: p.price }))
+        try { localStorage.setItem('propia_pending_properties', JSON.stringify(pending)) } catch { /* sin almacenamiento: se añaden a mano */ }
       }
 
       toast.success('¡Configuración guardada! Elige tu plan para empezar...')

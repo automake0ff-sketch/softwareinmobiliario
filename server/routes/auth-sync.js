@@ -42,7 +42,7 @@ router.post('/social-login-or-register', async (req, res) => {
 
       await run(
         `INSERT INTO agencies (id, name, slug, plan, plan_status)
-         VALUES (@id, @name, @slug, 'starter', 'active')
+         VALUES (@id, @name, @slug, 'starter', 'inactive')
          ON CONFLICT (id) DO NOTHING`,
         { id: agencyId, name: 'Mi Inmobiliaria', slug }
       );

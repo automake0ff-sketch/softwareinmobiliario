@@ -25,6 +25,9 @@ async function newUser() {
   const email = `vis-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@test.com`;
   const { status, body } = await request('/api/auth/social-login-or-register', { method: 'POST', body: { email, name: 'Agente Test', supabase_uid: id } });
   assert.equal(status, 200, JSON.stringify(body));
+  // Las altas nuevas no tienen acceso hasta empezar la prueba: en test se simula el pago.
+  const pay = await request('/api/billing/create-checkout', { method: 'POST', token: body.user.token, body: { planId: 'starter' } });
+  assert.equal(pay.status, 200, JSON.stringify(pay.body));
   return { token: body.user.token, agencyId: body.agency?.id || body.user.agency_id };
 }
 const iso = (days) => new Date(Date.now() + days * 86400e3).toISOString().slice(0, 10);

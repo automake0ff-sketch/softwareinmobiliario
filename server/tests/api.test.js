@@ -45,6 +45,9 @@ async function createTestUser() {
 
   assert.equal(res.status, 200, `social-login-or-register falló: ${JSON.stringify(body)}`);
   assert.ok(body.user?.token, 'Respuesta no incluye token');
+  // Las altas nuevas no tienen acceso hasta empezar la prueba: en test se simula el pago.
+  const pay = await request('/api/billing/create-checkout', { method: 'POST', headers: authHeaders(body.user.token), body: { planId: 'starter' } });
+  assert.equal(pay.res.status, 200, `no se pudo iniciar la prueba: ${JSON.stringify(pay.body)}`);
   return { id, email, token: body.user.token, user: body.user, agency: body.agency };
 }
 

@@ -99,6 +99,7 @@ const SUITES = [
   'tests/api.test.js',
   'tests/simple-flow.test.js',
   'tests/visits-agreements.test.js',
+  'tests/billing.test.js',
 ];
 let failed = 0;
 for (const file of SUITES) {

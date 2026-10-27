@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useStore } from '../lib/store'
+import api from '../lib/api'
 
 const BACKEND = (import.meta.env.VITE_API_URL || '').replace(/\/api$/, '').replace(/\/$/, '')
 
@@ -15,6 +16,22 @@ export default function ProtectedRoute() {
   const [status, setStatus] = useState('loading')
   const { user: storeUser, setUser, setAgency, subscription, fetchSubscription } = useStore()
   const location = useLocation()
+
+  // Inmuebles escritos en el alta: se crean en cuanto la cuenta tiene acceso (el servidor lo exige).
+  const hasAccess = ['active', 'trialing', 'past_due'].includes(subscription?.status)
+  useEffect(() => {
+    if (!hasAccess) return
+    let pending = null
+    try { pending = JSON.parse(localStorage.getItem('propia_pending_properties') || 'null') } catch { pending = null }
+    if (!Array.isArray(pending) || pending.length === 0) return
+    try { localStorage.removeItem('propia_pending_properties') } catch { /* nada */ }
+    const parsePrice = (v) => Number(String(v || '').replace(/\./g, '').replace(',', '.').replace(/[^\d.]/g, '')) || 0
+    ;(async () => {
+      for (const p of pending) {
+        try { await api.post('/properties', { title: p.title, type: p.type, zone: p.zone, city: p.city, price: parsePrice(p.price) }) } catch { /* se puede añadir a mano */ }
+      }
+    })()
+  }, [hasAccess])
 
   useEffect(() => {
     let mounted = true
@@ -147,7 +164,7 @@ export default function ProtectedRoute() {
   // app. 'trialing'/'inactive' son los estados por defecto nada más
   // registrarse — si se dejaran pasar, cualquiera accedería sin pagar nunca,
   // justo lo contrario de lo que se pide aquí.
-  const planActive = subscription?.status === 'active'
+  const planActive = ['active', 'trialing', 'past_due'].includes(subscription?.status)
   if (!planActive && !PLAN_EXEMPT_PATHS.includes(location.pathname)) {
     return <Navigate to="/pricing" replace />
   }

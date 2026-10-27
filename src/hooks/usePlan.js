@@ -5,6 +5,7 @@ import { PLANS } from '../lib/billing/plans'
 export function usePlan() {
   const [plan, setPlan] = useState(null)
   const [status, setStatus] = useState(null)
+  const [trialEnd, setTrialEnd] = useState(null)
   const [usage, setUsage] = useState({
     leads_this_month: 0, leads_limit: 500, leads_pct: 0,
     users_active: 0, users_limit: 5,
@@ -21,6 +22,7 @@ export function usePlan() {
       const data = await api.get('/billing/status')
       setPlan(data.plan)
       setStatus(data.status)
+      setTrialEnd(data.trial_end || null)
       setFeatures(data.features || {})
       setAvailableAgents(data.available_agents || [])
       setUsage(data.usage || usage)
@@ -75,6 +77,7 @@ export function usePlan() {
   return {
     plan,
     status,
+    trialEnd,
     loading,
     usage,
     features,

@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Lock,
   Shield,
+  BellRing,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useStore, SECTION_PLAN_REQUIREMENTS, PLAN_ORDER } from '../../lib/store'
@@ -19,6 +20,7 @@ import { getInitials } from '../../utils/formatters'
 const PLAN_LABELS = { starter: 'Básico', profesional: 'Pro', agencia: 'Agencia' }
 
 const navigation = [
+  { to: '/seguimiento', label: 'Seguimiento', icon: BellRing, minPlan: null },
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, minPlan: null },
   { to: '/pipeline', label: 'Pipeline', icon: Columns3, minPlan: null },
   { to: '/leads', label: 'Leads', icon: Users, minPlan: null },

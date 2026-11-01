@@ -59,14 +59,19 @@ router.get('/', async (req, res) => {
 
     let querySql = `SELECT l.*, u.name AS assigned_name FROM leads l LEFT JOIN users u ON l.assigned_to = u.id${filterSql} ORDER BY l.updated_at DESC`;
 
-    const pageNum = parseInt(page, 10) || 1;
-    const limitNum = parseInt(limit, 10) || 20;
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(Math.max(1, parseInt(limit, 10) || 20), 200);
 
     if (page && limit) {
       const offsetNum = (pageNum - 1) * limitNum;
       querySql += ' LIMIT @limit OFFSET @offset';
       params.limit = limitNum;
       params.offset = offsetNum;
+    } else {
+      // Sin paginación (pipeline/kanban) se devuelven los más recientes con un tope, para que una agencia
+      // con miles de contactos no mande varios MB en cada petición. `total` indica cuántos hay en realidad.
+      querySql += ' LIMIT @cap';
+      params.cap = parseInt(process.env.LEADS_LIST_MAX || '1000', 10);
     }
 
     const rawLeads = await all(querySql, params);

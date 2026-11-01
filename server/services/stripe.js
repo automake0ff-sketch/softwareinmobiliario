@@ -1,5 +1,7 @@
+import { TRIAL_DISCOUNT_PCT } from './plans.js'
+
 const PRICES_CENTS = {
-  starter_monthly: 7900, starter_yearly: 79000,
+  starter_monthly: 2400, starter_yearly: 24000,
   profesional_monthly: 19900, profesional_yearly: 199000,
   agencia_monthly: 49900, agencia_yearly: 499000,
 }
@@ -26,15 +28,15 @@ export const SECTION_PLAN_REQUIREMENTS = {
 export const PLANS = {
   starter: {
     id: 'starter',
-    name: 'Starter',
-    price: 79,
-    priceYearly: 790,
+    name: 'InmoFollow',
+    price: 24,
+    priceYearly: 240,
     priceCentsMonthly: PRICES_CENTS.starter_monthly,
     priceCentsYearly: PRICES_CENTS.starter_yearly,
-    leads: 500,
+    leads: 2000,
     agents: 3,
     offices: 1,
-    users: 5,
+    users: 3,
     automations: 10,
     availableAgentTypes: ['captador', 'vendedor', 'coordinador'],
     features: {
@@ -170,14 +172,8 @@ export class BillingService {
   // importe que se envía a Stripe, así que la suscripción queda
   // recurrente a ese precio mientras no se cancele. Solo válido con
   // facturación mensual; ignorado en anual.
-  // ⚠️ Los importes de profesional/agencia son una propuesta mía
-  // (proporcional al descuento que ya definiste para Starter) — ajústalos
-  // si quieres otra cifra; cambia también los mismos valores en
-  // src/pages/PricingPage.jsx (DEMO_CODES) para que la web y el cobro
-  // real coincidan.
-  static DEMO_CODES = {
-    DEMO25: { starter: 2500, profesional: 6500, agencia: 15900 },
-  }
+  // Vacío a propósito: con el plan único de 24 € ya no hay códigos de demo (DEMO25 daba un precio mayor).
+  static DEMO_CODES = {}
 
   async createCheckoutSession(agency, planId, interval, paymentMethod, priceId, requestOrigin, promoCode) {
     interval = interval || 'month';
@@ -194,6 +190,14 @@ export class BillingService {
         amountCents = demoAmountCents;
         demoApplied = true;
       }
+    }
+    // Descuento de conversión: la agencia aún no ha pagado nunca (demo en curso o
+    // demo caducada) -> TRIAL_DISCOUNT_PCT % menos sobre el precio de lista.
+    // No se acumula con un código de demo comercial (DEMO_CODES).
+    let trialDiscountApplied = false;
+    if (!demoApplied && (agency.plan_status === 'trialing' || agency.plan_status === 'trial_expired')) {
+      amountCents = Math.round(amountCents * (100 - TRIAL_DISCOUNT_PCT) / 100);
+      trialDiscountApplied = true;
     }
     const amount = amountCents / 100;
     const periodDays = interval === 'year' ? 365 : 30;
@@ -215,7 +219,14 @@ export class BillingService {
       console.error(`[STRIPE] ALERTA: redirigiendo checkout a una URL localhost en producción (${baseUrl}). Revisa APP_URL en las variables de entorno de Render.`);
     }
 
-    if (!this.config.secretKey || paymentMethod !== 'stripe') {
+    if (paymentMethod !== 'stripe') {
+      throw new Error('Método de pago no soportado');
+    }
+    if (!this.config.secretKey && process.env.NODE_ENV === 'production') {
+      // Antes esto activaba el plan SIN cobrar. En producción es un error de configuración.
+      throw new Error('Los pagos no están configurados (falta STRIPE_SECRET_KEY)');
+    }
+    if (!this.config.secretKey) {
       const { all, run } = await this._db();
       const subId = uuidv4();
       const now = new Date().toISOString();
@@ -264,6 +275,8 @@ export class BillingService {
         amountCents,
         interval,
         demoApplied,
+        trialDiscountApplied,
+        discountPct: trialDiscountApplied ? TRIAL_DISCOUNT_PCT : 0,
         message: paymentMethod === 'transfer'
           ? 'Solicitud recibida. Te enviaremos los datos de transferencia por email.'
           : undefined,
@@ -294,6 +307,8 @@ export class BillingService {
       params.append('metadata[agency_id]', agency.id || '');
       params.append('metadata[plan_id]', planId || '');
       params.append('metadata[interval]', interval || '');
+      params.append('subscription_data[metadata][agency_id]', agency.id || '');
+      params.append('subscription_data[metadata][plan_id]', planId || '');
 
       // priceId debe ser un Price ID real de Stripe (price_xxx). Si llega un
       // Product ID (prod_xxx) -- error común al copiar desde el dashboard de
@@ -324,9 +339,13 @@ export class BillingService {
         body: params,
       });
       const data = await resp.json();
-      return { ...data, paymentMethod, demoApplied };
+      if (!resp.ok || !data.url) {
+        throw new Error(data?.error?.message || 'Stripe no pudo crear la sesión de pago');
+      }
+      return { ...data, paymentMethod, demoApplied, trialDiscountApplied, discountPct: trialDiscountApplied ? TRIAL_DISCOUNT_PCT : 0 };
     } catch (e) {
-      return { mock: true, sessionId: `mock_cs_${Date.now()}`, paymentMethod, error: e.message };
+      console.error('[STRIPE] createCheckoutSession error:', e.message);
+      throw e;
     }
   }
 
@@ -376,7 +395,9 @@ export class BillingService {
           const invoice = event.data.object;
           const agencySub = await all('SELECT agency_id FROM subscriptions WHERE stripe_subscription_id = @sub_id', { sub_id: invoice.subscription });
           const agencyId = agencySub?.[0]?.agency_id;
-          if (agencyId) {
+          // Stripe reenvía eventos (reintentos): no registrar dos veces la misma factura
+          const already = agencyId ? await all('SELECT 1 FROM payment_history WHERE stripe_invoice_id = @inv_id', { inv_id: invoice.id }) : [];
+          if (agencyId && already.length === 0) {
             await run(
               `INSERT INTO payment_history (id, agency_id, amount, currency, status, payment_method, stripe_invoice_id, stripe_payment_intent_id, invoice_url, invoice_pdf_url, description, period_start, period_end, created_at)
                VALUES (@id, @agency_id, @amount, @currency, 'succeeded', 'card', @inv_id, @pi_id, @inv_url, @pdf_url, @desc, @p_start, @p_end, NOW())`,
@@ -389,7 +410,7 @@ export class BillingService {
                 pi_id: invoice.payment_intent,
                 inv_url: invoice.hosted_invoice_url,
                 pdf_url: invoice.invoice_pdf,
-                desc: `Suscripción PropIA`,
+                desc: `Suscripción InmoFollow`,
                 p_start: invoice.period_start ? new Date(invoice.period_start * 1000).toISOString() : null,
                 p_end: invoice.period_end ? new Date(invoice.period_end * 1000).toISOString() : null,
               }
@@ -416,6 +437,11 @@ export class BillingService {
             if (sub.status === 'canceled' || sub.status === 'expired') {
               await run('UPDATE subscriptions SET canceled_at = NOW() WHERE agency_id = @agency_id', { agency_id: agencyId })
             }
+            // El acceso se decide con agencies.plan_status (ver middleware/auth.js)
+            const agencyStatus = sub.status === 'active' || sub.status === 'trialing' ? 'active'
+              : sub.status === 'past_due' ? 'past_due'
+              : 'canceled'
+            await run('UPDATE agencies SET plan_status = @st, updated_at = NOW() WHERE id = @id', { st: agencyStatus, id: agencyId })
           }
           break;
         }
@@ -497,7 +523,24 @@ export class BillingService {
   }
 
   async getSubscription(agencyId) {
-    const { all } = await this._db();
+    const { all, get: getRow } = await this._db();
+    const agencyRow = await getRow('SELECT plan, plan_status, trial_ends_at FROM agencies WHERE id = @id', { id: agencyId });
+    if (agencyRow && (agencyRow.plan_status === 'trialing' || agencyRow.plan_status === 'trial_expired')) {
+      const slug = PLANS[agencyRow.plan] ? agencyRow.plan : 'starter';
+      const p = PLANS[slug];
+      let st = agencyRow.plan_status;
+      if (st === 'trialing' && agencyRow.trial_ends_at && new Date(agencyRow.trial_ends_at) < new Date()) st = 'trial_expired';
+      return {
+        planId: slug,
+        planName: p.name,
+        price: p.price,
+        status: st,
+        trialEnd: agencyRow.trial_ends_at,
+        trialDiscountPct: TRIAL_DISCOUNT_PCT,
+        features: p.features,
+        limits: { leads: p.leads, agents: p.agents, offices: p.offices, users: p.users, automations: p.automations },
+      };
+    }
     const subs = await all(
       `SELECT s.*, p.slug AS plan_slug
        FROM subscriptions s

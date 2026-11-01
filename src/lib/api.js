@@ -80,6 +80,10 @@ class ApiClient {
           localStorage.removeItem('crm-inmobiliario-store')
           window.location.href = '/login'
           return
+        } else if (err.status === 402 && (err.body?.code === 'TRIAL_EXPIRED' || err.body?.code === 'SUBSCRIPTION_INACTIVE')) {
+          toast.error(err.message)
+          if (!window.location.pathname.startsWith('/pricing')) window.location.href = '/pricing?expired=1'
+          return
         } else if (err.status === 403) {
           toast.error('No tienes permiso para realizar esta acción.')
         } else {
@@ -102,6 +106,10 @@ class ApiClient {
 
   patch(url, data) {
     return this.request('PATCH', url, data)
+  }
+
+  put(url, data) {
+    return this.request('PUT', url, data)
   }
 
   delete(url) {

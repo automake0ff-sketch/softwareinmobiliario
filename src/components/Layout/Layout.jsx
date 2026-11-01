@@ -4,6 +4,7 @@ import { useStore } from '../../lib/store'
 import Sidebar from './Sidebar'
 import Topbar from './Topbar'
 import { UsageBanner } from '../billing/UsageBanner'
+import { TrialBanner } from '../billing/TrialBanner'
 import clsx from 'clsx'
 import { supabase } from '../../lib/supabase'
 import api from '../../lib/api'
@@ -56,6 +57,7 @@ export default function Layout() {
     <div className="min-h-screen bg-[#0A0A0F]">
       <Sidebar />
       <Topbar />
+      <TrialBanner />
       <main
         className={clsx(
           'pt-16 min-h-screen transition-all duration-300',

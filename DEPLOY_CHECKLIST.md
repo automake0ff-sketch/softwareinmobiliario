@@ -25,7 +25,7 @@ fly secrets set APP_URL="https://crm-inmobiliario.fly.dev"
 ## 4. Stripe (produccion)
 - [ ] Cuenta Stripe en modo live
 - [ ] Webhook configurado apuntando a `https://tudominio.com/webhooks/stripe`
-- [ ] Eventos del webhook: `customer.subscription.created`, `customer.subscription.updated`, `invoice.payment_succeeded`, `invoice.payment_failed`
+- [ ] Eventos del webhook: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, `invoice.payment_failed`
 - [ ] Copiar Webhook Secret -> `STRIPE_WEBHOOK_SECRET`
 
 ## 5. Frontend (.env.production)
@@ -50,3 +50,10 @@ fly deploy  # si ya existe el app
 ## 8. DNS (si dominio propio)
 - [ ] `fly certs add tudominio.com`
 - [ ] Apuntar CNAME/A record a la IP de Fly.io
+
+
+## InmoFollow (módulo de seguimiento)
+- [ ] Aplicar `supabase/migrations/00009_trial.sql` y `00010_followups.sql` (tabla `followups` con RLS por agencia).
+- [ ] La IA es **opcional**. Sin `ANTHROPIC_API_KEY` todo funciona con plantillas y resumen por reglas (coste cero por uso).
+- [ ] Si activas IA: `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` (por defecto un modelo antiguo: pon uno vigente) y, opcional, `FOLLOWUP_AI_HOURLY_LIMIT` (por defecto 30 llamadas/hora/agencia) o `FOLLOWUP_AI=off` para desactivarla.
+- [ ] Probar en staging: `node server/tests/followup-engine.test.mjs` y `node server/tests/followup-api.test.mjs` (necesita `DATABASE_URL`, `SUPABASE_JWT_SECRET` y `BASE_URL`).

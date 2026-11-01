@@ -585,6 +585,12 @@ export default function LeadDetailPage() {
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={() => navigate(`/seguimiento?lead=${lead.id}`)}
+              className="inline-flex items-center gap-2 rounded-xl bg-indigo-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-400 transition"
+            >
+              <MessageCircle size={16} /> Preparar seguimiento
+            </button>
             {/* Stage dropdown selector */}
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-white/40 uppercase tracking-wide">Etapa actual</label>

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { get, run } from '../db/db.js';
+import { TRIAL_DAYS } from '../services/plans.js';
 
 const router = Router();
 const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
@@ -19,7 +20,7 @@ router.post('/social-login-or-register', async (req, res) => {
     }
 
     let user = await get(
-      `SELECT u.id, u.name, u.email, u.role, u.agency_id, u.office_id, a.plan, a.plan_status,
+      `SELECT u.id, u.name, u.email, u.role, u.agency_id, u.office_id, a.plan, a.plan_status, a.trial_ends_at,
               a.name as agency_name, a.slug as agency_slug
        FROM users u LEFT JOIN agencies a ON a.id = u.agency_id
        WHERE u.id = @id AND u.active = true`,
@@ -41,10 +42,10 @@ router.post('/social-login-or-register', async (req, res) => {
       const slug = 'inmo-' + agencyId.replace(/-/g, '').slice(0, 12);
 
       await run(
-        `INSERT INTO agencies (id, name, slug, plan, plan_status)
-         VALUES (@id, @name, @slug, 'starter', 'active')
+        `INSERT INTO agencies (id, name, slug, plan, plan_status, trial_ends_at)
+         VALUES (@id, @name, @slug, 'starter', 'trialing', @trial_ends_at)
          ON CONFLICT (id) DO NOTHING`,
-        { id: agencyId, name: 'Mi Inmobiliaria', slug }
+        { id: agencyId, name: 'Mi Inmobiliaria', slug, trial_ends_at: new Date(Date.now() + TRIAL_DAYS * 86400000).toISOString() }
       );
 
       await run(
@@ -65,7 +66,7 @@ router.post('/social-login-or-register', async (req, res) => {
       );
 
       user = await get(
-        `SELECT u.id, u.name, u.email, u.role, u.agency_id, u.office_id, a.plan, a.plan_status,
+        `SELECT u.id, u.name, u.email, u.role, u.agency_id, u.office_id, a.plan, a.plan_status, a.trial_ends_at,
                 a.name as agency_name, a.slug as agency_slug
          FROM users u LEFT JOIN agencies a ON a.id = u.agency_id
          WHERE u.id = @id AND u.active = true`,
@@ -99,6 +100,7 @@ router.post('/social-login-or-register', async (req, res) => {
         slug: user.agency_slug,
         plan: user.plan,
         plan_status: user.plan_status,
+        trial_ends_at: user.trial_ends_at,
       },
     });
   } catch (err) {

@@ -1,6 +1,10 @@
 // Fuente de verdad única para planes — frontend
 // Debe coincidir con server/services/plans.js
 
+// Debe coincidir con server/services/plans.js
+export const TRIAL_DAYS = 3
+export const TRIAL_DISCOUNT_PCT = 10
+
 export const PLAN_RANK = { starter: 1, profesional: 2, agencia: 3 }
 
 export function planIncludes(userPlan, requiredPlan) {
@@ -59,12 +63,12 @@ export function limitLabel(type, planId) {
 export const PLANS = {
   starter: {
     id: 'starter',
-    name: 'Starter',
-    price_monthly: 79,
-    price_yearly: 69,
+    name: 'InmoFollow',
+    price_monthly: 24,
+    price_yearly: 240,
     max_offices: 1,
-    max_users: 5,
-    max_leads_per_month: 500,
+    max_users: 3,
+    max_leads_per_month: 2000,
     max_agents: 3,
     max_automations: 10,
     available_agents: ['captador', 'vendedor', 'coordinador'],

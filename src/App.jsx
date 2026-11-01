@@ -10,6 +10,7 @@ import { useStore } from './lib/store'
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const PipelinePage = lazy(() => import('./pages/PipelinePage'))
 const LeadsPage = lazy(() => import('./pages/LeadsPage'))
+const FollowUpPage = lazy(() => import('./pages/FollowUpPage'))
 const LeadDetailPage = lazy(() => import('./pages/LeadDetailPage'))
 const PropertiesPage = lazy(() => import('./pages/PropertiesPage'))
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
@@ -131,6 +132,7 @@ export default function App() {
             <Route element={<Layout />}>
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/pipeline" element={<PipelinePage />} />
+              <Route path="/seguimiento" element={<FollowUpPage />} />
               <Route path="/leads" element={<LeadsPage />} />
               <Route path="/leads/:id" element={<LeadDetailPage />} />
               <Route path="/properties" element={<PropertiesPage />} />

@@ -9,6 +9,7 @@ import toast from 'react-hot-toast'
 import api from '../lib/api'
 import { useStore } from '../lib/store'
 import PaymentModal from '../components/billing/PaymentModal'
+import { TRIAL_DISCOUNT_PCT } from '../lib/billing/plans'
 
 // Código de demo comercial: enlace tipo /pricing?demo=DEMO25 para enseñar en
 // una llamada de ventas precios especiales en los tres planes a la vez. No
@@ -20,90 +21,47 @@ import PaymentModal from '../components/billing/PaymentModal'
 // ⚠️ Los precios de profesional/agencia son una propuesta mía, proporcional
 // al descuento que ya definiste para Starter (25€ sobre 79€) — ajústalos si
 // quieres otra cifra; solo hay que cambiarlos aquí y en ai-budget/stripe.js.
-const DEMO_CODES = {
-  DEMO25: { starter: 25, profesional: 65, agencia: 159 },
-}
+const DEMO_CODES = {}
 
 const PAYMENT_METHODS = [
   { id: 'stripe', name: 'Tarjeta (Stripe)', desc: 'Pago seguro con tarjeta', icon: CreditCard },
-  { id: 'transfer', name: 'Transferencia', desc: 'Recibirás datos para transferir', icon: Banknote },
-  // PayPal deshabilitado temporalmente a petición de Alejandro (12 ago 2026):
-  // solo se usará Stripe por ahora. El código del backend sigue intacto en
-  // server/services/stripe.js / server/index.js (/webhooks/paypal) para
-  // reactivarlo cuando se configure PAYPAL_WEBHOOK_ID y se pruebe.
 ]
 
 const PLANS = [
   {
-    id: 'starter', icon: Zap, name: 'Starter',
-    price: 79, priceYearly: 790,
-    desc: 'Para agentes y pequeñas agencias',
-    cta: 'Contratar Starter', popular: false,
-    savings: 'Ahorra 158€',
+    id: 'starter', icon: Zap, name: 'InmoFollow',
+    price: 24, priceYearly: 240,
+    desc: 'Que ningún contacto se enfríe',
+    cta: 'Empezar', popular: true,
+    savings: 'Ahorra 48€',
     features: [
-      '1 oficina',
-      'Hasta 5 usuarios',
-      '500 leads/mes',
+      'Lista diaria de a quién contactar',
+      'Detección de oportunidades abandonadas',
+      'Mensajes listos para WhatsApp y email',
+      'Resumen de conversaciones y próximos pasos',
+      'Hasta 3 usuarios y 2.000 contactos/mes',
       'Entrada de leads por email (Idealista, Fotocasa...)',
-      'Mejora de anuncios con IA',
-      'CRM + Pipeline Kanban',
-      'Soporte por email',
-    ],
-  },
-  {
-    id: 'profesional', icon: Building2, name: 'Profesional',
-    price: 199, priceYearly: 1990,
-    desc: 'Para agencias en crecimiento',
-    cta: 'Contratar Profesional', popular: true,
-    savings: 'Ahorra 398€',
-    features: [
-      '3 oficinas',
-      'Hasta 15 usuarios',
-      '2.000 leads/mes',
-      'Entrada de leads por email (Idealista, Fotocasa...)',
-      'API básica',
-      'Soporte prioritario',
-    ],
-  },
-  {
-    id: 'agencia', icon: Crown, name: 'Agencia',
-    price: 499, priceYearly: 4990,
-    desc: 'Para agencias consolidadas',
-    cta: 'Contratar Agencia', popular: false,
-    savings: 'Ahorra 998€',
-    features: [
-      'Oficinas ilimitadas',
-      'Usuarios ilimitados',
-      'Leads ilimitados',
-      'Entrada de leads por email de portales',
-      'White-label completo',
-      'Dominio personalizado',
-      'API completa',
-      'Soporte dedicado',
+      'Sin permanencia · Soporte por email',
     ],
   },
 ]
 
 const FAQ = [
   {
-    q: '¿Puedo cambiar de plan en cualquier momento?',
-    a: 'Sí, puedes migrar de plan cuando quieras. La diferencia se prorratea y solo pagas la diferencia del periodo restante.',
+    q: '¿Cómo funciona la demo de 3 días?',
+    a: 'Pruebas todo sin tarjeta durante 3 días. Al terminar, si quieres seguir, te suscribes con un 10% de descuento.',
   },
   {
     q: '¿Hay permanencia?',
-    a: 'No, ninguno de nuestros planes tiene permanencia. Puedes cancelar cuando quieras desde el panel de configuración.',
-  },
-  {
-    q: '¿Qué incluye el white-label del plan Agencia?',
-    a: 'El plan Agencia te permite usar tu propia marca y dominio. Personalizamos colores, logo, correos y el portal de clientes.',
+    a: 'No. Puedes cancelar cuando quieras y no se te vuelve a cobrar.',
   },
   {
     q: '¿Qué medios de pago aceptan?',
-    a: 'Aceptamos tarjetas de crédito/débito (Stripe), PayPal y transferencia bancaria.',
+    a: 'Tarjeta de crédito o débito mediante Stripe.',
   },
   {
-    q: '¿Puedo pagar por PayPal en cualquier plan?',
-    a: 'Sí, todos los planes aceptan pago con PayPal, tarjeta (Stripe) y transferencia bancaria.',
+    q: '¿Necesito cambiar mi programa actual?',
+    a: 'No. InmoFollow funciona junto a lo que ya uses: no hay que migrar datos.',
   },
 ]
 
@@ -131,6 +89,8 @@ export default function PricingPage() {
   const [searchParams] = useSearchParams()
   const demoCode = (searchParams.get('demo') || '').toUpperCase()
   const activeDemoCode = DEMO_CODES[demoCode] || null
+  // Descuento de conversión: aplica mientras la agencia aún no ha pagado (demo en curso o caducada)
+  const hasTrialDiscount = planStatus === 'trialing' || planStatus === 'trial_expired'
   useEffect(() => {
     if (activeDemoCode) setAnnual(false)
   }, [demoCode])
@@ -212,14 +172,16 @@ export default function PricingPage() {
           variants={containerAnim}
           initial="hidden"
           animate="show"
-          className="grid grid-cols-1 md:grid-cols-3 gap-5"
+          className="mx-auto grid max-w-md grid-cols-1 gap-5"
         >
           {PLANS.map((plan, i) => {
             const Icon = plan.icon
             const isPopular = plan.popular
             const isDemoForThisPlan = activeDemoCode && activeDemoCode[plan.id] !== undefined
             const demoPrice = isDemoForThisPlan ? activeDemoCode[plan.id] : null
-            const displayPrice = isDemoForThisPlan ? demoPrice : (annual ? plan.priceYearly : plan.price)
+            const listPrice = annual ? plan.priceYearly : plan.price
+            const trialDisc = hasTrialDiscount && !isDemoForThisPlan
+            const displayPrice = isDemoForThisPlan ? demoPrice : (trialDisc ? Math.round(listPrice * (100 - TRIAL_DISCOUNT_PCT)) / 100 : listPrice)
             const displayPeriod = isDemoForThisPlan ? '/mes' : (annual ? '/año' : '/mes')
             return (
               <motion.div
@@ -258,6 +220,9 @@ export default function PricingPage() {
 
                 <div className="mb-5">
                   <div className="flex items-baseline gap-2">
+                    {trialDisc && (
+                      <span className="text-xl text-[#64748B] line-through decoration-2">{listPrice}€</span>
+                    )}
                     {isDemoForThisPlan && (
                       <span className="text-xl text-[#64748B] line-through decoration-2">{plan.price}€</span>
                     )}
@@ -266,6 +231,11 @@ export default function PricingPage() {
                     </span>
                     <span className="text-sm text-[#64748B] ml-1">{displayPeriod}</span>
                   </div>
+                  {trialDisc && (
+                    <p className="mt-2 text-xs font-semibold text-emerald-400">
+                      {TRIAL_DISCOUNT_PCT}% de descuento tras tu demo gratuita
+                    </p>
+                  )}
                   {isDemoForThisPlan ? (
                     <div className="mt-2 space-y-1">
                       <p className="text-xs font-semibold text-amber-400 flex items-center gap-1.5">

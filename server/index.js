@@ -32,6 +32,9 @@ function validateEnv() {
 }
 
 const app = express();
+// Detrás de Render/Fly/Railway/Vercel: sin esto TODOS los usuarios comparten la IP del proxy
+// y el rate limiter bloquea a todos a la vez al llegar a 20 intentos.
+app.set('trust proxy', 1);
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
@@ -132,11 +135,17 @@ app.post('/webhooks/stripe', webhookLimiter, express.raw({ type: 'application/js
       const { default: Stripe } = await import('stripe');
       const stripeInstance = new Stripe(process.env.STRIPE_SECRET_KEY);
       event = stripeInstance.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    } else if (process.env.NODE_ENV === 'production' || process.env.STRIPE_SECRET_KEY || process.env.STRIPE_WEBHOOK_SECRET) {
+      // Nunca aceptar eventos sin firma si hay Stripe configurado (ni en producción): cualquiera podría activarse un plan gratis.
+      console.error('[STRIPE] Webhook rechazado: falta STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET o la cabecera stripe-signature.');
+      return res.status(400).json({ error: 'Firma de webhook requerida' });
     } else {
-      console.warn('[STRIPE] Webhook sin verificar firma: falta STRIPE_WEBHOOK_SECRET o cabecera stripe-signature. Solo aceptable en desarrollo local.');
+      console.warn('[STRIPE] Webhook sin verificar firma (solo desarrollo local).');
       event = JSON.parse(req.body.toString());
     }
     const result = await stripe.handleWebhook(event);
+    // Si el procesado falla devolvemos 500 para que Stripe reintente (antes se respondía 200 y el pago quedaba sin activar)
+    if (result?.error) return res.status(500).json({ error: 'Error procesando el evento' });
     res.json(result);
   } catch (e) {
     console.error('[STRIPE] Webhook error:', e.message);
@@ -231,6 +240,7 @@ async function start() {
   const appointmentsRouter = (await import('./routes/appointments.js')).default;
 
   app.use('/api/leads', leadsRouter);
+  app.use('/api/followup', (await import('./routes/followup.js')).default);
   app.use('/api/properties', propertiesRouter);
   app.use('/api/agency', agencyRouter);
   app.use('/api/webhooks/portal-leads', webhookLimiter, (await import('./webhooks/portal-leads.js')).default);
@@ -538,6 +548,8 @@ async function start() {
   app.post('/api/billing/create-checkout', auth, async (req, res) => {
     try {
       const { planId, interval, paymentMethod, priceId, promoCode } = req.body;
+      if (paymentMethod && paymentMethod !== 'stripe') return res.status(400).json({ error: 'Método de pago no soportado' });
+      if (planId !== 'starter') return res.status(400).json({ error: 'Plan no disponible' });
       const agency = await get('SELECT * FROM agencies WHERE id = @aid', { aid: req.user.agency_id });
       if (!agency) return res.status(404).json({ error: 'Agencia no encontrada' });
       if (!PLANS[planId]) return res.status(400).json({ error: 'Plan inválido' });
@@ -723,6 +735,7 @@ async function start() {
     // Start background appointment reminder worker (runs every 1 hour)
     import('./services/appointment-reminder-worker.js').then(({ startReminderWorker }) => {
       startReminderWorker(60 * 60 * 1000, process.env.APP_URL || `http://localhost:5173`);
+      import('./services/followup-digest.js').then(({ startDigestWorker }) => startDigestWorker({ appUrl: process.env.APP_URL || 'http://localhost:5173' }));
     }).catch(err => {
       console.error('Error starting appointment reminder worker:', err);
     });
@@ -818,6 +831,7 @@ async function runMigration() {
     { type: 'column', table: 'agencies', column: 'onboarding_step', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS onboarding_step INTEGER DEFAULT 0` },
     { type: 'column', table: 'agencies', column: 'meta_page_id', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS meta_page_id TEXT` },
     { type: 'column', table: 'agencies', column: 'plan', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'starter'` },
+    { type: 'column', table: 'agencies', column: 'trial_ends_at', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ` },
     { type: 'column', table: 'agencies', column: 'plan_status', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS plan_status TEXT DEFAULT 'trialing'` },
     { type: 'column', table: 'agencies', column: 'wa_verify_token', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS wa_verify_token TEXT` },
     { type: 'column', table: 'agencies', column: 'wa_webhook_token', sql: `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS wa_webhook_token TEXT` },
@@ -1051,6 +1065,39 @@ async function runMigration() {
     )` },
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_property_interests_property ON property_interests(property_id)` },
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_property_interests_lead ON property_interests(lead_id)` },
+    // ── InmoFollow: seguimientos ──
+    { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS followups (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      agency_id UUID NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+      property_id UUID REFERENCES properties(id) ON DELETE SET NULL,
+      assigned_to UUID REFERENCES users(id) ON DELETE SET NULL,
+      due_at TIMESTAMPTZ NOT NULL,
+      channel TEXT NOT NULL DEFAULT 'whatsapp' CHECK (channel IN ('whatsapp','call','email','visit','other')),
+      goal TEXT,
+      note TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','done','cancelled')),
+      snooze_count INTEGER NOT NULL DEFAULT 0,
+      completed_at TIMESTAMPTZ,
+      created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_followups_agency_status_due ON followups(agency_id, status, due_at)` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_followups_lead ON followups(lead_id)` },
+    { type: 'column', table: 'users', column: 'followup_digest', sql: `ALTER TABLE users ADD COLUMN IF NOT EXISTS followup_digest BOOLEAN NOT NULL DEFAULT true` },
+    { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS followup_digest_log (
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      sent_on DATE NOT NULL,
+      sent BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (user_id, sent_on)
+    )` },
+    { type: 'sql', sql: `ALTER TABLE followup_digest_log ENABLE ROW LEVEL SECURITY` },
+    { type: 'sql', sql: `CREATE UNIQUE INDEX IF NOT EXISTS uq_payment_history_invoice ON payment_history(stripe_invoice_id) WHERE stripe_invoice_id IS NOT NULL` },
+    { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_leads_agency_status_updated ON leads(agency_id, status, updated_at DESC)` },
+    // Deny-by-default para PostgREST si la migración 00010 aún no se ha aplicado (el servidor Express no se ve afectado)
+    { type: 'sql', sql: `ALTER TABLE followups ENABLE ROW LEVEL SECURITY` },
     // ── Lead Automation new tables ──
     { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS communication_logs (
       id UUID PRIMARY KEY,

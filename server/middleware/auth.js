@@ -1,6 +1,11 @@
 import { get, run } from '../db/db.js';
 import jwt from 'jsonwebtoken';
 import { setAgencyContext } from '../services/ai-budget.js';
+import { TRIAL_DAYS } from '../services/plans.js';
+
+// Estados de agencia sin acceso a la app (solo pueden ver/pagar el plan)
+const BLOCKED_STATUSES = new Set(['trial_expired', 'canceled', 'expired']);
+const OPEN_PREFIXES = ['/api/billing', '/api/auth', '/api/health'];
 
 const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
 // Compatibilidad temporal: JWTs propios emitidos antes de la migración a Supabase Auth
@@ -18,7 +23,7 @@ async function loadUserWithPlan(userId) {
   // (subscriptions.plan_id es un UUID que referencia plans.id y NO es el slug
   // 'starter'/'profesional'/'agencia' que usa el resto del código — ver notas de migración).
   const user = await get(
-    `SELECT u.id, u.email, u.role, u.agency_id, u.office_id, a.plan, a.plan_status
+    `SELECT u.id, u.email, u.role, u.agency_id, u.office_id, a.plan, a.plan_status, a.trial_ends_at
      FROM users u
      LEFT JOIN agencies a ON a.id = u.agency_id
      WHERE u.id = @id AND u.active = true`,
@@ -88,10 +93,10 @@ export async function auth(req, res, next) {
       );
 
       await run(
-        `INSERT INTO agencies (id, name, slug, plan, plan_status)
-         VALUES (@id, @name, @slug, 'starter', 'active')
+        `INSERT INTO agencies (id, name, slug, plan, plan_status, trial_ends_at)
+         VALUES (@id, @name, @slug, 'starter', 'trialing', @trial_ends_at)
          ON CONFLICT (id) DO NOTHING`,
-        { id: agencyId, name: 'Mi Inmobiliaria', slug }
+        { id: agencyId, name: 'Mi Inmobiliaria', slug, trial_ends_at: new Date(Date.now() + TRIAL_DAYS * 86400000).toISOString() }
       );
 
       await run(
@@ -106,6 +111,25 @@ export async function auth(req, res, next) {
 
     if (!user) {
       return res.status(401).json({ error: 'Usuario no encontrado o inactivo.' });
+    }
+
+    // Demo caducada: se marca en BD y se bloquea el acceso (salvo facturación)
+    if (user.plan_status === 'trialing' && user.trial_ends_at && new Date(user.trial_ends_at) < new Date()) {
+      user.plan_status = 'trial_expired';
+      await run("UPDATE agencies SET plan_status = 'trial_expired' WHERE id = @id AND plan_status = 'trialing'", { id: user.agency_id });
+    }
+    if (BLOCKED_STATUSES.has(user.plan_status)) {
+      const url = req.originalUrl || req.url || '';
+      if (!OPEN_PREFIXES.some((p) => url.startsWith(p))) {
+        const expired = user.plan_status === 'trial_expired';
+        return res.status(402).json({
+          error: expired
+            ? 'Tu demo de 3 días ha terminado. Suscríbete con un 10 % de descuento para seguir.'
+            : 'Tu suscripción no está activa. Renuévala para seguir usando la plataforma.',
+          code: expired ? 'TRIAL_EXPIRED' : 'SUBSCRIPTION_INACTIVE',
+          upgrade_url: '/pricing',
+        });
+      }
     }
 
     req.user = buildReqUser(user);

@@ -96,61 +96,27 @@ export default function LandingPage() {
   const plans = [
     {
       id: 'starter',
-      name: 'Starter',
-      price: billingPeriod === 'monthly' ? '79€' : '790€',
+      name: 'InmoFollow',
+      price: billingPeriod === 'monthly' ? '24€' : '240€',
       period: billingPeriod === 'monthly' ? '/mes' : '/año',
-      desc: 'Para agentes y pequeñas agencias',
+      desc: 'Que ningún contacto se enfríe',
       features: [
-        '1 oficina activa',
-        'Hasta 5 usuarios humanos',
-        '500 leads nuevos al mes',
-        'Entrada de leads por email (Idealista, Fotocasa...)',
-        'Mejora de anuncios con IA',
-        'CRM + Pipeline Kanban',
-        'Soporte estándar'
+        'Lista diaria de a quién contactar',
+        'Detección de oportunidades abandonadas',
+        'Mensajes listos para WhatsApp y email',
+        'Resumen de conversaciones y próximos pasos',
+        'Hasta 3 usuarios y 2.000 contactos/mes',
+        'Sin permanencia'
       ],
-      cta: 'Empezar ahora',
-      popular: false
-    },
-    {
-      id: 'profesional',
-      name: 'Profesional',
-      price: billingPeriod === 'monthly' ? '199€' : '1990€',
-      period: billingPeriod === 'monthly' ? '/mes' : '/año',
-      desc: 'Para agencias en crecimiento',
-      features: [
-        '3 oficinas activas',
-        'Hasta 15 usuarios humanos',
-        '2.000 leads nuevos al mes',
-        'Entrada de leads por email (Idealista, Fotocasa...)',
-        'Soporte prioritario'
-      ],
-      cta: 'Empezar ahora',
+      cta: 'Probar 3 días gratis',
       popular: true
-    },
-    {
-      id: 'agencia',
-      name: 'Agencia',
-      price: billingPeriod === 'monthly' ? '499€' : '4990€',
-      period: billingPeriod === 'monthly' ? '/mes' : '/año',
-      desc: 'Para agencias consolidadas',
-      features: [
-        'Oficinas ilimitadas',
-        'Usuarios ilimitados',
-        'Leads ilimitados',
-        'Entrada de leads por email de portales',
-        'White-label completo',
-        'Soporte dedicado 24/7'
-      ],
-      cta: 'Empezar ahora',
-      popular: false
     }
   ]
 
   const faqs = [
     {
       q: '¿Necesito saber programar?',
-      a: 'No, todo se configura desde el panel sin código. Hemos diseñado la plataforma para que cualquier profesional inmobiliario pueda configurar sus agentes y flujos en cuestión de minutos.'
+      a: 'No, todo se configura desde el panel sin código. Hemos diseñado la plataforma para que cualquier profesional inmobiliario pueda empezar a usarla en cuestión de minutos.'
     },
     {
       q: '¿Funciona con cualquier inmobiliaria?',
@@ -232,18 +198,18 @@ export default function LandingPage() {
           {/* Badge */}
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 mb-6 sm:mb-8 animate-pulse-soft">
             <Sparkles size={12} className="text-indigo-400" />
-            <span>El Futuro del Sector Inmobiliario con Inteligencia Artificial</span>
+            <span>Prueba gratis 3 días · Sin tarjeta · Sin permanencia</span>
           </div>
 
           <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-white mb-6 leading-[1.15]">
-            Tu inmobiliaria,{' '}
+            Que ningún cliente{' '}
             <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-300 bg-clip-text text-transparent">
-              más simple y ordenada
+              se te enfríe
             </span>
           </h1>
 
           <p className="text-base sm:text-lg text-gray-400 max-w-3xl mx-auto mb-10 leading-relaxed">
-            Gestiona tus inmuebles, tus contactos y tus visitas en un solo sitio, y redacta anuncios con IA en segundos.
+            Descubre cada mañana a qué contactos tienes que escribir o llamar, y prepara el mensaje de WhatsApp en segundos. Desde 24 € al mes.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">
@@ -526,7 +492,7 @@ export default function LandingPage() {
               Planes y precios flexibles
             </h2>
             <p className="text-gray-400 mt-4">
-              Escala tu agencia a tu ritmo sin contratos de permanencia.
+              Demo gratuita de 3 días y un 10% de descuento al suscribirte. Sin contratos de permanencia.
             </p>
 
             {/* Toggle Mensual/Anual */}
@@ -559,7 +525,7 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
+          <div className="mx-auto grid max-w-md grid-cols-1 gap-6 items-stretch">
             {plans.map((plan) => {
               const isPopular = plan.popular;
               return (

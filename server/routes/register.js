@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { all, get, run } from '../db/db.js';
 import crypto from 'crypto';
+import { TRIAL_DAYS } from '../services/plans.js';
 
 import bcrypt from 'bcryptjs';
 
@@ -51,10 +52,11 @@ router.post('/', validateBody(registerSchema), async (req, res) => {
 
     const agencyId = uuidv4();
     const now = new Date().toISOString();
+    const trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 86400000).toISOString();
 
     await run(
-      `INSERT INTO agencies (id, name, slug, email, phone, city, website, plan, plan_status, onboarding_step, onboarding_completed, created_at)
-       VALUES (@id, @name, @slug, @email, @phone, @city, @website, @plan, @plan_status, 0, false, @now)`,
+      `INSERT INTO agencies (id, name, slug, email, phone, city, website, plan, plan_status, trial_ends_at, onboarding_step, onboarding_completed, created_at)
+       VALUES (@id, @name, @slug, @email, @phone, @city, @website, @plan, @plan_status, @trial_ends_at, 0, false, @now)`,
       {
         id: agencyId,
         name: agencyName,
@@ -65,6 +67,7 @@ router.post('/', validateBody(registerSchema), async (req, res) => {
         website: '',
         plan: plan || 'starter',
         plan_status: 'trialing',
+        trial_ends_at: trialEndsAt,
         now,
       }
     );
@@ -147,6 +150,8 @@ router.post('/', validateBody(registerSchema), async (req, res) => {
       email,
       role: userRole,
       plan: plan || 'starter',
+      plan_status: 'trialing',
+      trial_ends_at: trialEndsAt,
     });
   } catch (error) {
     console.error('[REGISTER] Error:', error.message);

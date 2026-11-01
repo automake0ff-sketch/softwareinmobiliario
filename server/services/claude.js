@@ -4,7 +4,7 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const MODEL = 'claude-3-haiku-20240307';
+const MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-5-5';
 
 function createMessage(systemPrompt, userMessage) {
   return anthropic.messages.create({

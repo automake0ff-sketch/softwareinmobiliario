@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { all, get, run, transaction } from '../db/db.js';
 import { auth } from '../middleware/auth.js';
 import {
-  STALE_DAYS, GOALS, CHANNELS, OUTCOMES, TONES,
+  STALE_DAYS, GOALS, CHANNELS, OUTCOMES, TONES, ALERT_CLASSES, mergeSettings, classifyAlert, buildFacts, recommend, firstImage,
   daysBetween, scoreItem, defaultGoalForLead, normalizePhone, buildWhatsAppUrl,
   buildMessage, summarizeConversation, dueInDays, statusLabel,
 } from '../services/followup-engine.js';
@@ -15,11 +15,6 @@ router.use(auth);
 
 const DEFAULT_TZ = 'Europe/Madrid';
 const MAX_TEXT = 8000;
-
-// Condición SQL de "abandonado": estado abierto + días sin contacto según el estado (STALE_DAYS)
-const STALE_SQL = '(' + Object.entries(STALE_DAYS)
-  .map(([st, d]) => `(l.status = '${st}' AND COALESCE(NULLIF(l.last_contact_at::text,'')::timestamptz, NULLIF(l.last_activity::text,'')::timestamptz, l.created_at) <= NOW() - interval '${Number(d)} day')`)
-  .join(' OR ') + ')';
 
 const uuid = z.string().uuid();
 const isoDate = z.string().refine((s) => !Number.isNaN(Date.parse(s)), 'Fecha no válida');
@@ -55,7 +50,10 @@ async function getProperty(propertyId, agencyId) {
 }
 
 async function agencyInfo(agencyId) {
-  const a = await get('SELECT name, timezone FROM agencies WHERE id = @id', { id: agencyId });
+  const a = await get(
+    `SELECT a.name, COALESCE((SELECT z.name FROM pg_timezone_names z WHERE z.name = a.timezone LIMIT 1), @def) AS timezone FROM agencies a WHERE a.id = @id`,
+    { id: agencyId, def: DEFAULT_TZ }
+  );
   return { name: a?.name || null, tz: a?.timezone || DEFAULT_TZ };
 }
 
@@ -102,118 +100,214 @@ async function cachedToday({ agencyId, uid, mine, fresh }) {
   return p;
 }
 
-/** Lista diaria de un usuario/agencia. La usan la pantalla y el resumen por email. */
-export async function computeToday({ agencyId, uid, mine = false }) {
-  {
-    const now = new Date();
-    const { tz } = await agencyInfo(agencyId);
-    const b = await dayBounds(tz);
+const APPT_TS = `(CASE WHEN a.starts_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN a.starts_at::timestamptz END)`;
+const OPEN = `NOT IN ('cerrado','perdido')`;
 
-    const fRows = await all(
+// Ajustes de reglas por agencia (con caché corta; se invalida al guardar)
+const settingsCache = new Map();
+export async function getSettings(agencyId) {
+  const hit = settingsCache.get(agencyId);
+  if (hit && Date.now() - hit.at < 30_000) return hit.value;
+  const row = await get('SELECT stale_days, inactive_days, visit_followup_days FROM followup_settings WHERE agency_id = @a', { a: agencyId });
+  const value = mergeSettings(row || {});
+  settingsCache.set(agencyId, { at: Date.now(), value });
+  return value;
+}
+export const invalidateSettings = (agencyId) => settingsCache.delete(agencyId);
+
+function staleSql(staleDays) {
+  return '(' + Object.entries(staleDays)
+    .map(([st, d]) => `(l.status = '${st}' AND ${LAST_TOUCH_SQL} <= NOW() - interval '${Number(d)} day')`)
+    .join(' OR ') + ')';
+}
+
+/** Lista diaria de un usuario/agencia + KPIs + alertas. La usan la pantalla y el resumen por email. */
+export async function computeToday({ agencyId, uid, mine = false }) {
+  const now = new Date();
+  const [{ tz }, settings] = await Promise.all([agencyInfo(agencyId), getSettings(agencyId)]);
+  const b = await dayBounds(tz);
+  const STALE = staleSql(settings.stale_days);
+  const mineF = mine ? 'AND (f.assigned_to = @uid OR l.assigned_to = @uid OR f.created_by = @uid)' : '';
+  const mineL = mine ? 'AND l.assigned_to = @uid' : '';
+  const base = { agency_id: agencyId, uid };
+
+  const [fRows, cntRow, upcomingRow, cRows, vRows, uRows, kpiRow, visitsPendingRow] = await Promise.all([
+    all(
       `SELECT f.id AS followup_id, f.due_at, f.channel, f.goal, f.note, f.snooze_count, f.property_id,
-              l.id AS lead_id, l.name, l.phone, l.email, l.status, l.ia_score, l.budget, l.zone, l.urgency,
-              l.whatsapp_opt_out, l.assigned_to, ${LAST_TOUCH_SQL} AS last_touch, p.title AS property_title
+              l.id AS lead_id, l.name, l.phone, l.email, l.status, l.ia_score, l.budget, l.zone, l.urgency, l.priority, l.client_type,
+              l.whatsapp_opt_out, l.assigned_to, (l.last_contact_at IS NOT NULL) AS has_contact, ${LAST_TOUCH_SQL} AS last_touch,
+              p.title AS property_title, p.images AS property_images
        FROM followups f
        JOIN leads l ON l.id = f.lead_id AND l.agency_id = f.agency_id
        LEFT JOIN properties p ON p.id = f.property_id
-       WHERE f.agency_id = @agency_id AND f.status = 'pending' AND f.due_at < @day_end
-         AND l.status <> 'cerrado'
-         ${mine ? 'AND (f.assigned_to = @uid OR l.assigned_to = @uid OR f.created_by = @uid)' : ''}
+       WHERE f.agency_id = @agency_id AND f.status = 'pending' AND f.due_at < @day_end AND l.status ${OPEN} ${mineF}
        ORDER BY f.due_at ASC LIMIT 80`,
-      { agency_id: agencyId, day_end: b.day_end, uid }
-    );
-
-    const cntRow = await get(
+      { ...base, day_end: b.day_end }
+    ),
+    get(
       `SELECT COALESCE(SUM(CASE WHEN f.due_at < @day_start THEN 1 ELSE 0 END),0) AS overdue,
               COALESCE(SUM(CASE WHEN f.due_at >= @day_start THEN 1 ELSE 0 END),0) AS today
        FROM followups f JOIN leads l ON l.id = f.lead_id AND l.agency_id = f.agency_id
-       WHERE f.agency_id = @agency_id AND f.status = 'pending' AND f.due_at < @day_end AND l.status <> 'cerrado'
-         ${mine ? 'AND (f.assigned_to = @uid OR l.assigned_to = @uid OR f.created_by = @uid)' : ''}`,
-      { agency_id: agencyId, day_start: b.day_start, day_end: b.day_end, uid }
-    );
-
-    const upcomingRow = await get(
+       WHERE f.agency_id = @agency_id AND f.status = 'pending' AND f.due_at < @day_end AND l.status ${OPEN} ${mineF}`,
+      { ...base, day_start: b.day_start, day_end: b.day_end }
+    ),
+    get(
       `SELECT COUNT(*) AS n FROM followups f JOIN leads l ON l.id = f.lead_id
-       WHERE f.agency_id = @agency_id AND f.status = 'pending' AND f.due_at >= @day_end AND f.due_at < @week_end
-         ${mine ? 'AND (f.assigned_to = @uid OR l.assigned_to = @uid OR f.created_by = @uid)' : ''}`,
-      { agency_id: agencyId, day_end: b.day_end, week_end: b.week_end, uid }
-    );
-
-    // Leads abiertos, sin seguimiento pendiente y sin contacto reciente
-    const cRows = await all(
-      `SELECT l.id AS lead_id, l.name, l.phone, l.email, l.status, l.ia_score, l.budget, l.zone, l.urgency,
-              l.whatsapp_opt_out, l.assigned_to, ${LAST_TOUCH_SQL} AS last_touch,
-              pi.property_id, p.title AS property_title, COUNT(*) OVER() AS total_count
+       WHERE f.agency_id = @agency_id AND f.status = 'pending' AND f.due_at >= @day_end AND f.due_at < @week_end AND l.status ${OPEN} ${mineF}`,
+      { ...base, day_end: b.day_end, week_end: b.week_end }
+    ),
+    all(
+      `SELECT l.id AS lead_id, l.name, l.phone, l.email, l.status, l.ia_score, l.budget, l.zone, l.urgency, l.priority, l.client_type,
+              l.whatsapp_opt_out, l.assigned_to, (l.last_contact_at IS NOT NULL) AS has_contact, ${LAST_TOUCH_SQL} AS last_touch,
+              pi.property_id, p.title AS property_title, p.images AS property_images, COUNT(*) OVER() AS total_count
        FROM leads l
        LEFT JOIN LATERAL (SELECT pi2.property_id FROM property_interests pi2 WHERE pi2.lead_id = l.id ORDER BY pi2.created_at DESC LIMIT 1) pi ON true
        LEFT JOIN properties p ON p.id = pi.property_id
-       WHERE l.agency_id = @agency_id AND l.status <> 'cerrado'
+       WHERE l.agency_id = @agency_id AND l.status ${OPEN}
          AND NOT EXISTS (SELECT 1 FROM followups f WHERE f.lead_id = l.id AND f.status = 'pending')
-         AND ${STALE_SQL}
-         ${mine ? 'AND l.assigned_to = @uid' : ''}
+         AND ${STALE} ${mineL}
        ORDER BY ${LAST_TOUCH_SQL} ASC LIMIT 100`,
-      { agency_id: agencyId, uid }
+      base
+    ),
+    // Visitas ya pasadas, sin ningún contacto posterior registrado ni seguimiento pendiente
+    all(
+      `SELECT a.id AS appt_id, ${APPT_TS} AS visit_at, a.property_id,
+              l.id AS lead_id, l.name, l.phone, l.email, l.status, l.ia_score, l.budget, l.zone, l.urgency, l.priority, l.client_type,
+              l.whatsapp_opt_out, l.assigned_to, (l.last_contact_at IS NOT NULL) AS has_contact, ${LAST_TOUCH_SQL} AS last_touch,
+              p.title AS property_title, p.images AS property_images
+       FROM appointments a
+       JOIN leads l ON l.id = a.lead_id AND l.agency_id = a.agency_id
+       LEFT JOIN properties p ON p.id = a.property_id
+       WHERE a.agency_id = @agency_id AND a.status IN ('scheduled','confirmed','completed')
+         AND ${APPT_TS} <= NOW() - (@vdays::int * interval '1 day') AND ${APPT_TS} >= NOW() - interval '21 days'
+         AND l.status ${OPEN} ${mineL}
+         AND NOT EXISTS (SELECT 1 FROM activities ac WHERE ac.lead_id = l.id AND ac.type IN ('contact','summary') AND NULLIF(ac.created_at::text,'')::timestamptz > ${APPT_TS})
+         AND NOT EXISTS (SELECT 1 FROM followups f WHERE f.lead_id = l.id AND f.status = 'pending')
+       ORDER BY visit_at ASC LIMIT 40`,
+      { ...base, vdays: settings.visit_followup_days }
+    ),
+    // Visitas en las próximas 48 h que el cliente aún no ha confirmado
+    all(
+      `SELECT a.id AS appt_id, ${APPT_TS} AS visit_at, a.property_id,
+              l.id AS lead_id, l.name, l.phone, l.email, l.status, l.ia_score, l.budget, l.zone, l.urgency, l.priority, l.client_type,
+              l.whatsapp_opt_out, l.assigned_to, (l.last_contact_at IS NOT NULL) AS has_contact, ${LAST_TOUCH_SQL} AS last_touch,
+              p.title AS property_title, p.images AS property_images
+       FROM appointments a
+       JOIN leads l ON l.id = a.lead_id AND l.agency_id = a.agency_id
+       LEFT JOIN properties p ON p.id = a.property_id
+       WHERE a.agency_id = @agency_id AND a.status = 'scheduled'
+         AND ${APPT_TS} >= NOW() AND ${APPT_TS} <= NOW() + interval '48 hours' AND l.status ${OPEN} ${mineL}
+       ORDER BY visit_at ASC LIMIT 20`,
+      base
+    ),
+    get(
+      `SELECT COUNT(*) FILTER (WHERE l.status ${OPEN}) AS active,
+              COUNT(*) FILTER (WHERE l.created_at >= NOW() - interval '7 days') AS new_week,
+              COUNT(*) FILTER (WHERE l.status = 'nuevo' AND l.last_contact_at IS NULL) AS to_contact,
+              COUNT(*) FILTER (WHERE l.status ${OPEN} AND ${LAST_TOUCH_SQL} <= NOW() - (@inactive::int * interval '1 day')) AS inactive
+       FROM leads l WHERE l.agency_id = @agency_id ${mineL}`,
+      { ...base, inactive: settings.inactive_days }
+    ),
+    get(
+      `SELECT COUNT(*) AS n FROM appointments a JOIN leads l ON l.id = a.lead_id AND l.agency_id = a.agency_id
+       WHERE a.agency_id = @agency_id AND a.status IN ('scheduled','confirmed','reschedule_requested')
+         AND ${APPT_TS} >= NOW() AND l.status ${OPEN} ${mineL}`,
+      base
+    ),
+  ]);
+
+  const abandonedTotal = Number(cRows[0]?.total_count || 0);
+  const shownAband = cRows.slice(0, 30);
+  const allRows = [...fRows, ...shownAband, ...vRows, ...uRows];
+  const ids = [...new Set(allRows.map((r) => r.lead_id))];
+  const lastMap = new Map();
+  if (ids.length) {
+    const acts = await all(
+      `SELECT DISTINCT ON (a.lead_id) a.lead_id, a.type, a.description, a.created_at
+       FROM activities a
+       WHERE a.agency_id = @agency_id AND a.lead_id = ANY(@ids::uuid[]) AND a.type IN ('contact','summary','note')
+       ORDER BY a.lead_id, a.created_at DESC`,
+      { agency_id: agencyId, ids }
     );
-    const abandonedTotal = Number(cRows[0]?.total_count || 0);
-    const abandonedAll = cRows;
-
-    // Último contacto registrado de cada lead mostrado
-    const shownAband = abandonedAll.slice(0, 30);
-    const ids = [...new Set([...fRows, ...shownAband].map((r) => r.lead_id))];
-    const lastMap = new Map();
-    if (ids.length) {
-      const acts = await all(
-        `SELECT DISTINCT ON (a.lead_id) a.lead_id, a.type, a.description, a.created_at
-         FROM activities a
-         WHERE a.agency_id = @agency_id AND a.lead_id = ANY(@ids::uuid[]) AND a.type IN ('contact','summary','note')
-         ORDER BY a.lead_id, a.created_at DESC`,
-        { agency_id: agencyId, ids }
-      );
-      acts.forEach((a) => lastMap.set(a.lead_id, { type: a.type, description: String(a.description || '').slice(0, 160), at: a.created_at }));
-    }
-
-    const build = (r, kind) => {
-      const dsc = daysBetween(r.last_touch, now);
-      let daysOverdue = 0;
-      if (kind === 'followup' && new Date(r.due_at) < new Date(b.day_start)) daysOverdue = Math.ceil((new Date(b.day_start).getTime() - new Date(r.due_at).getTime()) / 86400000);
-      const { priority, reasons } = scoreItem({ lead: r, daysSinceContact: dsc, daysOverdue, snoozeCount: r.snooze_count || 0, kind });
-      return {
-        kind,
-        followup_id: r.followup_id || null,
-        lead: leadView(r),
-        property: r.property_id ? { id: r.property_id, title: r.property_title } : null,
-        due_at: r.due_at || null,
-        channel: r.channel || (r.phone ? 'whatsapp' : 'call'),
-        goal: r.goal || defaultGoalForLead(r, dsc),
-        note: r.note || null,
-        days_overdue: daysOverdue,
-        days_since_contact: dsc,
-        priority,
-        reasons,
-        last_interaction: lastMap.get(r.lead_id) || null,
-      };
-    };
-
-    const followupItems = fRows.map((r) => build(r, 'followup'));
-    const overdue = followupItems.filter((i) => new Date(i.due_at) < new Date(b.day_start)).sort((a, c) => c.priority - a.priority);
-    const today = followupItems.filter((i) => new Date(i.due_at) >= new Date(b.day_start)).sort((a, c) => c.priority - a.priority);
-    const abandoned = shownAband.map((r) => build(r, 'abandoned')).sort((a, c) => c.priority - a.priority);
-
-    return {
-      generated_at: now.toISOString(),
-      summary: {
-        overdue: Number(cntRow?.overdue || 0),
-        today: Number(cntRow?.today || 0),
-        abandoned: abandonedTotal,
-        upcoming_week: Number(upcomingRow?.n || 0),
-        attention_total: Number(cntRow?.overdue || 0) + Number(cntRow?.today || 0) + abandonedTotal,
-      },
-      overdue, today, abandoned,
-      abandoned_hidden: Math.max(0, abandonedTotal - shownAband.length),
-      truncated: Number(cntRow?.overdue || 0) + Number(cntRow?.today || 0) > fRows.length || abandonedTotal > shownAband.length,
-      ai_available: aiAvailable(),
-    };
+    acts.forEach((a) => lastMap.set(a.lead_id, { type: a.type, description: String(a.description || '').slice(0, 160), at: a.created_at }));
   }
+
+  const build = (r, kind) => {
+    const dsc = daysBetween(r.last_touch, now);
+    let daysOverdue = 0;
+    if (kind === 'followup' && new Date(r.due_at) < new Date(b.day_start)) daysOverdue = Math.ceil((new Date(b.day_start).getTime() - new Date(r.due_at).getTime()) / 86400000);
+    const property = r.property_id ? { id: r.property_id, title: r.property_title, photo: firstImage(r.property_images) } : null;
+    const { priority, reasons } = scoreItem({ lead: r, daysSinceContact: dsc, daysOverdue, snoozeCount: r.snooze_count || 0, kind });
+    const { alert_class, rule } = classifyAlert({ kind, lead: r, daysOverdue, daysSinceContact: dsc ?? 0, settings });
+    const facts = buildFacts({ kind, lead: { ...r, status: r.status }, property, daysSinceContact: dsc, daysOverdue, visitAt: r.visit_at, hasLastContact: !!r.has_contact });
+    const recommendation = recommend({ kind, lead: r, rule });
+    return {
+      kind,
+      followup_id: r.followup_id || null,
+      appointment_id: r.appt_id || null,
+      visit_at: r.visit_at || null,
+      lead: { ...leadView(r), priority: r.priority || 'media', client_type: r.client_type || null },
+      property,
+      due_at: r.due_at || null,
+      channel: r.channel || (r.phone ? 'whatsapp' : 'call'),
+      goal: r.goal || recommendation.goal || defaultGoalForLead(r, dsc),
+      note: r.note || null,
+      days_overdue: daysOverdue,
+      days_since_contact: dsc,
+      priority,
+      reasons,
+      alert_class,
+      rule,
+      facts,
+      recommendation,
+      last_interaction: lastMap.get(r.lead_id) || null,
+    };
+  };
+
+  const followupItems = fRows.map((r) => build(r, 'followup'));
+  const byPriority = (a, c) => c.priority - a.priority;
+  const overdue = followupItems.filter((i) => new Date(i.due_at) < new Date(b.day_start)).sort(byPriority);
+  const today = followupItems.filter((i) => new Date(i.due_at) >= new Date(b.day_start)).sort(byPriority);
+  const abandoned = shownAband.map((r) => build(r, 'abandoned')).sort(byPriority);
+  const visitsNoFollowup = vRows.map((r) => build(r, 'visit_no_followup')).sort(byPriority);
+  const visitsUnconfirmed = uRows.map((r) => build(r, 'visit_unconfirmed'));
+
+  const everything = [...overdue, ...today, ...abandoned, ...visitsNoFollowup, ...visitsUnconfirmed];
+  const byClass = Object.fromEntries(Object.keys(ALERT_CLASSES).map((k) => [k, everything.filter((i) => i.alert_class === k).length]));
+  const nOverdue = Number(cntRow?.overdue || 0);
+  const nToday = Number(cntRow?.today || 0);
+
+  return {
+    generated_at: now.toISOString(),
+    summary: {
+      overdue: nOverdue,
+      today: nToday,
+      abandoned: abandonedTotal,
+      upcoming_week: Number(upcomingRow?.n || 0),
+      visits_no_followup: visitsNoFollowup.length,
+      visits_unconfirmed: visitsUnconfirmed.length,
+      attention_total: nOverdue + nToday + abandonedTotal + visitsNoFollowup.length,
+    },
+    kpis: {
+      active_contacts: Number(kpiRow?.active || 0),
+      new_week: Number(kpiRow?.new_week || 0),
+      to_contact: Number(kpiRow?.to_contact || 0),
+      overdue: nOverdue,
+      today: nToday,
+      visits_pending: Number(visitsPendingRow?.n || 0),
+      visits_no_followup: visitsNoFollowup.length,
+      inactive: Number(kpiRow?.inactive || 0),
+      priority_opportunities: byClass.inmediata,
+    },
+    alert_counts: byClass,
+    settings,
+    overdue, today, abandoned,
+    visits_no_followup: visitsNoFollowup,
+    visits_unconfirmed: visitsUnconfirmed,
+    abandoned_hidden: Math.max(0, abandonedTotal - shownAband.length),
+    truncated: nOverdue + nToday > fRows.length || abandonedTotal > shownAband.length,
+    ai_available: aiAvailable(),
+  };
 }
 
 router.get('/today', async (req, res) => {
@@ -245,7 +339,7 @@ router.get('/leads/search', async (req, res) => {
     const q = String(req.query.q || '').trim().slice(0, 60);
     const rows = await all(
       `SELECT id, name, phone, status FROM leads
-       WHERE agency_id = @agency_id AND status <> 'cerrado'
+       WHERE agency_id = @agency_id AND status NOT IN ('cerrado','perdido')
          ${q ? 'AND (name ILIKE @q OR phone ILIKE @q OR email ILIKE @q)' : ''}
        ORDER BY updated_at DESC LIMIT 8`,
       { agency_id: req.user.agency_id, q: `%${q}%` }
@@ -273,10 +367,18 @@ router.get('/leads/:id', async (req, res) => {
        WHERE f.agency_id = @agency_id AND f.lead_id = @id AND f.status = 'pending' ORDER BY f.due_at`,
       { agency_id: req.user.agency_id, id: lead.id }
     );
+    const meta = await get('SELECT priority, client_type, budget, zone, property_interest FROM leads WHERE id = @id AND agency_id = @a', { id: lead.id, a: req.user.agency_id });
+    const appts = await all(
+      `SELECT a.id, a.status, a.type, a.location, ${APPT_TS} AS starts_at, p.title AS property_title
+       FROM appointments a LEFT JOIN properties p ON p.id = a.property_id
+       WHERE a.agency_id = @a AND a.lead_id = @id ORDER BY ${APPT_TS} DESC NULLS LAST LIMIT 6`,
+      { a: req.user.agency_id, id: lead.id }
+    );
     res.json({
-      lead: { ...lead, status_label: statusLabel(lead.status), has_whatsapp: !!normalizePhone(lead.phone), whatsapp_opt_out: !!lead.whatsapp_opt_out },
+      lead: { ...lead, ...meta, priority: meta?.priority || 'media', status_label: statusLabel(lead.status), has_whatsapp: !!normalizePhone(lead.phone), whatsapp_opt_out: !!lead.whatsapp_opt_out },
       timeline: timeline.map((t) => ({ ...t, metadata: safeJson(t.metadata) })),
       pending_followups: pending,
+      appointments: appts,
     });
   } catch (e) { fail(res, e, 'No se pudo cargar el contacto.'); }
 });
@@ -560,6 +662,207 @@ router.post('/ai/summarize', validate(summarizeSchema), async (req, res) => {
     if (saved || followupId) invalidateToday(agencyId);
     res.json({ ...result, warnings, saved, followup_id: followupId, ai_available: aiAvailable() });
   } catch (e) { fail(res, e, 'No se pudo resumir la conversación.'); }
+});
+
+
+// ── Ajustes de reglas de alerta (por agencia) ─────────────────────────────
+
+const settingsSchema = z.object({
+  stale_days: z.object(Object.fromEntries(Object.keys(STALE_DAYS).map((k) => [k, z.number().int().min(1).max(120).optional()]))).partial().optional(),
+  inactive_days: z.number().int().min(7).max(365).optional(),
+  visit_followup_days: z.number().int().min(0).max(30).optional(),
+});
+
+router.get('/settings', async (req, res) => {
+  try {
+    res.json({ settings: await getSettings(req.user.agency_id), can_edit: ['admin', 'manager'].includes(req.user.role), alert_classes: ALERT_CLASSES });
+  } catch (e) { fail(res, e, 'No se pudieron leer las reglas.'); }
+});
+
+router.put('/settings', validate(settingsSchema), async (req, res) => {
+  try {
+    if (!['admin', 'manager'].includes(req.user.role)) return res.status(403).json({ error: 'Solo un administrador puede cambiar las reglas.' });
+    const agencyId = req.user.agency_id;
+    const cur = await getSettings(agencyId);
+    const next = mergeSettings({
+      stale_days: { ...cur.stale_days, ...(req.body.stale_days || {}) },
+      inactive_days: req.body.inactive_days ?? cur.inactive_days,
+      visit_followup_days: req.body.visit_followup_days ?? cur.visit_followup_days,
+    });
+    await run(
+      `INSERT INTO followup_settings (agency_id, stale_days, inactive_days, visit_followup_days, updated_at)
+       VALUES (@a, @stale::jsonb, @inactive, @visit, NOW())
+       ON CONFLICT (agency_id) DO UPDATE SET stale_days = EXCLUDED.stale_days, inactive_days = EXCLUDED.inactive_days,
+         visit_followup_days = EXCLUDED.visit_followup_days, updated_at = NOW()`,
+      { a: agencyId, stale: JSON.stringify(next.stale_days), inactive: next.inactive_days, visit: next.visit_followup_days }
+    );
+    invalidateSettings(agencyId); invalidateToday(agencyId);
+    res.json({ settings: next });
+  } catch (e) { fail(res, e, 'No se pudieron guardar las reglas.'); }
+});
+
+router.post('/settings/reset', async (req, res) => {
+  try {
+    if (!['admin', 'manager'].includes(req.user.role)) return res.status(403).json({ error: 'Solo un administrador puede cambiar las reglas.' });
+    await run('DELETE FROM followup_settings WHERE agency_id = @a', { a: req.user.agency_id });
+    invalidateSettings(req.user.agency_id); invalidateToday(req.user.agency_id);
+    res.json({ settings: await getSettings(req.user.agency_id) });
+  } catch (e) { fail(res, e, 'No se pudieron restablecer las reglas.'); }
+});
+
+// ── Prioridad y tipo de cliente de un contacto ────────────────────────────
+
+const metaSchema = z.object({
+  priority: z.enum(['alta', 'media', 'baja']).optional(),
+  client_type: z.enum(['comprador', 'vendedor', 'propietario', 'inquilino', 'otro']).nullable().optional(),
+}).refine((d) => d.priority !== undefined || d.client_type !== undefined, 'Nada que actualizar.');
+
+router.patch('/leads/:id/meta', validate(metaSchema), async (req, res) => {
+  try {
+    if (!uuid.safeParse(req.params.id).success) return res.status(400).json({ error: 'Identificador no válido.' });
+    const lead = await getLead(req.params.id, req.user.agency_id);
+    if (!lead) return res.status(404).json({ error: 'Contacto no encontrado.' });
+    const sets = []; const p = { id: lead.id, a: req.user.agency_id };
+    if (req.body.priority !== undefined) { sets.push('priority = @priority'); p.priority = req.body.priority; }
+    if (req.body.client_type !== undefined) { sets.push('client_type = @client_type'); p.client_type = req.body.client_type; }
+    await run(`UPDATE leads SET ${sets.join(', ')}, updated_at = NOW() WHERE id = @id AND agency_id = @a`, p);
+    invalidateToday(req.user.agency_id);
+    res.json({ ok: true });
+  } catch (e) { fail(res, e, 'No se pudo actualizar el contacto.'); }
+});
+
+// ── Agenda: próximos, completados, por día, por agente ───────────────────
+
+const AGENDA_SELECT = `f.id AS followup_id, f.due_at, f.completed_at, f.status AS followup_status, f.channel, f.goal, f.note, f.snooze_count, f.assigned_to,
+       l.id AS lead_id, l.name, l.phone, l.email, l.status, l.priority, l.client_type, l.whatsapp_opt_out,
+       p.id AS property_id, p.title AS property_title, p.images AS property_images, u.name AS assigned_name`;
+const AGENDA_FROM = `FROM followups f
+       JOIN leads l ON l.id = f.lead_id AND l.agency_id = f.agency_id
+       LEFT JOIN properties p ON p.id = f.property_id
+       LEFT JOIN users u ON u.id = f.assigned_to`;
+
+function agendaItem(r) {
+  return {
+    followup_id: r.followup_id, due_at: r.due_at, completed_at: r.completed_at, status: r.followup_status,
+    channel: r.channel, goal: r.goal, note: r.note, assigned_to: r.assigned_to, assigned_name: r.assigned_name || null,
+    lead: { id: r.lead_id, name: r.name, phone: r.phone, email: r.email, status: r.status, status_label: statusLabel(r.status), priority: r.priority || 'media', client_type: r.client_type || null, has_whatsapp: !!normalizePhone(r.phone), whatsapp_opt_out: !!r.whatsapp_opt_out },
+    property: r.property_id ? { id: r.property_id, title: r.property_title, photo: firstImage(r.property_images) } : null,
+  };
+}
+
+router.get('/agenda', async (req, res) => {
+  try {
+    const agencyId = req.user.agency_id; const uid = req.user.id;
+    const view = String(req.query.view || 'upcoming');
+    const mine = req.query.mine === '1' || req.query.mine === 'true';
+    const mineF = mine ? 'AND (f.assigned_to = @uid OR l.assigned_to = @uid OR f.created_by = @uid)' : '';
+    const { tz } = await agencyInfo(agencyId);
+    const b = await dayBounds(tz);
+    const base = { agency_id: agencyId, uid };
+
+    if (view === 'upcoming') {
+      const rows = await all(`SELECT ${AGENDA_SELECT} ${AGENDA_FROM} WHERE f.agency_id = @agency_id AND f.status = 'pending' AND f.due_at >= @day_end AND l.status ${OPEN} ${mineF} ORDER BY f.due_at ASC LIMIT 100`, { ...base, day_end: b.day_end });
+      return res.json({ view, items: rows.map(agendaItem) });
+    }
+    if (view === 'completed') {
+      const rows = await all(`SELECT ${AGENDA_SELECT} ${AGENDA_FROM} WHERE f.agency_id = @agency_id AND f.status = 'done' AND f.completed_at >= NOW() - interval '60 days' ${mineF} ORDER BY f.completed_at DESC LIMIT 100`, base);
+      return res.json({ view, items: rows.map(agendaItem) });
+    }
+    if (view === 'day') {
+      const date = String(req.query.date || '');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Fecha no válida (AAAA-MM-DD).' });
+      const rows = await all(
+        `SELECT ${AGENDA_SELECT} ${AGENDA_FROM}
+         WHERE f.agency_id = @agency_id AND f.status IN ('pending','done') ${mineF}
+           AND f.due_at >= (@d::date)::timestamp AT TIME ZONE @tz AND f.due_at < ((@d::date + 1)::timestamp AT TIME ZONE @tz)
+         ORDER BY f.due_at ASC LIMIT 100`, { ...base, d: date, tz });
+      const visits = await all(
+        `SELECT a.id, a.status, a.type, a.location, ${APPT_TS} AS starts_at, l.id AS lead_id, l.name, p.title AS property_title
+         FROM appointments a JOIN leads l ON l.id = a.lead_id AND l.agency_id = a.agency_id LEFT JOIN properties p ON p.id = a.property_id
+         WHERE a.agency_id = @agency_id AND a.status <> 'cancelled'
+           AND ${APPT_TS} >= (@d::date)::timestamp AT TIME ZONE @tz AND ${APPT_TS} < ((@d::date + 1)::timestamp AT TIME ZONE @tz)
+         ORDER BY ${APPT_TS} ASC LIMIT 50`, { agency_id: agencyId, d: date, tz });
+      return res.json({ view, date, items: rows.map(agendaItem), visits });
+    }
+    if (view === 'agents') {
+      const rows = await all(
+        `SELECT f.assigned_to AS user_id, u.name,
+                COUNT(*) FILTER (WHERE f.due_at < @day_start) AS overdue,
+                COUNT(*) FILTER (WHERE f.due_at >= @day_start AND f.due_at < @day_end) AS today,
+                COUNT(*) FILTER (WHERE f.due_at >= @day_end) AS upcoming
+         FROM followups f JOIN leads l ON l.id = f.lead_id AND l.agency_id = f.agency_id LEFT JOIN users u ON u.id = f.assigned_to
+         WHERE f.agency_id = @agency_id AND f.status = 'pending' AND l.status ${OPEN}
+         GROUP BY f.assigned_to, u.name ORDER BY 3 DESC, 4 DESC`, { ...base, day_start: b.day_start, day_end: b.day_end });
+      const open = await all(`SELECT assigned_to AS user_id, COUNT(*) AS n FROM leads WHERE agency_id = @agency_id AND status ${OPEN} GROUP BY assigned_to`, base);
+      const openMap = new Map(open.map((o) => [o.user_id, Number(o.n)]));
+      const agents = rows.map((r) => ({ user_id: r.user_id, name: r.name || 'Sin asignar', overdue: Number(r.overdue), today: Number(r.today), upcoming: Number(r.upcoming), open_contacts: openMap.get(r.user_id) || 0 }));
+      return res.json({ view, agents });
+    }
+    return res.status(400).json({ error: 'Vista no válida.' });
+  } catch (e) { fail(res, e, 'No se pudo cargar la agenda.'); }
+});
+
+router.get('/calendar', async (req, res) => {
+  try {
+    const month = String(req.query.month || '');
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return res.status(400).json({ error: 'Mes no válido (AAAA-MM).' });
+    const agencyId = req.user.agency_id;
+    const { tz } = await agencyInfo(agencyId);
+    const first = `${month}-01`;
+    const range = `>= (@m::date)::timestamp AT TIME ZONE @tz AND`;
+    const rows = await all(
+      `SELECT to_char(f.due_at AT TIME ZONE @tz, 'YYYY-MM-DD') AS d, f.status, COUNT(*) AS n
+       FROM followups f JOIN leads l ON l.id = f.lead_id AND l.agency_id = f.agency_id
+       WHERE f.agency_id = @a AND f.status IN ('pending','done') AND f.due_at ${range} f.due_at < ((@m::date + interval '1 month')::timestamp AT TIME ZONE @tz)
+       GROUP BY 1, 2`, { a: agencyId, m: first, tz });
+    const vrows = await all(
+      `SELECT to_char(${APPT_TS} AT TIME ZONE @tz, 'YYYY-MM-DD') AS d, COUNT(*) AS n
+       FROM appointments a WHERE a.agency_id = @a AND a.status <> 'cancelled'
+         AND ${APPT_TS} >= (@m::date)::timestamp AT TIME ZONE @tz AND ${APPT_TS} < ((@m::date + interval '1 month')::timestamp AT TIME ZONE @tz)
+       GROUP BY 1`, { a: agencyId, m: first, tz });
+    const days = {};
+    for (const r of rows) { days[r.d] = days[r.d] || { pending: 0, done: 0, visits: 0 }; days[r.d][r.status] = Number(r.n); }
+    for (const r of vrows) { days[r.d] = days[r.d] || { pending: 0, done: 0, visits: 0 }; days[r.d].visits = Number(r.n); }
+    res.json({ month, days });
+  } catch (e) { fail(res, e, 'No se pudo cargar el calendario.'); }
+});
+
+// ── Ficha de inmueble: interesados, consultas, visitas, seguimientos ──────
+
+router.get('/property/:id', async (req, res) => {
+  try {
+    if (!uuid.safeParse(req.params.id).success) return res.status(400).json({ error: 'Identificador no válido.' });
+    const a = req.user.agency_id;
+    const prop = await get('SELECT id, title, zone, city, status, images FROM properties WHERE id = @id AND agency_id = @a', { id: req.params.id, a });
+    if (!prop) return res.status(404).json({ error: 'Inmueble no encontrado.' });
+    const [interested, visits, pending, last] = await Promise.all([
+      all(`SELECT l.id, l.name, l.status, l.priority, pi.status AS interest_status, ${LAST_TOUCH_SQL} AS last_touch
+           FROM property_interests pi JOIN leads l ON l.id = pi.lead_id AND l.agency_id = @a
+           WHERE pi.property_id = @id AND pi.agency_id = @a ORDER BY pi.created_at DESC LIMIT 50`, { id: prop.id, a }),
+      all(`SELECT a.id, a.status, ${APPT_TS} AS starts_at, l.id AS lead_id, l.name
+           FROM appointments a JOIN leads l ON l.id = a.lead_id AND l.agency_id = a.agency_id
+           WHERE a.agency_id = @a AND a.property_id = @id ORDER BY ${APPT_TS} DESC NULLS LAST LIMIT 30`, { id: prop.id, a }),
+      all(`SELECT f.id, f.due_at, f.channel, f.goal, l.id AS lead_id, l.name
+           FROM followups f JOIN leads l ON l.id = f.lead_id AND l.agency_id = f.agency_id
+           WHERE f.agency_id = @a AND f.property_id = @id AND f.status = 'pending' ORDER BY f.due_at ASC LIMIT 30`, { id: prop.id, a }),
+      all(`SELECT ac.lead_id, l.name, ac.type, ac.description, ac.created_at
+           FROM activities ac JOIN leads l ON l.id = ac.lead_id AND l.agency_id = ac.agency_id
+           WHERE ac.agency_id = @a AND ac.type IN ('contact','summary')
+             AND ac.lead_id IN (SELECT lead_id FROM property_interests WHERE property_id = @id AND agency_id = @a)
+           ORDER BY ac.created_at DESC LIMIT 8`, { id: prop.id, a }),
+    ]);
+    const now = Date.now();
+    const done = visits.filter((v) => v.starts_at && new Date(v.starts_at).getTime() < now && v.status !== 'cancelled').length;
+    const upcoming = visits.filter((v) => v.starts_at && new Date(v.starts_at).getTime() >= now && v.status !== 'cancelled');
+    res.json({
+      property: { id: prop.id, title: prop.title, zone: prop.zone, city: prop.city, status: prop.status, photo: firstImage(prop.images) },
+      counts: { interested: interested.length, consultations: interested.length, visits_done: done, visits_upcoming: upcoming.length, pending_followups: pending.length },
+      interested: interested.map((i) => ({ ...i, status_label: statusLabel(i.status) })),
+      visits: visits.map((v) => ({ id: v.id, status: v.status, starts_at: v.starts_at, lead_id: v.lead_id, name: v.name })),
+      pending_followups: pending,
+      last_interactions: last.map((x) => ({ ...x, description: String(x.description || '').slice(0, 160) })),
+    });
+  } catch (e) { fail(res, e, 'No se pudo cargar la actividad del inmueble.'); }
 });
 
 router.get('/status', (req, res) => res.json({ ai_available: aiAvailable(), goals: GOALS }));

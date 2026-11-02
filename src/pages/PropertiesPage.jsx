@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../lib/api'
+import PropertyActivityPanel from '../components/followup/PropertyActivityPanel'
 import { supabase } from '../lib/supabaseClient'
 import { useStore } from '../lib/store'
 import { formatCurrency, formatDate, getPropertyTypeLabel } from '../utils/formatters'
@@ -740,7 +741,7 @@ function DetailDrawer({ property, activeTab, setActiveTab, onClose, onDelete, ma
             <>
               {activeTab === 'summary' && <SummaryTab property={property} />}
               {activeTab === 'images' && <ImagesTab images={images} />}
-              {activeTab === 'interested' && <InterestedTab interests={interests} loading={interestsLoading} addInterest={addInterest} leads={leads} />}
+              {activeTab === 'interested' && (<><InterestedTab interests={interests} loading={interestsLoading} addInterest={addInterest} leads={leads} /><PropertyActivityPanel propertyId={property.id} /></>)}
               {activeTab === 'compatible' && <CompatibleTab matches={matches} />}
               {activeTab === 'activity' && <ActivityTab property={property} activityLog={activityLog} loading={activityLoading} />}
               {activeTab === 'marketing' && <MarketingTab marketing={marketing} loadMarketing={loadMarketing} />}

@@ -1,4 +1,5 @@
-import { X } from 'lucide-react'
+import { useState } from 'react'
+import { X, Building2 } from 'lucide-react'
 
 export const CHANNELS = [
   { id: 'whatsapp', label: 'WhatsApp' },
@@ -81,4 +82,47 @@ export function fmtAgo(days) {
   if (days <= 0) return 'hoy'
   if (days === 1) return 'ayer'
   return `hace ${days} días`
+}
+
+// ── Fase 2-4 ──────────────────────────────────────────────────────────
+// Ojo: este proyecto define red/amber/slate como colores planos; por eso aquí se usan valores hex.
+export const ALERT_ORDER = ['inmediata', 'recomendada', 'pendiente_confirmar', 'sin_actividad']
+export const ALERT_STYLE = {
+  inmediata: { label: 'Atención inmediata', border: 'border-[#EF4444]/30', badge: 'border-[#EF4444]/40 bg-[#EF4444]/15 text-[#FCA5A5]', title: 'text-[#FCA5A5]', help: 'Conviene actuar hoy.' },
+  recomendada: { label: 'Seguimiento recomendado', border: 'border-indigo-500/25', badge: 'border-indigo-500/40 bg-indigo-500/15 text-indigo-200', title: 'text-indigo-300', help: 'Toca retomar el contacto.' },
+  pendiente_confirmar: { label: 'Pendiente de confirmar', border: 'border-[#F59E0B]/30', badge: 'border-[#F59E0B]/40 bg-[#F59E0B]/15 text-[#FCD34D]', title: 'text-[#FCD34D]', help: 'Visitas próximas que el cliente no ha confirmado.' },
+  sin_actividad: { label: 'Sin actividad', border: 'border-[#2A2A3C]', badge: 'border-[#64748B]/40 bg-[#64748B]/15 text-[#CBD5E1]', title: 'text-[#CBD5E1]', help: 'Llevan mucho tiempo sin movimiento: reactívalos o archívalos.' },
+}
+export const PRIORITIES = [{ id: 'alta', label: 'Alta' }, { id: 'media', label: 'Media' }, { id: 'baja', label: 'Baja' }]
+export const CLIENT_TYPES = [
+  { id: '', label: 'Sin indicar' }, { id: 'comprador', label: 'Comprador' }, { id: 'vendedor', label: 'Vendedor' },
+  { id: 'propietario', label: 'Propietario' }, { id: 'inquilino', label: 'Inquilino' }, { id: 'otro', label: 'Otro' },
+]
+export const clientTypeLabel = (id) => CLIENT_TYPES.find((c) => c.id === id)?.label || ''
+
+export const fmtDateTime = (iso) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return `${d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })} · ${d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`
+}
+
+export function PropertyThumb({ property, size = 56 }) {
+  const [broken, setBroken] = useState(false)
+  const box = { width: size, height: size }
+  if (property?.photo && !broken) {
+    return <img src={property.photo} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(true)} style={box} className="shrink-0 rounded-xl border border-[#1E1E2E] object-cover" />
+  }
+  return <div style={box} className="flex shrink-0 items-center justify-center rounded-xl border border-[#1E1E2E] bg-[#0D0D14] text-[#475569]"><Building2 size={Math.round(size / 2.6)} /></div>
+}
+
+export function Select({ value, onChange, options, label, disabled }) {
+  return (
+    <label className="block text-xs text-[#94A3B8]">
+      {label}
+      <select value={value ?? ''} disabled={disabled} onChange={(e) => onChange(e.target.value)}
+        className="mt-1 block w-full rounded-lg border border-[#2A2A3C] bg-[#0D0D14] px-2.5 py-2 text-sm text-[#F1F5F9] focus:border-indigo-500 focus:outline-none disabled:opacity-60">
+        {options.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+      </select>
+    </label>
+  )
 }

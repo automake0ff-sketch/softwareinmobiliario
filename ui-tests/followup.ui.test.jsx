@@ -16,24 +16,44 @@ import LogContactModal from '../src/components/followup/LogContactModal'
 import MessageDrawer from '../src/components/followup/MessageDrawer'
 import SummaryModal from '../src/components/followup/SummaryModal'
 import LeadPicker from '../src/components/followup/LeadPicker'
+import SettingsModal from '../src/components/followup/SettingsModal'
+import LeadFollowUpCard from '../src/components/followup/LeadFollowUpCard'
+import PropertyActivityPanel from '../src/components/followup/PropertyActivityPanel'
 
 const lead = (o = {}) => ({ id: 'l1', name: 'Marcos Vencido', phone: '600112233', email: 'm@x.es', status: 'interesado', status_label: 'Interesado', has_whatsapp: true, whatsapp_opt_out: false, ...o })
-const item = (o = {}) => ({ kind: 'followup', followup_id: 'f1', lead: lead(), property: { id: 'p1', title: 'Piso en Triana' }, due_at: new Date(Date.now() - 2 * 86400000).toISOString(), channel: 'whatsapp', goal: 'follow_up', note: null, days_overdue: 2, days_since_contact: 8, priority: 80, reasons: ['Seguimiento vencido hace 2 días'], last_interaction: null, ...o })
+const item = (o = {}) => ({ kind: 'followup', followup_id: 'f1', lead: lead(), property: { id: 'p1', title: 'Piso en Triana', photo: 'https://fotos.test/triana.jpg' }, due_at: new Date(Date.now() - 2 * 86400000).toISOString(), channel: 'whatsapp', goal: 'follow_up', note: null, days_overdue: 2, days_since_contact: 8, priority: 80, reasons: ['Seguimiento vencido hace 2 días'], alert_class: 'inmediata', rule: 'seguimiento_vencido_2d', facts: ['Estado: Interesado', 'Último contacto: hace 8 días', 'Seguimiento vencido hace 2 días'], recommendation: { text: 'Retoma la conversación y deja programado el siguiente paso.', goal: 'follow_up' }, last_interaction: null, ...o })
+const settings = { stale_days: { nuevo: 1, contactado: 4, interesado: 5, visita_agendada: 3, negociacion: 3, reserva: 2 }, inactive_days: 30, visit_followup_days: 1 }
 const today = (o = {}) => ({
-  summary: { overdue: 1, today: 1, abandoned: 1, upcoming_week: 3, attention_total: 3 },
+  summary: { overdue: 1, today: 1, abandoned: 1, upcoming_week: 3, visits_no_followup: 1, visits_unconfirmed: 1, attention_total: 4 },
+  kpis: { active_contacts: 12, new_week: 3, to_contact: 2, overdue: 1, today: 1, visits_pending: 2, visits_no_followup: 1, inactive: 1, priority_opportunities: 2 },
+  alert_counts: { inmediata: 2, recomendada: 1, pendiente_confirmar: 1, sin_actividad: 1 },
+  settings,
   overdue: [item()],
-  today: [item({ followup_id: 'f2', lead: lead({ id: 'l2', name: 'Elena Hoy' }), due_at: new Date().toISOString(), days_overdue: 0, reasons: ['Seguimiento programado para hoy'] })],
-  abandoned: [item({ kind: 'abandoned', followup_id: null, due_at: null, lead: lead({ id: 'l3', name: 'Lucía Abandonada', status: 'nuevo', status_label: 'Nuevo' }), reasons: ['Sin contacto desde hace 3 días y sin próximo paso'] })],
+  today: [item({ followup_id: 'f2', lead: lead({ id: 'l2', name: 'Elena Hoy' }), due_at: new Date().toISOString(), days_overdue: 0, alert_class: 'recomendada', facts: ['Estado: Interesado', 'Seguimiento programado para hoy'], reasons: ['Seguimiento programado para hoy'] })],
+  abandoned: [item({ kind: 'abandoned', followup_id: null, due_at: null, alert_class: 'sin_actividad', lead: lead({ id: 'l3', name: 'Lucía Abandonada', status: 'nuevo', status_label: 'Nuevo' }), facts: ['Estado: Nuevo', 'Sin próxima acción programada'], reasons: ['Sin contacto desde hace 40 días'] })],
+  visits_no_followup: [item({ kind: 'visit_no_followup', followup_id: null, appointment_id: 'a1', visit_at: new Date(Date.now() - 3 * 86400000).toISOString(), due_at: null, lead: lead({ id: 'l4', name: 'María Visitó' }), goal: 'post_visit', alert_class: 'inmediata', facts: ['Estado: Visita agendada', 'Visita del 29 oct sin contacto posterior registrado'], recommendation: { text: 'Contacta para conocer su opinión sobre la visita y resolver dudas.', goal: 'post_visit' } })],
+  visits_unconfirmed: [item({ kind: 'visit_unconfirmed', followup_id: null, appointment_id: 'a2', visit_at: new Date(Date.now() + 20 * 3600000).toISOString(), due_at: null, lead: lead({ id: 'l5', name: 'Pedro Sin Confirmar' }), alert_class: 'pendiente_confirmar', facts: ['Estado: Visita agendada'], recommendation: { text: 'Confirma la visita con el cliente.', goal: 'follow_up' } })],
   abandoned_hidden: 0, truncated: false, ai_available: false, ...o,
 })
+const agendaItem = (o = {}) => ({ followup_id: 'u1', due_at: new Date(Date.now() + 3 * 86400000).toISOString(), status: 'pending', channel: 'whatsapp', goal: 'follow_up', lead: lead({ id: 'l6', name: 'Próximo Cliente' }), property: null, assigned_name: 'Laura', ...o })
 const renderPage = () => render(<MemoryRouter><FollowUpPage /></MemoryRouter>)
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mockApi.get.mockImplementation(async (url) => {
+  mockApi.get.mockImplementation(async (url, params) => {
     if (url === '/followup/today') return today()
     if (url === '/followup/digest') return { enabled: true, delivery_configured: true }
     if (url === '/followup/leads/search') return [{ id: 'l9', name: 'Ana López', phone: '611223344', status: 'nuevo' }]
+    if (url === '/followup/settings') return { settings, can_edit: true }
+    if (url === '/followup/agenda') {
+      if (params?.view === 'upcoming') return { items: [agendaItem()] }
+      if (params?.view === 'completed') return { items: [agendaItem({ followup_id: 'c1', status: 'done', completed_at: new Date().toISOString(), lead: lead({ id: 'l7', name: 'Ya Completado' }) })] }
+      if (params?.view === 'agents') return { agents: [{ user_id: 'u1', name: 'Laura Gómez', overdue: 2, today: 1, upcoming: 4, open_contacts: 9 }] }
+      if (params?.view === 'day') return { items: [agendaItem({ lead: lead({ id: 'l8', name: 'Cliente del día' }) })], visits: [{ id: 'v1', starts_at: new Date().toISOString(), name: 'Visita Día', property_title: 'Ático', status: 'scheduled' }] }
+    }
+    if (url === '/followup/calendar') return { month: params.month, days: { [`${params.month}-15`]: { pending: 2, done: 1, visits: 1 } } }
+    if (/^\/followup\/leads\/l\d+$/.test(url)) return { lead: lead({ id: url.split('/').pop(), priority: 'media', client_type: null, budget: null }), timeline: [{ id: 't1', type: 'contact', description: 'Llamada · Habló con el cliente', created_at: new Date().toISOString() }], pending_followups: [{ id: 'pf', due_at: new Date(Date.now() + 86400000).toISOString(), channel: 'whatsapp' }], appointments: [] }
+    if (/^\/followup\/property\//.test(url)) return { property: { id: 'p1', title: 'Piso' }, counts: { interested: 3, consultations: 3, visits_done: 2, visits_upcoming: 1, pending_followups: 1 }, interested: [], visits: [], pending_followups: [{ id: 'x', due_at: new Date().toISOString(), lead_id: 'l1', name: 'Marcos Vencido' }], last_interactions: [{ lead_id: 'l1', name: 'Marcos Vencido', description: 'Llamada realizada', created_at: new Date().toISOString() }] }
     return {}
   })
   mockApi.post.mockResolvedValue({ ok: true })
@@ -42,14 +62,35 @@ beforeEach(() => {
 })
 
 describe('Pantalla Seguimiento de hoy', () => {
-  it('muestra vencidos, hoy y abandonados con sus motivos y contadores', async () => {
+  it('muestra los KPIs reales y las secciones con sus tarjetas', async () => {
     renderPage()
     expect(await screen.findByText('Marcos Vencido')).toBeInTheDocument()
-    expect(screen.getByText('Elena Hoy')).toBeInTheDocument()
-    expect(screen.getByText('Lucía Abandonada')).toBeInTheDocument()
-    expect(screen.getAllByText(/Seguimiento vencido hace 2 días/).length).toBeGreaterThan(0)
-    expect(screen.getByText('1 vencidos')).toBeInTheDocument(); expect(screen.getByText('3 próximos 7 días')).toBeInTheDocument()
-    expect(screen.getAllByText('Piso en Triana').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('Seguimientos vencidos')).toBeInTheDocument(); expect(screen.getByText('Visitas sin seguimiento', { selector: 'p' })).toBeInTheDocument()
+    expect(screen.getByRole('list', { name: 'Resumen de contactos' })).toHaveTextContent('12 contactos activos')
+    expect(screen.getByText('Elena Hoy')).toBeInTheDocument(); expect(screen.getByText('Lucía Abandonada')).toBeInTheDocument()
+    expect(screen.getByText('María Visitó')).toBeInTheDocument(); expect(screen.getByText('Pedro Sin Confirmar')).toBeInTheDocument()
+  })
+
+  it('la tarjeta separa hechos de recomendación y enseña la foto del inmueble', async () => {
+    renderPage(); await screen.findByText('Marcos Vencido')
+    const card = screen.getByText('Marcos Vencido').closest('article')
+    expect(within(card).getByText('Hechos')).toBeInTheDocument(); expect(within(card).getByText(/Seguimiento vencido hace 2 días/)).toBeInTheDocument()
+    expect(within(card).getByText(/Recomendación:/)).toBeInTheDocument(); expect(within(card).getByText('Atención inmediata')).toBeInTheDocument()
+    expect(card.querySelector('img')).toHaveAttribute('src', 'https://fotos.test/triana.jpg')
+  })
+
+  it('las visitas sin seguimiento recomiendan contactar y permiten programar el siguiente paso', async () => {
+    renderPage(); await screen.findByText('María Visitó')
+    const card = screen.getByText('María Visitó').closest('article')
+    expect(within(card).getByText(/Contacta para conocer su opinión sobre la visita/)).toBeInTheDocument()
+    await userEvent.click(within(card).getByRole('button', { name: /Programar/ })); await userEvent.click(within(card).getByRole('button', { name: 'En 3 días' }))
+    await waitFor(() => expect(mockApi.post).toHaveBeenCalledWith('/followup/followups', expect.objectContaining({ lead_id: 'l4', in_days: 3, goal: 'post_visit', property_id: 'p1' })))
+  })
+
+  it('una visita por confirmar no ofrece "Programar" (solo mensaje y registro)', async () => {
+    renderPage(); await screen.findByText('Pedro Sin Confirmar')
+    const card = screen.getByText('Pedro Sin Confirmar').closest('article')
+    expect(within(card).queryByRole('button', { name: /Programar/ })).not.toBeInTheDocument(); expect(within(card).getByText('Pendiente de confirmar')).toBeInTheDocument()
   })
 
   it('"Hecho" marca el seguimiento y recarga con datos frescos', async () => {
@@ -61,17 +102,8 @@ describe('Pantalla Seguimiento de hoy', () => {
 
   it('"Posponer > Mañana" pospone 1 día', async () => {
     renderPage(); await screen.findByText('Marcos Vencido')
-    await userEvent.click(screen.getAllByRole('button', { name: /Posponer/ })[0])
-    await userEvent.click(screen.getByRole('button', { name: 'Mañana' }))
+    await userEvent.click(screen.getAllByRole('button', { name: /Posponer/ })[0]); await userEvent.click(screen.getByRole('button', { name: 'Mañana' }))
     await waitFor(() => expect(mockApi.patch).toHaveBeenCalledWith('/followup/followups/f1', { action: 'snooze', days: 1 }))
-  })
-
-  it('en un abandonado, "Programar > En 3 días" crea el seguimiento', async () => {
-    renderPage(); await screen.findByText('Lucía Abandonada')
-    const card = screen.getByText('Lucía Abandonada').closest('article')
-    await userEvent.click(within(card).getByRole('button', { name: /Programar/ }))
-    await userEvent.click(within(card).getByRole('button', { name: 'En 3 días' }))
-    await waitFor(() => expect(mockApi.post).toHaveBeenCalledWith('/followup/followups', expect.objectContaining({ lead_id: 'l3', in_days: 3 })))
   })
 
   it('"Solo mis contactos" vuelve a pedir la lista con mine=1', async () => {
@@ -81,10 +113,9 @@ describe('Pantalla Seguimiento de hoy', () => {
   })
 
   it('con todo al día muestra el estado vacío con salida clara', async () => {
-    mockApi.get.mockImplementation(async (url) => (url === '/followup/today' ? today({ summary: { overdue: 0, today: 0, abandoned: 0, upcoming_week: 2, attention_total: 0 }, overdue: [], today: [], abandoned: [] }) : url === '/followup/digest' ? { enabled: true, delivery_configured: false } : {}))
+    mockApi.get.mockImplementation(async (url) => (url === '/followup/today' ? today({ summary: { overdue: 0, today: 0, abandoned: 0, upcoming_week: 2, visits_no_followup: 0, visits_unconfirmed: 0, attention_total: 0 }, overdue: [], today: [], abandoned: [], visits_no_followup: [], visits_unconfirmed: [] }) : url === '/followup/digest' ? { enabled: true, delivery_configured: false } : {}))
     renderPage()
-    expect(await screen.findByText('Todo al día')).toBeInTheDocument()
-    expect(screen.getByText(/2 seguimientos programados/)).toBeInTheDocument()
+    expect(await screen.findByText('Todo al día')).toBeInTheDocument(); expect(screen.getByText(/2 seguimientos programados/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Ver leads' })).toHaveAttribute('href', '/leads')
   })
 
@@ -107,6 +138,81 @@ describe('Pantalla Seguimiento de hoy', () => {
     expect(screen.getByRole('dialog', { name: 'Registrar contacto' })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Guardar' }))
     await waitFor(() => expect(mockApi.post).toHaveBeenCalledWith('/followup/leads/l1/log', expect.objectContaining({ channel: 'whatsapp', outcome: 'answered', followup_id: 'f1', property_id: 'p1', next: expect.objectContaining({ in_days: 3 }) })))
+  })
+})
+
+describe('Pestañas de la agenda', () => {
+  it('"En riesgo" agrupa por clase de alerta con reglas objetivas', async () => {
+    renderPage(); await screen.findByText('Marcos Vencido')
+    await userEvent.click(screen.getByRole('tab', { name: /En riesgo/ }))
+    for (const t of ['Atención inmediata', 'Seguimiento recomendado', 'Pendiente de confirmar', 'Sin actividad']) expect(screen.getAllByText(t).length).toBeGreaterThan(0)
+    expect(screen.getByText(/reglas objetivas/)).toBeInTheDocument()
+  })
+
+  it('"Próximos" y "Completados" piden su vista a la agenda', async () => {
+    renderPage(); await screen.findByText('Marcos Vencido')
+    await userEvent.click(screen.getByRole('tab', { name: 'Próximos' })); expect(await screen.findByText('Próximo Cliente')).toBeInTheDocument()
+    expect(mockApi.get).toHaveBeenCalledWith('/followup/agenda', expect.objectContaining({ view: 'upcoming' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Completados' })); expect(await screen.findByText('Ya Completado')).toBeInTheDocument()
+  })
+
+  it('"Equipo" muestra la carga por agente', async () => {
+    renderPage(); await screen.findByText('Marcos Vencido'); await userEvent.click(screen.getByRole('tab', { name: 'Equipo' }))
+    const row = (await screen.findByText('Laura Gómez')).closest('tr'); expect(within(row).getByText('9')).toBeInTheDocument()
+  })
+
+  it('"Calendario" muestra el mes con conteos y al pulsar un día lista sus elementos', async () => {
+    renderPage(); await screen.findByText('Marcos Vencido'); await userEvent.click(screen.getByRole('tab', { name: 'Calendario' }))
+    const day = await screen.findByRole('button', { name: 'Día 15' }); expect(day).toHaveTextContent('2'); expect(day).toHaveTextContent('1v')
+    await userEvent.click(day)
+    expect(await screen.findByText('Cliente del día')).toBeInTheDocument(); expect(screen.getByText(/Visita Día/)).toBeInTheDocument()
+    expect(mockApi.get).toHaveBeenCalledWith('/followup/agenda', expect.objectContaining({ view: 'day' }))
+  })
+
+  it('"Buscar cliente" abre su ficha con historial y permite cambiar la prioridad', async () => {
+    renderPage(); await screen.findByText('Marcos Vencido')
+    await userEvent.click(screen.getByRole('button', { name: /Buscar cliente/ }))
+    await userEvent.click(await screen.findByRole('button', { name: /Ana López/ }))
+    expect(await screen.findByText('Llamada · Habló con el cliente')).toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByLabelText('Prioridad'), 'alta')
+    await waitFor(() => expect(mockApi.patch).toHaveBeenCalledWith('/followup/leads/l9/meta', { priority: 'alta' }))
+  })
+
+  it('"Reglas" abre los ajustes, deja guardar cambios y se refresca la agenda', async () => {
+    renderPage(); await screen.findByText('Marcos Vencido'); await userEvent.click(screen.getByRole('button', { name: /Reglas/ }))
+    const dlg = await screen.findByRole('dialog', { name: 'Reglas de alerta' })
+    const inputs = within(dlg).getAllByRole('spinbutton'); expect(inputs).toHaveLength(8)
+    await userEvent.clear(inputs[1]); await userEvent.type(inputs[1], '2')
+    mockApi.put.mockResolvedValueOnce({ settings: { ...settings, stale_days: { ...settings.stale_days, contactado: 2 } } })
+    await userEvent.click(within(dlg).getByRole('button', { name: 'Guardar reglas' }))
+    await waitFor(() => expect(mockApi.put).toHaveBeenCalledWith('/followup/settings', expect.objectContaining({ stale_days: expect.objectContaining({ contactado: 2 }) })))
+  })
+})
+
+describe('Ajustes de reglas', () => {
+  it('un usuario sin permisos ve las reglas pero no puede editarlas', async () => {
+    mockApi.get.mockImplementation(async (url) => (url === '/followup/settings' ? { settings, can_edit: false } : {}))
+    render(<SettingsModal onClose={() => {}} />)
+    const inputs = await screen.findAllByRole('spinbutton'); inputs.forEach((i) => expect(i).toBeDisabled())
+    expect(screen.getByText(/Solo un administrador/)).toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Guardar reglas' })).not.toBeInTheDocument()
+  })
+})
+
+describe('Integración en las fichas existentes', () => {
+  it('la ficha del contacto muestra prioridad, tipo, próximo seguimiento y guarda cambios', async () => {
+    mockApi.get.mockImplementation(async () => ({ lead: lead({ priority: 'media', client_type: null }), timeline: [{ id: 't', type: 'contact', description: 'Llamada previa' }], pending_followups: [], appointments: [] }))
+    render(<MemoryRouter><LeadFollowUpCard leadId="l1" /></MemoryRouter>)
+    expect(await screen.findByText('Sin próxima acción')).toBeInTheDocument(); expect(screen.getByText('Llamada previa')).toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByLabelText('Tipo de cliente'), 'propietario')
+    await waitFor(() => expect(mockApi.patch).toHaveBeenCalledWith('/followup/leads/l1/meta', { client_type: 'propietario' }))
+    expect(screen.getByRole('link', { name: 'Preparar mensaje' })).toHaveAttribute('href', '/seguimiento?lead=l1')
+  })
+
+  it('la ficha del inmueble muestra interesados, visitas y seguimientos reales', async () => {
+    render(<MemoryRouter><PropertyActivityPanel propertyId="p1" /></MemoryRouter>)
+    const panel = await screen.findByTestId('property-activity')
+    expect(within(panel).getByText('Interesados').previousSibling).toHaveTextContent('3'); expect(within(panel).getByText('Visitas realizadas').previousSibling).toHaveTextContent('2')
+    expect(within(panel).getAllByText('Marcos Vencido').length).toBeGreaterThan(0); expect(within(panel).getByText('Llamada realizada')).toBeInTheDocument()
   })
 })
 

@@ -26,6 +26,8 @@ export const leadSchema = z.object({
   zones: z.string().optional().nullable(),
   urgency: z.string().optional().nullable(),
   property_type: z.string().optional().nullable(),
+  priority: z.enum(['alta', 'media', 'baja']).optional(),
+  client_type: z.enum(['comprador', 'vendedor', 'propietario', 'inquilino', 'otro']).optional().nullable(),
   assigned_to: z.string().optional().nullable(),
   office_id: z.string().optional().nullable(),
   pipeline_stage: z.string().optional().nullable(),

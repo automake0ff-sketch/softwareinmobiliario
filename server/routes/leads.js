@@ -241,7 +241,10 @@ router.patch('/:id', validateBody(leadSchema.partial()), async (req, res) => {
     const existing = await get('SELECT * FROM leads WHERE id = @id AND agency_id = @agency_id', { id: req.params.id, agency_id: req.user.agency_id });
     if (!existing) return res.status(404).json({ error: 'Lead no encontrado.' });
 
-    const allowed = ['name', 'phone', 'email', 'budget', 'zone', 'property_interest', 'source', 'status', 'pipeline_stage', 'office_id', 'assigned_to', 'ia_score', 'ia_insights', 'ia_insight', 'ia_summary', 'urgency', 'operation_type', 'budget_max', 'zones', 'property_type'];
+    const allowed = ['name', 'phone', 'email', 'budget', 'zone', 'property_interest', 'source', 'status', 'pipeline_stage', 'office_id', 'assigned_to', 'ia_score', 'ia_insights', 'ia_insight', 'ia_summary', 'urgency', 'operation_type', 'budget_max', 'zones', 'property_type', 'priority', 'client_type'];
+    // Prioridad y tipo de cliente: solo valores permitidos (evita datos basura y errores 500 por CHECK)
+    if (req.body.priority !== undefined && !['alta', 'media', 'baja'].includes(req.body.priority)) return res.status(400).json({ error: 'Prioridad no válida.' });
+    if (req.body.client_type !== undefined && req.body.client_type !== null && !['comprador', 'vendedor', 'propietario', 'inquilino', 'otro'].includes(req.body.client_type)) return res.status(400).json({ error: 'Tipo de cliente no válido.' });
     const updates = [];
     const params = { id: req.params.id };
 
@@ -294,7 +297,10 @@ router.put('/:id', validateBody(leadSchema.partial()), async (req, res) => {
     if (!existing) return res.status(404).json({ error: 'Lead no encontrado.' });
     if (existing.agency_id !== req.user.agency_id) return res.status(403).json({ error: 'No autorizado para modificar este lead.' });
 
-    const allowed = ['name', 'phone', 'email', 'budget', 'zone', 'property_interest', 'source', 'status', 'pipeline_stage', 'office_id', 'assigned_to', 'ia_score', 'ia_insights', 'ia_insight', 'ia_summary', 'urgency', 'operation_type', 'budget_max', 'zones', 'property_type'];
+    const allowed = ['name', 'phone', 'email', 'budget', 'zone', 'property_interest', 'source', 'status', 'pipeline_stage', 'office_id', 'assigned_to', 'ia_score', 'ia_insights', 'ia_insight', 'ia_summary', 'urgency', 'operation_type', 'budget_max', 'zones', 'property_type', 'priority', 'client_type'];
+    // Prioridad y tipo de cliente: solo valores permitidos (evita datos basura y errores 500 por CHECK)
+    if (req.body.priority !== undefined && !['alta', 'media', 'baja'].includes(req.body.priority)) return res.status(400).json({ error: 'Prioridad no válida.' });
+    if (req.body.client_type !== undefined && req.body.client_type !== null && !['comprador', 'vendedor', 'propietario', 'inquilino', 'otro'].includes(req.body.client_type)) return res.status(400).json({ error: 'Tipo de cliente no válido.' });
     const updates = [];
     const params = { id: req.params.id };
 

@@ -1096,6 +1096,24 @@ async function runMigration() {
     { type: 'sql', sql: `ALTER TABLE followup_digest_log ENABLE ROW LEVEL SECURITY` },
     { type: 'sql', sql: `CREATE UNIQUE INDEX IF NOT EXISTS uq_payment_history_invoice ON payment_history(stripe_invoice_id) WHERE stripe_invoice_id IS NOT NULL` },
     { type: 'sql', sql: `CREATE INDEX IF NOT EXISTS idx_leads_agency_status_updated ON leads(agency_id, status, updated_at DESC)` },
+    { type: 'column', table: 'leads', column: 'priority', sql: `ALTER TABLE leads ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'media'` },
+    { type: 'column', table: 'leads', column: 'client_type', sql: `ALTER TABLE leads ADD COLUMN IF NOT EXISTS client_type TEXT` },
+    { type: 'sql', sql: `CREATE TABLE IF NOT EXISTS followup_settings (
+      agency_id UUID PRIMARY KEY REFERENCES agencies(id) ON DELETE CASCADE,
+      stale_days JSONB NOT NULL DEFAULT '{}'::jsonb,
+      inactive_days INTEGER NOT NULL DEFAULT 30,
+      visit_followup_days INTEGER NOT NULL DEFAULT 1,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )` },
+    { type: 'sql', sql: `ALTER TABLE followup_settings ENABLE ROW LEVEL SECURITY` },
+    { type: 'sql', sql: `DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'leads_status_check' AND conrelid = 'leads'::regclass AND pg_get_constraintdef(oid) LIKE '%perdido%') THEN
+    ALTER TABLE leads DROP CONSTRAINT IF EXISTS leads_status_check;
+    ALTER TABLE leads ADD CONSTRAINT leads_status_check
+      CHECK (status IN ('nuevo','contactado','interesado','visita_agendada','negociacion','reserva','cerrado','perdido'));
+  END IF;
+END $$;
+` },
     // Deny-by-default para PostgREST si la migración 00010 aún no se ha aplicado (el servidor Express no se ve afectado)
     { type: 'sql', sql: `ALTER TABLE followups ENABLE ROW LEVEL SECURITY` },
     // ── Lead Automation new tables ──

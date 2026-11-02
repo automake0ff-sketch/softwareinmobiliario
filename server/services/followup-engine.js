@@ -14,6 +14,34 @@ export const STALE_DAYS = {
   reserva: 2,
 };
 
+// ── Reglas de alerta configurables ────────────────────────────────────
+export const DEFAULT_SETTINGS = { stale_days: { ...STALE_DAYS }, inactive_days: 30, visit_followup_days: 1 };
+
+const clampInt = (v, min, max, fallback) => {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) && n >= min && n <= max ? n : fallback;
+};
+
+/** Mezcla la fila guardada con los valores por defecto, descartando cualquier valor no válido. */
+export function mergeSettings(row = {}) {
+  let stored = row?.stale_days;
+  if (typeof stored === 'string') { try { stored = JSON.parse(stored); } catch { stored = {}; } }
+  const stale = { ...STALE_DAYS };
+  for (const k of Object.keys(STALE_DAYS)) stale[k] = clampInt(stored?.[k], 1, 120, STALE_DAYS[k]);
+  return {
+    stale_days: stale,
+    inactive_days: clampInt(row?.inactive_days, 7, 365, DEFAULT_SETTINGS.inactive_days),
+    visit_followup_days: clampInt(row?.visit_followup_days, 0, 30, DEFAULT_SETTINGS.visit_followup_days),
+  };
+}
+
+export const ALERT_CLASSES = {
+  inmediata: 'Atención inmediata',
+  recomendada: 'Seguimiento recomendado',
+  sin_actividad: 'Sin actividad',
+  pendiente_confirmar: 'Pendiente de confirmar',
+};
+
 export const GOALS = {
   first_contact: 'Primer contacto',
   follow_up: 'Seguimiento',
@@ -61,6 +89,11 @@ export function scoreItem({ lead, daysSinceContact, daysOverdue = 0, snoozeCount
     } else {
       reasons.push('Seguimiento programado para hoy');
     }
+  } else if (kind === 'visit_no_followup') {
+    reasons.push('Visita realizada sin contacto posterior');
+    score += 12;
+  } else if (kind === 'visit_unconfirmed') {
+    reasons.push('Visita próxima sin confirmar');
   } else {
     reasons.push(
       lead.status === 'nuevo' && (daysSinceContact ?? 0) <= 1
@@ -71,11 +104,81 @@ export function scoreItem({ lead, daysSinceContact, daysOverdue = 0, snoozeCount
 
   if (daysSinceContact != null) score += Math.min(Math.max(daysSinceContact, 0) * 2, 20);
   if (lead.ia_score) score += Math.min(Math.round(Number(lead.ia_score) / 10), 10);
+  if (lead.priority === 'alta') score += 10; else if (lead.priority === 'baja') score -= 5;
   if (String(lead.urgency || '').toLowerCase().startsWith('alta')) { score += 8; reasons.push('Urgencia alta'); }
   if (lead.status === 'negociacion' || lead.status === 'reserva') reasons.push('Operación avanzada: no dejes que se enfríe');
   if (snoozeCount >= 2) { score += 4; reasons.push(`Pospuesto ${snoozeCount} veces`); }
 
   return { priority: Math.min(Math.round(score), 100), reasons };
+}
+
+const CLOSE_TO_DEAL = ['negociacion', 'reserva'];
+
+/**
+ * Clasifica un elemento de la agenda con REGLAS objetivas (nunca con IA).
+ * Devuelve { alert_class, rule } donde rule identifica la regla que se ha cumplido.
+ */
+export function classifyAlert({ kind, lead, daysOverdue = 0, daysSinceContact = 0, settings = DEFAULT_SETTINGS }) {
+  const high = lead.priority === 'alta';
+  const deal = CLOSE_TO_DEAL.includes(lead.status);
+  if (kind === 'visit_unconfirmed') return { alert_class: 'pendiente_confirmar', rule: 'visita_sin_confirmar' };
+  if (kind === 'visit_no_followup') return { alert_class: 'inmediata', rule: 'visita_sin_seguimiento' };
+  if (kind === 'followup') {
+    if (daysOverdue >= 2) return { alert_class: 'inmediata', rule: 'seguimiento_vencido_2d' };
+    if (daysOverdue >= 1 && (deal || high)) return { alert_class: 'inmediata', rule: 'seguimiento_vencido_clave' };
+    if (daysOverdue >= 1) return { alert_class: 'recomendada', rule: 'seguimiento_vencido' };
+    if (deal) return { alert_class: 'inmediata', rule: 'seguimiento_hoy_operacion_avanzada' };
+    return { alert_class: 'recomendada', rule: 'seguimiento_hoy' };
+  }
+  // kind === 'abandoned' (contacto abierto sin próxima acción)
+  if (daysSinceContact >= settings.inactive_days) return { alert_class: 'sin_actividad', rule: 'inactivo_prolongado' };
+  if (lead.status === 'nuevo') return { alert_class: 'inmediata', rule: 'nuevo_sin_contactar' };
+  if (deal) return { alert_class: 'inmediata', rule: 'operacion_sin_proxima_accion' };
+  if (high) return { alert_class: 'inmediata', rule: 'prioridad_alta_sin_proxima_accion' };
+  return { alert_class: 'recomendada', rule: 'sin_proxima_accion' };
+}
+
+const fmtShort = (d) => new Date(d).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'Europe/Madrid' });
+const fmtTime = (d) => new Date(d).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' });
+
+/** HECHOS verificables en los datos (sin interpretar). Lo que se recomienda va aparte, en recommend(). */
+export function buildFacts({ kind, lead, property, daysSinceContact, daysOverdue = 0, visitAt = null, hasLastContact = true }) {
+  const f = [`Estado: ${statusLabel(lead.status)}`];
+  if (lead.priority === 'alta') f.push('Prioridad alta');
+  if (property?.title) f.push(`Interesado en «${property.title}»`);
+  if (!hasLastContact) f.push('Sin contacto registrado');
+  else if (daysSinceContact != null) f.push(daysSinceContact <= 0 ? 'Último contacto: hoy' : `Último contacto: hace ${daysSinceContact} ${daysSinceContact === 1 ? 'día' : 'días'}`);
+  if (kind === 'followup') f.push(daysOverdue > 0 ? `Seguimiento vencido hace ${daysOverdue} ${daysOverdue === 1 ? 'día' : 'días'}` : 'Seguimiento programado para hoy');
+  if (kind === 'abandoned') f.push('Sin próxima acción programada');
+  if (kind === 'visit_no_followup' && visitAt) f.push(`Visita del ${fmtShort(visitAt)} sin contacto posterior registrado`);
+  if (kind === 'visit_unconfirmed' && visitAt) f.push(`Visita el ${fmtShort(visitAt)} a las ${fmtTime(visitAt)} sin confirmar por el cliente`);
+  return f;
+}
+
+/** RECOMENDACIÓN (sugerencia, no un hecho). Devuelve el texto y el objetivo de mensaje asociado. */
+export function recommend({ kind, lead, rule }) {
+  if (kind === 'visit_no_followup') return { text: 'Contacta para conocer su opinión sobre la visita y resolver dudas.', goal: 'post_visit' };
+  if (kind === 'visit_unconfirmed') return { text: 'Confirma la visita con el cliente.', goal: 'follow_up' };
+  if (rule === 'nuevo_sin_contactar') return { text: 'Haz el primer contacto.', goal: 'first_contact' };
+  if (rule === 'inactivo_prolongado') return { text: 'Decide si merece la pena reactivar este contacto o archivarlo.', goal: 'reactivation' };
+  if (rule === 'operacion_sin_proxima_accion') return { text: 'Concreta el siguiente paso de la operación.', goal: 'follow_up' };
+  if (kind === 'abandoned') return { text: lead.status === 'interesado' ? 'Propón una visita o una llamada.' : 'Retoma el contacto y programa un siguiente paso.', goal: lead.status === 'interesado' ? 'visit_proposal' : 'follow_up' };
+  return { text: 'Retoma la conversación y deja programado el siguiente paso.', goal: 'follow_up' };
+}
+
+/** Primera imagen utilizable de un inmueble (JSON o lista separada por comas/saltos). Solo http(s) o ruta propia. */
+export function firstImage(images) {
+  if (!images) return null;
+  let list = images;
+  if (typeof images === 'string') {
+    try { list = JSON.parse(images); } catch { list = images.split(/[\n,]/); }
+  }
+  if (!Array.isArray(list)) return null;
+  for (const raw of list) {
+    const u = typeof raw === 'string' ? raw.trim() : raw?.url?.trim?.();
+    if (u && (/^https?:\/\//i.test(u) || u.startsWith('/'))) return u;
+  }
+  return null;
 }
 
 /** Objetivo de mensaje recomendado según el estado del lead. */

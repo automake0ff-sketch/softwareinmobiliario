@@ -57,3 +57,9 @@ fly deploy  # si ya existe el app
 - [ ] La IA es **opcional**. Sin `ANTHROPIC_API_KEY` todo funciona con plantillas y resumen por reglas (coste cero por uso).
 - [ ] Si activas IA: `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` (por defecto un modelo antiguo: pon uno vigente) y, opcional, `FOLLOWUP_AI_HOURLY_LIMIT` (por defecto 30 llamadas/hora/agencia) o `FOLLOWUP_AI=off` para desactivarla.
 - [ ] Probar en staging: `node server/tests/followup-engine.test.mjs` y `node server/tests/followup-api.test.mjs` (necesita `DATABASE_URL`, `SUPABASE_JWT_SECRET` y `BASE_URL`).
+
+## InmoFollow fase 2-4 (agenda comercial, KPIs, reglas configurables)
+- [ ] Aplicar `supabase/migrations/00011_inmofollow_fase2.sql` (prioridad y tipo de cliente en `leads`, tabla `followup_settings`, y estado `perdido` permitido en `leads.status`).
+- [ ] Reversión documentada en `supabase/rollbacks/` (`00011_down.sql`, `00010_down.sql`, `00009_down.sql`). Haz copia de seguridad antes de revertir.
+- [ ] Las reglas de alerta son por agencia y solo las edita un administrador (pantalla Seguimiento → Reglas).
+- [ ] Pruebas nuevas: `node server/tests/followup-fase2.test.mjs` (necesita servidor y BD de pruebas) y `cd ui-tests && npm test`.

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../lib/api'
+import LeadFollowUpCard from '../components/followup/LeadFollowUpCard'
 import {
   formatCurrency, formatDate, formatFullDate, getScoreColor,
   getScoreLabel, getScoreBg, getStatusLabel, getStatusColor,
@@ -703,6 +704,8 @@ export default function LeadDetailPage() {
                 </div>
               </div>
             )}
+
+            <LeadFollowUpCard leadId={lead.id} />
 
             {/* Quick Contact & Details grid */}
             <div className="bg-white/[0.02] border border-white/5 rounded-xl p-5 space-y-3.5">
